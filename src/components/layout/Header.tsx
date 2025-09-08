@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/Button';
-import { Badge } from '../ui/Badge';
+import { Badge } from '../ui/badge';
 import { 
   User, 
   LogOut, 

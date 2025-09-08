@@ -1,16 +1,7 @@
 import React, { useState } from 'react';
 import { 
   TrendingUp, 
-  TrendingDown, 
   DollarSign, 
-  Activity, 
-  Clock,
-  Users,
-  ArrowUpRight,
-  Stethoscope,
-  Settings,
-  FileText,
-  BarChart3,
   CheckCircle,
   Plus,
   Filter,
@@ -21,8 +12,6 @@ import {
   CreditCard,
   Calendar,
   Target,
-  Wallet,
-  Banknote,
   Receipt
 } from 'lucide-react';
 import { ResponsiveLayout } from '../components/layout/ResponsiveLayout';

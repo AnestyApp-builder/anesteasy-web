@@ -125,14 +125,14 @@ export const ForgotPasswordPage: React.FC = () => {
               </p>
             </div>
             
-            <Input
-              label="E-mail"
-              type="email"
-              placeholder="seu@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+              <InputWithLabel
+                label="E-mail"
+                type="email"
+                placeholder="seu@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
             
             <Button
               type="submit"

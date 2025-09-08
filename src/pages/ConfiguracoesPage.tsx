@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   User, 
   Mail, 
@@ -9,20 +9,6 @@ import {
   Eye,
   EyeOff,
   Key,
-  Smartphone,
-  Settings,
-  CheckCircle,
-  AlertTriangle,
-  Info,
-  Trash2,
-  Edit,
-  Plus,
-  Download,
-  Upload,
-  Camera,
-  Globe,
-  Lock,
-  Unlock,
   Stethoscope,
   ArrowUpRight,
   BarChart3,

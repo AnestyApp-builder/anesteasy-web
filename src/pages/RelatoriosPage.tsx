@@ -1,32 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   BarChart3, 
   Download, 
   Calendar,
   TrendingUp,
-  Users,
   Clock,
   DollarSign,
   FileText,
   PieChart,
   Activity,
-  Target,
   ArrowUpRight,
-  ArrowDownRight,
-  Eye,
   Settings,
   Filter,
   RefreshCw,
   Share2,
   Printer,
-  Stethoscope,
-  Search,
-  Building2 as Hospital,
-  CheckCircle,
-  AlertCircle,
-  XCircle,
-  CreditCard,
-  Receipt
+  Stethoscope
 } from 'lucide-react';
 import { LogoutButton } from '../components/auth/LogoutButton';
 
@@ -43,14 +32,6 @@ export const RelatoriosPage: React.FC = () => {
     proceduresThisMonth: 18,
     revenueGrowth: 12.5
   };
-
-  const procedureTypesData = [
-    { name: 'Anestesia Geral', value: 45, color: '#14b8a6' },
-    { name: 'Anestesia Regional', value: 32, color: '#0ea5e9' },
-    { name: 'Sedação', value: 28, color: '#8b5cf6' },
-    { name: 'Anestesia Local', value: 15, color: '#f59e0b' },
-    { name: 'Outros', value: 8, color: '#ef4444' }
-  ];
 
   const monthlyPerformance = [
     { month: 'Jan', procedures: 12, revenue: 18750, growth: 15.2 },

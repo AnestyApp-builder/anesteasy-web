@@ -127,7 +127,7 @@ export const RegisterPage: React.FC = () => {
               </div>
             )}
             
-            <Input
+            <InputWithLabel
               label="Nome Completo"
               type="text"
               name="name"
@@ -137,7 +137,7 @@ export const RegisterPage: React.FC = () => {
               required
             />
             
-            <Input
+            <InputWithLabel
               label="E-mail"
               type="email"
               name="email"
@@ -147,7 +147,7 @@ export const RegisterPage: React.FC = () => {
               required
             />
             
-            <Input
+            <InputWithLabel
               label="Especialidade"
               type="text"
               name="specialty"
@@ -157,7 +157,7 @@ export const RegisterPage: React.FC = () => {
               required
             />
             
-            <Input
+            <InputWithLabel
               label="CRM"
               type="text"
               name="crm"
@@ -168,7 +168,7 @@ export const RegisterPage: React.FC = () => {
             />
             
             <div className="relative">
-              <Input
+              <InputWithLabel
                 label="Senha"
                 type={showPassword ? 'text' : 'password'}
                 name="password"
@@ -191,7 +191,7 @@ export const RegisterPage: React.FC = () => {
             </div>
             
             <div className="relative">
-              <Input
+              <InputWithLabel
                 label="Confirmar Senha"
                 type={showConfirmPassword ? 'text' : 'password'}
                 name="confirmPassword"

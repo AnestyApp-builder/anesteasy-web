@@ -7,7 +7,8 @@ import {
   Award,
   FileText,
   CheckCircle,
-  Plus
+  Plus,
+  Clock
 } from 'lucide-react';
 import { ResponsiveLayout } from '../components/layout/ResponsiveLayout';
 import { ResponsiveCard } from '../components/ui/ResponsiveCard';
@@ -194,7 +195,6 @@ export const DashboardPage: React.FC = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />
-                <ChartTooltip content={<ChartTooltipContent />} />
                 <Area
                   type="monotone"
                   dataKey="revenue"
@@ -222,7 +222,6 @@ export const DashboardPage: React.FC = () => {
                   cy="50%"
                   outerRadius={80}
                   dataKey="value"
-                  label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
                   {procedureTypesData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
