@@ -2,34 +2,12 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
   TrendingUp, 
-  TrendingDown, 
   DollarSign, 
-  Activity, 
-  Calendar, 
-  Clock,
-  Users,
   Target,
-  ArrowUpRight,
-  ArrowDownRight,
-  MoreHorizontal,
-  Zap,
-  Star,
   Award,
-  AlertTriangle,
-  Stethoscope,
-  Bell,
-  Settings,
   FileText,
-  BarChart3,
-  PieChart,
-  Heart,
-  CreditCard,
-  TrendingDown as TrendingDownIcon,
   CheckCircle,
-  Circle,
-  Plus,
-  Filter,
-  Search
+  Plus
 } from 'lucide-react';
 import { ResponsiveLayout } from '../components/layout/ResponsiveLayout';
 import { ResponsiveCard } from '../components/ui/ResponsiveCard';
@@ -42,19 +20,9 @@ import {
   CartesianGrid,
   YAxis,
   ResponsiveContainer,
-  BarChart,
-  Bar,
   PieChart as RechartsPieChart,
-  Cell,
-  LineChart,
-  Line
+  Cell
 } from 'recharts';
-import {
-  ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '@/components/ui/chart';
 
 // Dados para os gráficos
 const monthlyRevenueData = [
@@ -66,17 +34,6 @@ const monthlyRevenueData = [
   { month: 'Jun', revenue: 67000, procedures: 42, target: 50000 },
 ];
 
-// Configuração do gráfico de receita
-const revenueChartConfig = {
-  revenue: {
-    label: "Receita",
-    color: "#14b8a6",
-  },
-  target: {
-    label: "Meta",
-    color: "#e2e8f0",
-  },
-};
 
 // Dados dos procedimentos recentes
 const recentProcedures = [
@@ -259,15 +216,13 @@ export const DashboardPage: React.FC = () => {
           <div className="h-64 lg:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <RechartsPieChart>
-                <ChartTooltip />
                 <RechartsPieChart
                   data={procedureTypesData}
                   cx="50%"
                   cy="50%"
                   outerRadius={80}
-                  fill="#8884d8"
                   dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
                   {procedureTypesData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />

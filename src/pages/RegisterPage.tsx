@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
+import { InputWithLabel } from '../components/ui/InputWithLabel';
 import { Card } from '../components/ui/Card';
 import { Stethoscope, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
