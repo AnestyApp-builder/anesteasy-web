@@ -10,8 +10,8 @@ const nextConfig = {
     domains: ['localhost'],
   },
   env: {
-    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL,
-    VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY,
+    VITE_SUPABASE_URL: 'https://zmtwwajyhusyrugobxur.supabase.co',
+    VITE_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptdHd3YWp5aHVzeXJ1Z29ieHVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczMzYzNzAsImV4cCI6MjA3MjkxMjM3MH0.NC6t2w_jFWTMJjVv5FmPLouVyOVgCTBReCr0zOA2dx8',
   },
 }
 
