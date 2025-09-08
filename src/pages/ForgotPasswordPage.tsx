@@ -1,8 +1,11 @@
+'use client'
+
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { InputWithLabel } from '../components/ui/InputWithLabel';
 import { Card } from '../components/ui/Card';
 import { Stethoscope, ArrowLeft, Mail, CheckCircle } from 'lucide-react';
 

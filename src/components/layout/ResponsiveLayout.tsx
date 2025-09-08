@@ -1,5 +1,7 @@
+'use client'
+
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { usePathname } from 'next/navigation';
 import { ResponsiveSidebar } from './ResponsiveSidebar';
 
 interface ResponsiveLayoutProps {
@@ -7,12 +9,12 @@ interface ResponsiveLayoutProps {
 }
 
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
-  const location = useLocation();
+  const pathname = usePathname();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
       {/* Responsive Sidebar */}
-      <ResponsiveSidebar currentPath={location.pathname} />
+      <ResponsiveSidebar currentPath={pathname} />
       
       {/* Main Content */}
       <div className="lg:ml-72">

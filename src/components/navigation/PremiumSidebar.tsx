@@ -1,5 +1,8 @@
+'use client'
+
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard,
   Stethoscope,
@@ -93,11 +96,11 @@ interface PremiumSidebarProps {
 
 export const PremiumSidebar: React.FC<PremiumSidebarProps> = ({ className }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const location = useLocation();
+  const pathname = usePathname();
   const { user, logout } = useAuth();
 
   const isActive = (href: string) => {
-    return location.pathname === href || location.pathname.startsWith(href + '/');
+    return pathname === href || pathname.startsWith(href + '/');
   };
 
   return (

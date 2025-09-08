@@ -1,5 +1,8 @@
+'use client'
+
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { InputWithLabel } from '../components/ui/InputWithLabel';
@@ -14,7 +17,7 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
   
   const { user, login, isLoading: authLoading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
 
   // Log do estado atual
   console.log('LoginPage render - user:', user, 'authLoading:', authLoading);
@@ -26,10 +29,10 @@ export const LoginPage: React.FC = () => {
       console.log('LoginPage: Usuário logado detectado, redirecionando para dashboard...');
       // Usar setTimeout para garantir que o redirecionamento aconteça
       setTimeout(() => {
-        navigate('/dashboard', { replace: true });
+        router.push('/dashboard');
       }, 100);
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, router]);
 
   // Mostrar loading enquanto verifica autenticação
   if (authLoading) {
@@ -60,7 +63,7 @@ export const LoginPage: React.FC = () => {
     try {
       const result = await login(email, password);
       if (result.success) {
-        navigate('/dashboard');
+        router.push('/dashboard');
       } else {
         setError(result.error || 'Email ou senha incorretos');
       }

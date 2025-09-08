@@ -1,11 +1,13 @@
+'use client'
+
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import { Layout } from '../components/layout/Layout';
 import { ProcedureForm } from '../components/forms/ProcedureForm';
 import { Procedure } from '../types';
 
 export const ProcedimentoFormPage: React.FC = () => {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleCreateProcedure = async (procedureData: Omit<Procedure, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -18,7 +20,7 @@ export const ProcedimentoFormPage: React.FC = () => {
       console.log('Novo procedimento:', procedureData);
       
       // Redirecionar para a lista de procedimentos
-      navigate('/procedimentos');
+      router.push('/procedimentos');
     } catch (error) {
       console.error('Erro ao criar procedimento:', error);
     } finally {
@@ -27,7 +29,7 @@ export const ProcedimentoFormPage: React.FC = () => {
   };
 
   const handleCancel = () => {
-    navigate('/procedimentos');
+    router.push('/procedimentos');
   };
 
   return (

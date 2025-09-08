@@ -1,5 +1,8 @@
+'use client'
+
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { InputWithLabel } from '../components/ui/InputWithLabel';
@@ -21,14 +24,14 @@ export const RegisterPage: React.FC = () => {
   const [error, setError] = useState('');
   
   const { user, register, isLoading: authLoading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
 
   // Redirecionar usuários já logados
   useEffect(() => {
     if (user && !authLoading) {
-      navigate('/dashboard');
+      router.push('/dashboard');
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, router]);
 
   // Mostrar loading enquanto verifica autenticação
   if (authLoading) {
@@ -83,7 +86,7 @@ export const RegisterPage: React.FC = () => {
       );
       
       if (result.success) {
-        navigate('/dashboard');
+        router.push('/dashboard');
       } else {
         setError(result.error || 'Erro ao criar conta');
       }

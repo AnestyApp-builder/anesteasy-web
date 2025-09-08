@@ -1,5 +1,7 @@
+'use client'
+
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useRouter, usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 
 interface SmartNavigationProps {
@@ -17,12 +19,12 @@ export const SmartNavigation: React.FC<SmartNavigationProps> = ({
   activeClassName = "",
   isActive = false
 }) => {
-  const navigate = useNavigate();
-  const location = useLocation();
+  const router = useRouter();
+  const pathname = usePathname();
   const [isHovered, setIsHovered] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
 
-  const isCurrentPage = location.pathname === to;
+  const isCurrentPage = pathname === to;
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -33,7 +35,7 @@ export const SmartNavigation: React.FC<SmartNavigationProps> = ({
     setIsNavigating(true);
     
     // Navegação instantânea sem delay
-    navigate(to);
+    router.push(to);
     
     // Reset do estado após um pequeno delay
     setTimeout(() => {

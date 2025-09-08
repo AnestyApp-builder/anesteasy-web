@@ -1,5 +1,7 @@
+'use client'
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import { authService, type AuthUser } from '../services/authService';
 import { supabase } from '../lib/supabase';
 
@@ -31,7 +33,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const navigate = useNavigate();
+  const router = useRouter();
 
   useEffect(() => {
     // Verificar sessão inicial
@@ -206,7 +208,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     console.log('Storage limpo');
     
     // Redirecionar IMEDIATAMENTE
-    navigate('/login', { replace: true });
+    router.push('/login');
     console.log('Redirecionado para página de login');
     
     // Forçar reload da página IMEDIATAMENTE

@@ -1,5 +1,8 @@
+'use client'
+
 import React, { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { useAuth } from '../context/AuthContext';
@@ -24,7 +27,7 @@ import {
 
 export const HomePage: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
 
   // Debug logs
   console.log('HomePage - user:', user);
@@ -37,10 +40,10 @@ export const HomePage: React.FC = () => {
       console.log('HomePage - Redirecting to dashboard');
       // Usar setTimeout para garantir que o redirecionamento aconteça
       setTimeout(() => {
-        navigate('/dashboard');
+        router.push('/dashboard');
       }, 100);
     }
-  }, [user, navigate]);
+  }, [user, router]);
 
   // Se o usuário estiver logado, mostrar loading
   if (user) {
@@ -323,7 +326,7 @@ export const HomePage: React.FC = () => {
                     <Star key={i} className="w-5 h-5 text-yellow-400 fill-current" />
                   ))}
                 </div>
-                <p className="text-secondary-700 italic">"{testimonial.content}"</p>
+                <p className="text-secondary-700 italic">&ldquo;{testimonial.content}&rdquo;</p>
               </Card>
             ))}
           </div>

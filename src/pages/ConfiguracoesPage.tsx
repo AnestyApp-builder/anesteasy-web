@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useState } from 'react';
 import { 
   User, 
@@ -14,7 +16,10 @@ import {
   BarChart3,
   FileText,
   DollarSign,
-  Activity
+  Activity,
+  Settings,
+  Download,
+  Upload
 } from 'lucide-react';
 import { LogoutButton } from '../components/auth/LogoutButton';
 
