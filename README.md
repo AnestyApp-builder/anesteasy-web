@@ -1,94 +1,71 @@
-# 🏥 AnestEasy - Plataforma de Gestão Anestésica
+# 🏥 AnestEasy - Sistema de Gestão para Anestesiologistas
 
-> **Plataforma mobile-first para gestão completa de procedimentos anestésicos**
+> **Plataforma moderna para gestão financeira e procedimentos anestésicos**
 
-[![React](https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react&logoColor=white)](https://reactjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15+-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19+-61DAFB?style=for-the-badge&logo=react&logoColor=white)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5+-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
-[![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-
-## 📱 **Mobile-First Design**
-
-Desenvolvido pensando nos **90% dos usuários** que utilizam dispositivos móveis:
-
-- ✅ **Interface 100% responsiva** com breakpoints otimizados
-- ✅ **Sidebar responsiva** que vira drawer no mobile
-- ✅ **Componentes touch-friendly** com interações otimizadas
-- ✅ **Navegação fluida** com animações suaves
-- ✅ **Performance otimizada** para dispositivos móveis
 
 ## 🚀 **Funcionalidades**
 
 ### **📊 Dashboard Inteligente**
-- Estatísticas em tempo real
-- Gráficos interativos responsivos
+- Métricas em tempo real
+- Gráficos interativos
 - Procedimentos recentes
-- Métricas de performance
+- Ações rápidas
 
 ### **💰 Gestão Financeira**
-- Controle de pagamentos
-- Filtros avançados
-- Relatórios de receita
-- Status de cobrança
+- Controle de receitas e despesas
+- Relatórios detalhados
+- Análise de performance
+- Fluxo de caixa
 
 ### **📋 Procedimentos**
 - Cadastro completo de procedimentos
 - Histórico detalhado
-- Categorização por tipo
-- Integração com pacientes
+- Filtros avançados
+- Status de pagamento
 
 ### **📈 Relatórios**
-- Análises estatísticas
-- Gráficos personalizáveis
+- Relatórios personalizáveis
 - Exportação de dados
+- Análises estatísticas
 - Insights de performance
 
 ### **⚙️ Configurações**
 - Perfil do usuário
 - Preferências do sistema
 - Configurações de segurança
-- Backup de dados
+- Gerenciamento de dados
 
 ## 🛠️ **Tecnologias**
 
-### **Frontend**
-- **React 18+** - Biblioteca de interface
+- **Next.js 15** - Framework React com App Router
+- **React 19** - Biblioteca de interface
 - **TypeScript** - Tipagem estática
-- **Tailwind CSS** - Estilização utilitária
-- **Framer Motion** - Animações fluidas
-- **Recharts** - Gráficos interativos
+- **Tailwind CSS** - Framework de estilos
 - **Lucide React** - Ícones modernos
 
-### **Backend & Database**
-- **Supabase** - Backend-as-a-Service
-- **PostgreSQL** - Banco de dados
-- **Row Level Security (RLS)** - Segurança avançada
-- **Real-time subscriptions** - Atualizações em tempo real
-
-### **Ferramentas**
-- **Vite** - Build tool ultra-rápido
-- **ESLint** - Linting de código
-- **PostCSS** - Processamento CSS
-- **Git** - Controle de versão
-
-## 🏗️ **Arquitetura**
+## 🏗️ **Estrutura do Projeto**
 
 ```
-src/
-├── components/          # Componentes reutilizáveis
-│   ├── auth/           # Autenticação
-│   ├── charts/         # Gráficos
-│   ├── layout/         # Layout responsivo
-│   ├── navigation/     # Navegação inteligente
-│   └── ui/             # Componentes UI
-├── context/            # Context API
-├── hooks/              # Custom hooks
-├── lib/                # Configurações
-├── pages/              # Páginas da aplicação
-├── services/           # Serviços de API
-├── types/              # Definições TypeScript
-└── utils/              # Utilitários
+├── app/                    # Next.js App Router
+│   ├── layout.tsx         # Layout principal
+│   ├── page.tsx           # Página inicial
+│   ├── globals.css        # Estilos globais
+│   ├── login/             # Página de login
+│   ├── register/          # Página de registro
+│   ├── dashboard/         # Dashboard
+│   ├── procedimentos/     # Procedimentos
+│   ├── financeiro/        # Financeiro
+│   ├── relatorios/        # Relatórios
+│   └── configuracoes/     # Configurações
+├── components/            # Componentes reutilizáveis
+│   ├── ui/               # Componentes UI (Button, Input, Card)
+│   └── layout/           # Layout e navegação
+├── lib/                  # Utilitários
+└── public/               # Arquivos estáticos
 ```
 
 ## 🚀 **Instalação e Uso**
@@ -96,7 +73,6 @@ src/
 ### **Pré-requisitos**
 - Node.js 18+
 - npm ou yarn
-- Conta no Supabase
 
 ### **1. Clone o repositório**
 ```bash
@@ -109,77 +85,61 @@ cd anesteasy-web
 npm install
 ```
 
-### **3. Configure o Supabase**
+### **3. Execute o projeto**
 ```bash
-# Copie o arquivo de exemplo
-cp .env.example .env.local
-
-# Configure suas variáveis
-VITE_SUPABASE_URL=sua_url_aqui
-VITE_SUPABASE_ANON_KEY=sua_chave_aqui
-```
-
-### **4. Execute as migrações**
-```bash
-# Instale o Supabase CLI
-npm install -g supabase
-
-# Execute as migrações
-supabase db push
-```
-
-### **5. Inicie o servidor**
-```bash
+# Desenvolvimento
 npm run dev
+
+# Build de produção
+npm run build
+
+# Executar build
+npm run start
+
+# Linting
+npm run lint
 ```
 
-## 📱 **Testando no Mobile**
+### **4. Acesse a aplicação**
+- **Desenvolvimento**: http://localhost:3000
+- **Produção**: Após build, execute `npm run start`
 
-### **Método 1: Rede Local**
+## 📱 **Design Responsivo**
+
+- ✅ **Mobile-first** - Otimizado para dispositivos móveis
+- ✅ **Interface moderna** - Design limpo e profissional
+- ✅ **Navegação intuitiva** - Fácil de usar
+- ✅ **Componentes reutilizáveis** - Consistência visual
+- ✅ **Animações suaves** - Experiência fluida
+
+## 🎨 **Sistema de Design**
+
+- **Paleta de cores**: Teal (#14b8a6) e Azul (#0ea5e9)
+- **Tipografia**: Inter font
+- **Componentes**: Button, Input, Card reutilizáveis
+- **Animações**: Fade-in, slide-up, hover effects
+
+## 🚀 **Deploy**
+
+### **Vercel (Recomendado)**
 ```bash
-# Descubra seu IP
-ipconfig
-
-# Acesse no celular
-http://SEU_IP:3000
-```
-
-### **Método 2: Tunnel**
-```bash
-# Instale o ngrok
-npm install -g ngrok
-
-# Crie um tunnel
-ngrok http 3000
-```
-
-### **Método 3: Deploy**
-```bash
-# Vercel
 npm install -g vercel
 vercel --prod
-
-# Netlify
-npm install -g netlify-cli
-netlify deploy --prod --dir=dist
 ```
 
-## 🔒 **Segurança**
-
-- ✅ **Row Level Security (RLS)** ativo
-- ✅ **Autenticação JWT** com Supabase
-- ✅ **Validação de dados** em todas as entradas
-- ✅ **Sanitização** de inputs
-- ✅ **Auditoria** de ações críticas
-- ✅ **Backup automático** de dados
+### **Outras plataformas**
+- Netlify
+- Railway
+- Render
+- DigitalOcean App Platform
 
 ## 📊 **Performance**
 
-- ⚡ **Vite** - Build ultra-rápido
-- 🎯 **Code splitting** - Carregamento otimizado
+- ⚡ **Next.js** - Build otimizado
+- 🎯 **App Router** - Roteamento eficiente
 - 📱 **Mobile-first** - Performance em dispositivos móveis
-- 🖼️ **Lazy loading** - Componentes sob demanda
-- 💾 **Caching inteligente** - Redução de requisições
+- 🖼️ **Otimização de imagens** - Carregamento rápido
+- 💾 **Static Generation** - Páginas pré-renderizadas
 
 ## 🤝 **Contribuição**
 
@@ -198,13 +158,6 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 **Dr. [Seu Nome]** - Anestesiologista & Desenvolvedor
 - GitHub: [@seuusuario](https://github.com/seuusuario)
 - LinkedIn: [Seu Perfil](https://linkedin.com/in/seuperfil)
-
-## 🙏 **Agradecimentos**
-
-- Supabase pela infraestrutura
-- React Team pela biblioteca incrível
-- Tailwind CSS pelo sistema de design
-- Comunidade open source
 
 ---
 
