@@ -14,5 +14,25 @@ export default defineConfig({
     port: 3000,
     host: true, // Permite acesso externo
     open: true
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    minify: 'terser',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          supabase: ['@supabase/supabase-js'],
+          ui: ['@radix-ui/react-avatar', '@radix-ui/react-dropdown-menu', '@radix-ui/react-progress', '@radix-ui/react-select', '@radix-ui/react-separator', '@radix-ui/react-slot', '@radix-ui/react-tabs'],
+          charts: ['recharts'],
+          motion: ['framer-motion']
+        }
+      }
+    }
+  },
+  preview: {
+    port: 3000,
+    host: true
   }
 })
