@@ -1,13 +1,12 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import './globals.css'
-import { AuthProvider } from '@/context/AuthContext'
-
-const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'AnestEasy - Gestão Financeira para Anestesistas',
   description: 'Sistema completo de gestão financeira e procedimentos para anestesistas',
+  keywords: 'anestesiologia, gestão financeira, procedimentos médicos, CRM',
+  authors: [{ name: 'AnestEasy Team' }],
+  viewport: 'width=device-width, initial-scale=1',
 }
 
 export default function RootLayout({
@@ -16,13 +15,9 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="pt-BR">
-      <body className={inter.className}>
-        <AuthProvider>
-          <div className="min-h-screen bg-gray-50">
-            {children}
-          </div>
-        </AuthProvider>
+    <html lang="pt-BR" className="h-full">
+      <body className="h-full font-sans antialiased">
+        {children}
       </body>
     </html>
   )
