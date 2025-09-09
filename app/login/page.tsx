@@ -1,35 +1,76 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Stethoscope, Mail, Lock, Eye, EyeOff } from 'lucide-react'
+import { Stethoscope, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Logo } from '@/components/ui/Logo'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
   const [formData, setFormData] = useState({
     email: '',
     password: ''
   })
+  const { login, isLoading, user, isAuthenticated } = useAuth()
+  const router = useRouter()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Redirecionar se já estiver logado
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      router.push('/dashboard')
+    }
+  }, [isAuthenticated, user, router])
+
+  // Mostrar loading enquanto verifica autenticação
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verificando autenticação...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Não renderizar se já estiver logado (será redirecionado)
+  if (isAuthenticated && user) {
+    return null
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Lógica de login aqui
-    console.log('Login:', formData)
+    setError('')
+    
+    if (!formData.email || !formData.password) {
+      setError('Por favor, preencha todos os campos')
+      return
+    }
+
+    if (formData.password.length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres')
+      return
+    }
+
+    const success = await login(formData.email, formData.password)
+    if (!success) {
+      setError('Email ou senha incorretos')
+    }
   }
 
   return (
-    <div className="min-h-screen gradient-bg flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        {/* Logo */}
+    <div className="min-h-screen bg-white flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-6 md:space-y-8">
+        {/* Logo - Mobile Optimized */}
         <div className="text-center">
-          <Link href="/" className="inline-flex items-center space-x-2">
-            <div className="w-12 h-12 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-xl flex items-center justify-center">
-              <Stethoscope className="w-7 h-7 text-white" />
-            </div>
-            <span className="text-2xl font-bold text-gray-900">AnestEasy</span>
+          <Link href="/">
+            <Logo size="lg" />
           </Link>
         </div>
 
@@ -45,6 +86,13 @@ export default function Login() {
           </CardHeader>
           
           <form onSubmit={handleSubmit} className="space-y-6 p-6 pt-0">
+            {error && (
+              <div className="flex items-center space-x-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+                <span className="text-sm text-red-600">{error}</span>
+              </div>
+            )}
+
             <Input
               label="Email"
               type="email"
@@ -91,8 +139,12 @@ export default function Login() {
               </Link>
             </div>
 
-            <Button type="submit" className="w-full">
-              Entrar
+            <Button 
+              type="submit" 
+              className="w-full py-4 text-lg font-medium" 
+              disabled={isLoading}
+            >
+              {isLoading ? 'Entrando...' : 'Entrar'}
             </Button>
           </form>
 

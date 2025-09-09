@@ -1,12 +1,47 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { AuthProvider } from '@/contexts/AuthContext'
 
 export const metadata: Metadata = {
   title: 'AnestEasy - Gestão Financeira para Anestesistas',
   description: 'Sistema completo de gestão financeira e procedimentos para anestesistas',
   keywords: 'anestesiologia, gestão financeira, procedimentos médicos, CRM',
   authors: [{ name: 'AnestEasy Team' }],
-  viewport: 'width=device-width, initial-scale=1',
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'AnestEasy',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'pt_BR',
+    url: 'https://anesteasy.com',
+    title: 'AnestEasy - Gestão Financeira para Anestesistas',
+    description: 'Sistema completo de gestão financeira e procedimentos para anestesistas',
+    siteName: 'AnestEasy',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'AnestEasy - Gestão Financeira para Anestesistas',
+    description: 'Sistema completo de gestão financeira e procedimentos para anestesistas',
+  },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#14b8a6',
 }
 
 export default function RootLayout({
@@ -17,7 +52,9 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className="h-full">
       <body className="h-full font-sans antialiased">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   )

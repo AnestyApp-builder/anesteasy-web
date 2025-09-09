@@ -1,3 +1,7 @@
+'use client'
+
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { 
   Stethoscope, 
@@ -13,8 +17,36 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Logo } from '@/components/ui/Logo'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function Home() {
+  const { user, isAuthenticated, isLoading } = useAuth()
+  const router = useRouter()
+
+  // Redirecionar se já estiver logado
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      router.push('/dashboard')
+    }
+  }, [isAuthenticated, user, router])
+
+  // Mostrar loading enquanto verifica autenticação
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verificando autenticação...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Não renderizar se já estiver logado (será redirecionado)
+  if (isAuthenticated && user) {
+    return null
+  }
   const features = [
     {
       icon: BarChart3,
@@ -67,16 +99,13 @@ export default function Home() {
   ]
 
   return (
-    <div className="min-h-screen gradient-bg">
+    <div className="min-h-screen bg-white">
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
-                <Stethoscope className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-xl font-bold text-gray-900">AnestEasy</span>
+            <div className="focus:outline-none">
+              <Logo size="md" />
             </div>
             <div className="flex items-center space-x-4">
               <Link href="/login">
@@ -213,7 +242,7 @@ export default function Home() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-24 gradient-bg">
+      <section className="py-24 bg-white">
         <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
           <h2 className="text-4xl font-bold text-gray-900 mb-4">
             Pronto para transformar sua gestão?
@@ -240,11 +269,10 @@ export default function Home() {
       {/* Footer */}
       <footer className="bg-gray-900 text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-center space-x-2 mb-8">
-            <div className="w-8 h-8 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
-              <Stethoscope className="w-5 h-5 text-white" />
+          <div className="flex items-center justify-center mb-8">
+            <div className="focus:outline-none">
+              <Logo size="md" className="text-white" />
             </div>
-            <span className="text-xl font-bold">AnestEasy</span>
           </div>
           <p className="text-center text-gray-400">
             © 2024 AnestEasy. Todos os direitos reservados.
