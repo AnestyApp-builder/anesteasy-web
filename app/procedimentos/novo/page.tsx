@@ -90,6 +90,14 @@ const STATUS_PAGAMENTO = [
   'Recebido'
 ]
 
+// Mapeamento dos valores em português para os valores do banco de dados
+const STATUS_PAGAMENTO_MAP: Record<string, string> = {
+  'Pendente': 'pending',
+  'Pago': 'paid',
+  'Faturado': 'paid', // Faturado é considerado como pago
+  'Recebido': 'paid'  // Recebido é considerado como pago
+}
+
 const ESPECIALIDADES = [
   'Cirurgia Geral',
   'Ortopedia',
@@ -130,7 +138,26 @@ export default function NovoProcedimento() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [feedbackType, setFeedbackType] = useState<'error' | 'success' | 'info' | null>(null)
   const [currentSection, setCurrentSection] = useState(0) // Começar com OCR (seção 0)
+
+  // Funções auxiliares para feedback
+  const showFeedback = (type: 'error' | 'success' | 'info', message: string) => {
+    setFeedbackType(type)
+    if (type === 'error') {
+      setError(message)
+      setSuccess('')
+    } else if (type === 'success') {
+      setSuccess(message)
+      setError('')
+    }
+  }
+
+  const clearFeedback = () => {
+    setError('')
+    setSuccess('')
+    setFeedbackType(null)
+  }
   const [previewFiles, setPreviewFiles] = useState<string[]>([])
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrProgress, setOcrProgress] = useState(0)
@@ -196,7 +223,7 @@ export default function NovoProcedimento() {
     )
     
     if (formData.fichas.length + validFiles.length > 10) {
-      setError('Máximo de 10 arquivos permitidos')
+      showFeedback('error', '⚠️ Limite de arquivos excedido: Máximo de 10 arquivos permitidos.')
       return
     }
     
@@ -247,14 +274,14 @@ export default function NovoProcedimento() {
 
     // Verificar se é uma imagem
     if (!file.type.startsWith('image/')) {
-      setError('Por favor, selecione apenas arquivos de imagem (JPG, PNG, etc.)')
+      showFeedback('error', '⚠️ Tipo de arquivo inválido: Selecione apenas arquivos de imagem (JPG, PNG, etc.)')
       return
     }
 
     // Verificar tamanho do arquivo (máximo 10MB)
     const maxSize = 10 * 1024 * 1024 // 10MB
     if (file.size > maxSize) {
-      setError('Arquivo muito grande. Tamanho máximo permitido: 10MB')
+      showFeedback('error', '⚠️ Arquivo muito grande: Tamanho máximo permitido é 10MB')
       return
     }
 
@@ -267,8 +294,7 @@ export default function NovoProcedimento() {
 
     setOcrLoading(true)
     setOcrProgress(0)
-    setError('')
-    setSuccess('')
+    clearFeedback()
 
     try {
       const { data: { text } } = await Tesseract.recognize(
@@ -293,10 +319,10 @@ export default function NovoProcedimento() {
         ...extractedData
       }))
       
-      setSuccess('Dados extraídos da etiqueta com sucesso! Revise e edite se necessário.')
+      showFeedback('success', '✅ Dados extraídos da etiqueta com sucesso! Revise e edite se necessário.')
     } catch (error) {
       console.error('Erro no OCR:', error)
-      setError('Erro ao processar a imagem. Tente novamente com uma imagem mais clara.')
+      showFeedback('error', '❌ Erro ao processar a imagem. Tente novamente com uma imagem mais clara.')
     } finally {
       setOcrLoading(false)
       setOcrProgress(0)
@@ -385,35 +411,35 @@ export default function NovoProcedimento() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
-    setSuccess('')
+    clearFeedback()
     
     if (!user?.id) {
-      setError('Usuário não autenticado')
+      showFeedback('error', '❌ Erro de autenticação: Usuário não está logado. Faça login novamente.')
       return
     }
 
-    // Validações
+    // Validações básicas com mensagens específicas
     if (!formData.nomePaciente || !formData.dataNascimento || !formData.dataCirurgia || 
         !formData.horaInicio || !formData.horaTermino || !formData.tipoAnestesia.length) {
-      setError('Por favor, preencha todos os campos obrigatórios')
+      showFeedback('error', '⚠️ Campos obrigatórios não preenchidos. Verifique se todos os campos marcados com * estão preenchidos.')
       return
     }
 
     if (!validateBirthDate(formData.dataNascimento)) {
-      setError('Data de nascimento não pode ser futura')
+      showFeedback('error', '⚠️ Data de nascimento inválida: A data não pode ser futura.')
       return
     }
 
     if (!validateEndTime(formData.horaInicio, formData.horaTermino)) {
-      setError('Hora de término deve ser maior que a hora de início')
+      showFeedback('error', '⚠️ Horário inválido: A hora de término deve ser maior que a hora de início.')
       return
     }
 
     setLoading(true)
+    showFeedback('info', '⏳ Salvando procedimento...')
+    
     try {
       const procedureData = {
-        user_id: user.id,
         procedure_name: formData.tipoProcedimento,
         procedure_type: formData.tipoAnestesia.join(', '),
         patient_name: formData.nomePaciente,
@@ -427,7 +453,7 @@ export default function NovoProcedimento() {
         hospital_clinic: formData.hospital,
         room_number: null,
         procedure_value: parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
-        payment_status: formData.statusPagamento.toLowerCase(),
+        payment_status: STATUS_PAGAMENTO_MAP[formData.statusPagamento] || 'pending',
         payment_date: null,
         payment_method: formData.formaPagamento,
         notes: formData.observacoes
@@ -435,16 +461,37 @@ export default function NovoProcedimento() {
 
       const result = await procedureService.createProcedure(procedureData)
       if (result) {
-        setSuccess('Procedimento criado com sucesso!')
+        showFeedback('success', `✅ Procedimento criado com sucesso! 
+        
+📋 Detalhes:
+• Paciente: ${formData.nomePaciente}
+• Procedimento: ${formData.tipoProcedimento}
+• Data: ${formData.dataCirurgia}
+• Valor: R$ ${formData.valor}
+
+Redirecionando para a lista de procedimentos...`)
+        
         setTimeout(() => {
           router.push('/procedimentos')
-        }, 2000)
+        }, 3000)
       } else {
-        setError('Erro ao criar procedimento. Tente novamente.')
+        showFeedback('error', '❌ Falha ao salvar: Não foi possível criar o procedimento. Verifique sua conexão e tente novamente.')
       }
     } catch (error) {
       console.error('Erro ao criar procedimento:', error)
-      setError('Erro ao criar procedimento. Tente novamente.')
+      
+      // Mensagens de erro mais específicas baseadas no tipo de erro
+      if (error instanceof Error) {
+        if (error.message.includes('network') || error.message.includes('fetch')) {
+          showFeedback('error', '🌐 Erro de conexão: Verifique sua internet e tente novamente.')
+        } else if (error.message.includes('auth') || error.message.includes('permission')) {
+          showFeedback('error', '🔐 Erro de permissão: Sua sessão expirou. Faça login novamente.')
+        } else {
+          showFeedback('error', '❌ Erro inesperado: Tente novamente ou entre em contato com o suporte.')
+        }
+      } else {
+        showFeedback('error', '❌ Erro inesperado: Tente novamente ou entre em contato com o suporte.')
+      }
     } finally {
       setLoading(false)
     }
@@ -549,17 +596,23 @@ export default function NovoProcedimento() {
 
         {/* Form */}
         <form onSubmit={handleSubmit}>
-          {error && (
-            <div className="flex items-center space-x-2 p-4 bg-red-50 border border-red-200 rounded-lg mb-6">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-              <span className="text-sm text-red-600">{error}</span>
-            </div>
-          )}
-
-          {success && (
-            <div className="flex items-center space-x-2 p-4 bg-green-50 border border-green-200 rounded-lg mb-6">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-              <span className="text-sm text-green-600">{success}</span>
+          {feedbackType && (
+            <div className={`flex items-start space-x-3 p-4 rounded-lg mb-6 ${
+              feedbackType === 'error' ? 'bg-red-50 border border-red-200' :
+              feedbackType === 'success' ? 'bg-green-50 border border-green-200' :
+              'bg-blue-50 border border-blue-200'
+            }`}>
+              {feedbackType === 'error' && <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />}
+              {feedbackType === 'success' && <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />}
+              {feedbackType === 'info' && <div className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0 animate-spin">⏳</div>}
+              
+              <div className={`text-sm whitespace-pre-line ${
+                feedbackType === 'error' ? 'text-red-600' :
+                feedbackType === 'success' ? 'text-green-600' :
+                'text-blue-600'
+              }`}>
+                {feedbackType === 'error' ? error : feedbackType === 'success' ? success : '⏳ Salvando procedimento...'}
+              </div>
             </div>
           )}
 
@@ -991,8 +1044,7 @@ export default function NovoProcedimento() {
                                   onClick={() => {
                                     setSelectedImage(null)
                                     setOcrText('')
-                                    setError('')
-                                    setSuccess('')
+                                    clearFeedback()
                                     if (fileInputRef.current) {
                                       fileInputRef.current.value = ''
                                     }

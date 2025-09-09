@@ -10,8 +10,7 @@ import {
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
-  Activity,
-  Clock
+  Activity
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
@@ -62,6 +61,12 @@ export default function Dashboard() {
     }
   }
 
+  const handleProcedureClick = (procedure: any) => {
+    // Redirecionar para a página de procedimentos com o ID do procedimento
+    window.location.href = `/procedimentos?procedureId=${procedure.id}`
+  }
+
+
   const chartData = [
     { name: 'Jan', value: 12000 },
     { name: 'Fev', value: 15000 },
@@ -74,7 +79,7 @@ export default function Dashboard() {
   const pieData = [
     { name: 'Concluídos', value: stats.completed, color: '#10b981' },
     { name: 'Pendentes', value: stats.pending, color: '#f59e0b' },
-    { name: 'Cancelados', value: stats.cancelled, color: '#ef4444' }
+    { name: 'Não Lançados', value: stats.cancelled, color: '#ef4444' }
   ]
 
   const dashboardStats = [
@@ -226,18 +231,24 @@ export default function Dashboard() {
             ) : (
               <div className="space-y-4">
                 {recentProcedures.map((procedure) => (
-                  <div key={procedure.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div 
+                    key={procedure.id} 
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                    onClick={() => handleProcedureClick(procedure)}
+                  >
                     <div className="flex items-center space-x-4">
-                      <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-                        <FileText className="w-5 h-5 text-primary-600" />
+                      <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
+                        <FileText className="w-5 h-5 text-teal-600" />
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900">{procedure.patient_name}</p>
-                        <p className="text-sm text-gray-600">{procedure.procedure_type}</p>
+                        <p className="font-medium text-gray-900">{procedure.patient_name || 'Nome não informado'}</p>
+                        <p className="text-sm text-gray-600">{procedure.procedure_name || procedure.procedure_type || 'Procedimento não informado'}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-medium text-gray-900">{formatCurrency(procedure.value)}</p>
+                      <p className="font-medium text-gray-900">
+                        {formatCurrency(procedure.procedure_value || 0)}
+                      </p>
                       <p className="text-sm text-gray-600">{formatDate(procedure.procedure_date)}</p>
                     </div>
                   </div>
@@ -278,6 +289,7 @@ export default function Dashboard() {
             </div>
           </div>
         </Card>
+
       </div>
     </Layout>
     </ProtectedRoute>

@@ -42,6 +42,61 @@ html, body {
   pointer-events: none !important;
 }
 
+/* Força título do modal a ser branco */
+.modal-title {
+  color: #ffffff !important;
+  background-color: transparent !important;
+}
+
+/* Força fundo teal no header do modal */
+.modal-header {
+  background: linear-gradient(to right, #14b8a6, #0d9488) !important;
+  color: white !important;
+}
+
+/* Remove scrollbar amarelo e usa cores teal */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #14b8a6;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #0d9488;
+}
+
+/* Para Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #14b8a6 #f1f5f9;
+}
+
+/* Remove aparência de selecionado dos botões do modal */
+.modal-header button {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.modal-header button:focus,
+.modal-header button:active {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .logo-icon:focus,
 .logo-icon:active,
 .logo-icon:hover,

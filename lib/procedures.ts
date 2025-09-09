@@ -57,9 +57,22 @@ export const procedureService = {
   // Criar novo procedimento
   async createProcedure(procedure: ProcedureInsert): Promise<Procedure | null> {
     try {
+      // Verificar se há sessão ativa
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) {
+        console.error('Usuário não autenticado')
+        return null
+      }
+
+      // Garantir que o user_id seja o mesmo da sessão
+      const procedureData = {
+        ...procedure,
+        user_id: session.user.id
+      }
+
       const { data, error } = await supabase
         .from('procedures')
-        .insert(procedure)
+        .insert(procedureData)
         .select()
         .single()
 
