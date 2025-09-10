@@ -572,3 +572,60 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Filter Carousel Styles */
+.scrollbar-hide {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none !important;  /* Chrome, Safari and Opera */
+}
+
+/* Filter chip animations */
+.filter-chip {
+  transition: all 0.2s ease-in-out;
+  transform: scale(1);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.filter-chip:hover {
+  transform: scale(1.05);
+}
+
+.filter-chip:active {
+  transform: scale(0.95);
+}
+
+/* Mobile filter carousel */
+.filter-carousel {
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+}
+
+.filter-carousel button {
+  scroll-snap-align: start;
+  min-width: fit-content;
+}
+
+/* Ensure horizontal scrolling works on mobile */
+@media (max-width: 1024px) {
+  .filter-carousel {
+    overflow-x: scroll !important;
+    overflow-y: hidden !important;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .filter-carousel > * {
+    display: inline-block;
+    vertical-align: top;
+  }
+}

@@ -6,6 +6,7 @@ export interface User {
   email: string
   specialty: string
   crm: string
+  gender?: string
 }
 
 export interface AuthState {
@@ -18,8 +19,6 @@ export const authService = {
   // Login com Supabase Auth
   async login(email: string, password: string): Promise<User | null> {
     try {
-      console.log('Tentando fazer login com:', email)
-      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -37,10 +36,10 @@ export const authService = {
           email: data.user.email || email,
           name: data.user.user_metadata?.name || 'Usuário',
           specialty: data.user.user_metadata?.specialty || 'Anestesiologia',
-          crm: data.user.user_metadata?.crm || '000000'
+          crm: data.user.user_metadata?.crm || '000000',
+          gender: data.user.user_metadata?.gender || null
         }
 
-        console.log('Login bem-sucedido:', userData)
         return userData
       }
 
@@ -121,7 +120,8 @@ export const authService = {
           email: session.user.email || '',
           name: session.user.user_metadata?.name || 'Usuário',
           specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
-          crm: session.user.user_metadata?.crm || '000000'
+          crm: session.user.user_metadata?.crm || '000000',
+          gender: session.user.user_metadata?.gender || null
         }
       }
       return null
@@ -142,6 +142,63 @@ export const authService = {
     }
   },
 
+  // Atualizar dados do usuário
+  async updateUser(userId: string, userData: {
+    name?: string
+    email?: string
+    crm?: string
+    specialty?: string
+    phone?: string
+    gender?: string
+  }): Promise<User | null> {
+    try {
+      console.log('Atualizando usuário:', userId, userData)
+      
+      // Atualizar na tabela users
+      const { data, error } = await supabase
+        .from('users')
+        .update({
+          ...userData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erro ao atualizar usuário:', error.message)
+        return null
+      }
+
+      // Atualizar user_metadata no Supabase Auth
+      const { error: authError } = await supabase.auth.updateUser({
+        data: {
+          name: userData.name,
+          specialty: userData.specialty,
+          crm: userData.crm,
+          gender: userData.gender
+        }
+      })
+
+      if (authError) {
+        console.error('Erro ao atualizar metadata do usuário:', authError.message)
+      }
+
+      console.log('Usuário atualizado com sucesso:', data)
+      return {
+        id: data.id,
+        email: data.email,
+        name: data.name,
+        specialty: data.specialty,
+        crm: data.crm,
+        gender: data.gender
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar usuário:', error)
+      return null
+    }
+  },
+
   // Escutar mudanças de autenticação
   onAuthStateChange(callback: (user: User | null) => void) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -152,7 +209,8 @@ export const authService = {
           email: session.user.email || '',
           name: session.user.user_metadata?.name || 'Usuário',
           specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
-          crm: session.user.user_metadata?.crm || '000000'
+          crm: session.user.user_metadata?.crm || '000000',
+          gender: session.user.user_metadata?.gender || null
         })
       } else {
         callback(null)

@@ -39,7 +39,7 @@ export default function Home() {
     const video = videoRef.current
     if (video) {
       video.play().catch((error) => {
-        console.log('Erro ao reproduzir vídeo:', error)
+        // Erro silencioso ao reproduzir vídeo
       })
     }
   }, [])
@@ -125,7 +125,10 @@ export default function Home() {
                 <Button variant="ghost">Entrar</Button>
               </Link>
               <Link href="/register">
-                <Button>Começar Grátis</Button>
+                <Button size="sm" className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3">
+                  <span className="hidden sm:inline">Começar Grátis</span>
+                  <span className="sm:hidden">Começar</span>
+                </Button>
               </Link>
             </div>
           </div>
@@ -145,13 +148,8 @@ export default function Home() {
           className="absolute inset-0 w-full h-full object-cover"
           style={{ zIndex: 1 }}
           onError={(e) => {
-            console.log('❌ Erro ao carregar vídeo:', e);
             e.currentTarget.style.display = 'none';
           }}
-          onLoadStart={() => console.log('🔄 Vídeo iniciando carregamento...')}
-          onLoadedData={() => console.log('✅ Vídeo carregado com sucesso!')}
-          onCanPlay={() => console.log('✅ Vídeo pode reproduzir!')}
-          onPlay={() => console.log('▶️ Vídeo reproduzindo!')}
         >
           <source src="/videos/hero-background.mp4" type="video/mp4" />
           Seu navegador não suporta vídeos HTML5.
@@ -199,18 +197,21 @@ export default function Home() {
               <span className="font-semibold text-emerald-400"> maximize sua rentabilidade com IA</span>.
             </p>
             
-            {/* CTA Buttons */}
-            <div className="cta-container flex flex-col sm:flex-row gap-6 justify-center mb-16" style={{ backgroundColor: 'transparent' }}>
+            {/* CTA Principal */}
+            <div className="cta-container flex justify-center mb-16" style={{ backgroundColor: 'transparent' }}>
               <Link href="/register">
-                <Button size="lg" className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-10 py-4 text-lg font-semibold shadow-2xl shadow-emerald-500/30 transition-all duration-300 hover:scale-105">
+                <Button size="lg" className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-12 py-5 text-xl font-bold shadow-2xl shadow-emerald-500/30 transition-all duration-300 hover:scale-105 rounded-xl">
                   Começar Gratuitamente
-                  <ArrowRight className="w-5 h-5 ml-2" />
+                  <ArrowRight className="w-6 h-6 ml-3" />
                 </Button>
               </Link>
-              <Link href="/login">
-                <Button variant="outline" size="lg" className="px-10 py-4 text-lg font-semibold rounded-lg border-2 border-emerald-500 text-emerald-500 bg-emerald-500/20 hover:bg-emerald-500 hover:text-white transition-all duration-300 hover:scale-105 shadow-lg shadow-emerald-500/30">
-                  Acessar a Plataforma
-                </Button>
+            </div>
+            
+            {/* Link secundário discreto */}
+            <div className="text-center mb-16">
+              <p className="text-gray-300 text-sm mb-4">Já tem uma conta?</p>
+              <Link href="/login" className="text-emerald-400 hover:text-emerald-300 font-medium underline transition-colors">
+                Fazer login na plataforma
               </Link>
             </div>
 
@@ -355,17 +356,19 @@ export default function Home() {
           <p className="text-xl md:text-2xl text-slate-300 mb-12 max-w-3xl mx-auto leading-relaxed">
             Junte-se a mais de 1.200 anestesiologistas que já transformaram sua gestão com o AnestEasy
           </p>
-          <div className="flex flex-col sm:flex-row gap-6 justify-center mb-12">
+          <div className="flex justify-center mb-12">
             <Link href="/register">
-              <Button size="lg" className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xl px-10 py-4 text-lg font-semibold">
+              <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xl px-12 py-5 text-xl font-bold rounded-xl">
                 Começar Gratuitamente
-                <ArrowRight className="w-5 h-5 ml-2" />
+                <ArrowRight className="w-6 h-6 ml-3" />
               </Button>
             </Link>
-            <Link href="/login">
-              <Button variant="outline" size="lg" className="w-full sm:w-auto border-2 border-slate-300 text-slate-300 hover:bg-slate-800 px-10 py-4 text-lg font-semibold">
-                Acessar Plataforma
-              </Button>
+          </div>
+          
+          {/* Link secundário discreto */}
+          <div className="text-center mb-12">
+            <Link href="/login" className="text-slate-300 hover:text-white font-medium underline transition-colors">
+              Já tem uma conta? Fazer login
             </Link>
           </div>
           <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-12 text-slate-300">

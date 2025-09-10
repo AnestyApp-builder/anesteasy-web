@@ -61,11 +61,8 @@ export function Navigation() {
           {/* User Menu */}
           {isAuthenticated ? (
             <div className="hidden md:flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                  <User className="w-4 h-4 text-primary-600" />
-                </div>
-                <span className="text-sm font-medium text-gray-700">{user?.name}</span>
+              <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                <User className="w-4 h-4 text-primary-600" />
               </div>
               <Button variant="ghost" size="sm" onClick={logout}>
                 <LogOut className="w-4 h-4" />
@@ -119,7 +116,7 @@ export function Navigation() {
                 <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                   <User className="w-4 h-4 text-primary-600" />
                 </div>
-                <span className="text-sm font-medium text-gray-700">{user?.name || 'Dr. Usuário'}</span>
+                <span className="text-sm font-medium text-gray-700">Perfil</span>
               </div>
               <Button 
                 variant="ghost" 

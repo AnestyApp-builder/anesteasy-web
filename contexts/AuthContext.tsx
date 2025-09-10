@@ -11,6 +11,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<boolean>
   register: (email: string, password: string, userData: { name: string; specialty: string; crm: string }) => Promise<boolean>
   logout: () => Promise<void>
+  updateUser: (userData: { name?: string; email?: string; crm?: string; specialty?: string; phone?: string; gender?: string }) => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -104,13 +105,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const updateUser = async (userData: { name?: string; email?: string; crm?: string; specialty?: string; phone?: string; gender?: string }): Promise<boolean> => {
+    if (!user) return false
+    
+    setIsLoading(true)
+    try {
+      const updatedUser = await authService.updateUser(user.id, userData)
+      if (updatedUser) {
+        setUser(updatedUser)
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Erro ao atualizar usuário:', error)
+      return false
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const value = {
     user,
     isAuthenticated: !!user,
     isLoading,
     login,
     register,
-    logout
+    logout,
+    updateUser
   }
 
   return (

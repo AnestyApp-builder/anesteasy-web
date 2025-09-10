@@ -36,6 +36,8 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { procedureService } from '@/lib/procedures'
 import { useAuth } from '@/contexts/AuthContext'
+import { formatCurrency } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
 import Tesseract from 'tesseract.js'
 
 interface FormData {
@@ -59,7 +61,16 @@ interface FormData {
   // 3. Dados Administrativos
   valor: string
   formaPagamento: string
+  numero_parcelas: string
+  parcelas_recebidas: string
+  parcelas: Array<{
+    numero: number
+    valor: number
+    recebida: boolean
+    data_recebimento: string
+  }>
   statusPagamento: string
+  dataPagamento: string
   observacoes: string
   
   // 4. Upload de Fichas
@@ -169,26 +180,27 @@ const TIPOS_ANESTESIA = [
   'Peridural'
 ]
 
-const FORMAS_PAGAMENTO = [
-  'Convênio',
-  'Particular',
-  'Hospital',
-  'Outro'
+const FORMAS_PAGAMENTO_PENDENTE = [
+  'Aguardando',
+  'Parcelado'
+]
+
+const FORMAS_PAGAMENTO_PAGO = [
+  'À vista',
+  'Parcelado'
 ]
 
 const STATUS_PAGAMENTO = [
   'Pendente',
   'Pago',
-  'Faturado',
-  'Recebido'
+  'Aguardando'
 ]
 
 // Mapeamento dos valores em português para os valores do banco de dados
 const STATUS_PAGAMENTO_MAP: Record<string, string> = {
   'Pendente': 'pending',
   'Pago': 'paid',
-  'Faturado': 'paid', // Faturado é considerado como pago
-  'Recebido': 'paid'  // Recebido é considerado como pago
+  'Aguardando': 'cancelled'
 }
 
 const ESPECIALIDADES = [
@@ -221,8 +233,12 @@ export default function NovoProcedimento() {
     tipoAnestesia: [],
     duracao: '',
     valor: '',
-    formaPagamento: '',
+    formaPagamento: 'Aguardando',
+    numero_parcelas: '',
+    parcelas_recebidas: '0',
+    parcelas: [],
     statusPagamento: 'Pendente',
+    dataPagamento: '',
     observacoes: '',
     fichas: [],
     etiquetaOCR: ''
@@ -236,11 +252,43 @@ export default function NovoProcedimento() {
 
   // Função otimizada para atualizar formData
   const updateFormData = React.useCallback((field: keyof FormData, value: any) => {
+    setFormData(prev => {
+      const newData = {
+        ...prev,
+        [field]: value
+      }
+      
+      // Gerar parcelas automaticamente quando número de parcelas ou valor mudar
+      if (field === 'numero_parcelas' || field === 'valor') {
+        const numParcelas = field === 'numero_parcelas' ? parseInt(value) || 0 : parseInt(prev.numero_parcelas) || 0
+        const valorTotal = field === 'valor' ? parseFloat(value.replace(/[^\d,]/g, '').replace(',', '.')) || 0 : parseFloat(prev.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0
+        
+        if (numParcelas > 0 && valorTotal > 0) {
+          const valorParcela = valorTotal / numParcelas
+          newData.parcelas = Array.from({ length: numParcelas }, (_, index) => ({
+            numero: index + 1,
+            valor: valorParcela,
+            recebida: false,
+            data_recebimento: ''
+          }))
+        } else {
+          newData.parcelas = []
+        }
+      }
+      
+      return newData
+    })
+  }, [])
+
+  // Função para atualizar parcelas individuais
+  const updateParcela = (index: number, field: 'recebida' | 'data_recebimento', value: any) => {
     setFormData(prev => ({
       ...prev,
-      [field]: value
+      parcelas: prev.parcelas.map((parcela, i) => 
+        i === index ? { ...parcela, [field]: value } : parcela
+      )
     }))
-  }, [])
+  }
 
   // Funções auxiliares para feedback
   const showFeedback = (type: 'error' | 'success' | 'info', message: string) => {
@@ -258,6 +306,14 @@ export default function NovoProcedimento() {
     setError('')
     setSuccess('')
     setFeedbackType(null)
+  }
+
+  // Função para formatar valor monetário para exibição
+  const formatValueForDisplay = (value: string) => {
+    if (!value) return ''
+    const numericValue = parseFloat(value.replace(/[^\d,]/g, '').replace(',', '.'))
+    if (isNaN(numericValue)) return value
+    return formatCurrency(numericValue)
   }
   const [previewFiles, setPreviewFiles] = useState<string[]>([])
   const [ocrLoading, setOcrLoading] = useState(false)
@@ -586,12 +642,19 @@ export default function NovoProcedimento() {
       return
     }
 
+    // Só salvar o procedimento se estivermos na etapa final (Upload)
+    if (currentSection !== 4) {
+      showFeedback('error', '⚠️ Complete todas as etapas antes de finalizar.')
+      return
+    }
+
     // Validações básicas com mensagens específicas
     if (!formData.nomePaciente || !formData.dataNascimento || !formData.dataCirurgia || 
         !formData.horaInicio || !formData.horaTermino || !formData.tipoAnestesia.length) {
       showFeedback('error', '⚠️ Campos obrigatórios não preenchidos. Verifique se todos os campos marcados com * estão preenchidos.')
       return
     }
+
 
     if (!validateBirthDate(formData.dataNascimento)) {
       showFeedback('error', '⚠️ Data de nascimento inválida: A data não pode ser futura.')
@@ -608,27 +671,110 @@ export default function NovoProcedimento() {
     
     try {
       const procedureData = {
+        // Campos obrigatórios
         procedure_name: formData.tipoProcedimento,
         procedure_type: formData.tipoAnestesia.join(', '),
+        procedure_date: formData.dataCirurgia,
+        procedure_value: parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
+        
+        // Campos do paciente
         patient_name: formData.nomePaciente,
         patient_age: parseInt(calculateAge(formData.dataNascimento)),
-        patient_gender: null, // Seria adicionado em uma versão futura
-        procedure_date: formData.dataCirurgia,
-        procedure_time: formData.horaInicio,
-        duration_minutes: parseInt(formData.duracao) || 0,
+        data_nascimento: formData.dataNascimento,
+        convenio: formData.convenio,
+        carteirinha: formData.carteirinha,
+        
+        // Campos do procedimento
+        data_cirurgia: formData.dataCirurgia,
+        hora_inicio: formData.horaInicio,
+        hora_termino: formData.horaTermino,
+        tipo_anestesia: formData.tipoAnestesia.join(', '),
+        duracao_minutos: parseInt(formData.duracao) || 0,
+        
+        // Campos da equipe
         anesthesiologist_name: user.name,
-        surgeon_name: formData.nomeCirurgiao,
+        nome_cirurgiao: formData.nomeCirurgiao,
+        especialidade_cirurgiao: formData.especialidadeCirurgiao,
         hospital_clinic: formData.hospital,
-        room_number: null,
-        procedure_value: parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
+        
+        // Campos financeiros
         payment_status: STATUS_PAGAMENTO_MAP[formData.statusPagamento] || 'pending',
-        payment_date: null,
-        payment_method: formData.formaPagamento,
-        notes: formData.observacoes
+        payment_date: formData.statusPagamento === 'Pago' && formData.dataPagamento ? formData.dataPagamento : null,
+        forma_pagamento: formData.formaPagamento,
+        numero_parcelas: formData.numero_parcelas ? parseInt(formData.numero_parcelas) : null,
+        parcelas_recebidas: formData.parcelas ? formData.parcelas.filter(p => p.recebida).length : 0,
+        observacoes_financeiras: formData.observacoes
       }
 
+      console.log('Dados do procedimento para salvar:', procedureData)
       const result = await procedureService.createProcedure(procedureData)
+      console.log('Resultado do salvamento:', result)
       if (result) {
+        // Salvar parcelas individuais se existirem
+        if (formData.parcelas && formData.parcelas.length > 0) {
+          console.log('Salvando parcelas:', formData.parcelas)
+          const parcelasData = formData.parcelas.map(parcela => ({
+            procedure_id: result.id,
+            numero_parcela: parcela.numero,
+            valor_parcela: parcela.valor,
+            recebida: parcela.recebida,
+            data_recebimento: parcela.data_recebimento || null
+          }))
+          console.log('Dados das parcelas para salvar:', parcelasData)
+          
+          // Salvar parcelas no banco de dados
+          const parcelasResult = await procedureService.createParcelas(parcelasData)
+          console.log('Resultado do salvamento das parcelas:', parcelasResult)
+        } else {
+          console.log('Nenhuma parcela para salvar')
+        }
+
+        // Salvar anexos se existirem
+        if (formData.fichas && formData.fichas.length > 0) {
+          console.log('Salvando anexos:', formData.fichas)
+          
+          // Para cada arquivo, fazer upload para o Supabase Storage
+          for (const file of formData.fichas) {
+            try {
+              // Gerar nome único para o arquivo
+              const fileExt = file.name.split('.').pop()
+              const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+              const filePath = `${user.id}/${result.id}/${fileName}`
+              
+              // Fazer upload do arquivo para o Supabase Storage
+              const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('procedure-attachments')
+                .upload(filePath, file)
+              
+              if (uploadError) {
+                console.error('Erro ao fazer upload do arquivo:', uploadError)
+                continue
+              }
+              
+              // Obter URL pública do arquivo
+              const { data: urlData } = supabase.storage
+                .from('procedure-attachments')
+                .getPublicUrl(filePath)
+              
+              // Criar registro no banco de dados
+              const attachmentData = {
+                procedure_id: result.id,
+                file_name: file.name,
+                file_size: file.size,
+                file_type: file.type,
+                file_url: urlData.publicUrl
+              }
+              
+              const attachmentResult = await procedureService.createAttachment(attachmentData)
+              console.log('Resultado do salvamento do anexo:', attachmentResult)
+            } catch (error) {
+              console.error('Erro ao processar anexo:', error)
+            }
+          }
+        } else {
+          console.log('Nenhum anexo para salvar')
+        }
+        
         showFeedback('success', `✅ Procedimento criado com sucesso! 
         
 📋 Detalhes:
@@ -636,6 +782,7 @@ export default function NovoProcedimento() {
 • Procedimento: ${formData.tipoProcedimento}
 • Data: ${formData.dataCirurgia}
 • Valor: R$ ${formData.valor}
+• Parcelas: ${formData.parcelas && formData.parcelas.length > 0 ? `${formData.parcelas.filter(p => p.recebida).length}/${formData.parcelas.length} recebidas` : 'Não parcelado'}
 
 Redirecionando para a lista de procedimentos...`)
         
@@ -763,7 +910,7 @@ Redirecionando para a lista de procedimentos...`)
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit}>
+        <form>
           {feedbackType && (
             <div className={`flex items-start space-x-3 p-4 rounded-lg mb-6 ${
               feedbackType === 'error' ? 'bg-red-50 border border-red-200' :
@@ -810,6 +957,14 @@ Redirecionando para a lista de procedimentos...`)
                     value={formData.dataNascimento}
                     onChange={(e) => updateFormData('dataNascimento', e.target.value)}
                 required
+              />
+              <Input
+                    label="Idade"
+                    type="text"
+                    icon={<User className="w-5 h-5" />}
+                    value={formData.dataNascimento ? `${calculateAge(formData.dataNascimento)} anos` : ''}
+                    disabled
+                    placeholder="Calculada automaticamente"
               />
             </div>
 
@@ -1065,37 +1220,13 @@ Redirecionando para a lista de procedimentos...`)
                 </CardTitle>
               </CardHeader>
               <div className="p-6 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Input
-                    label="Valor do Procedimento Anestésico"
-                    placeholder="R$ 0,00"
-                    icon={<DollarSign className="w-5 h-5" />}
-                    value={formData.valor}
-                    onChange={(e) => updateFormData('valor', e.target.value)}
-                  />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Forma de Pagamento
-                    </label>
-                    <select
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                      value={formData.formaPagamento}
-                      onChange={(e) => updateFormData('formaPagamento', e.target.value)}
-                    >
-                      <option value="">Selecione a forma de pagamento</option>
-                      {FORMAS_PAGAMENTO.map(forma => (
-                        <option key={forma} value={forma}>{forma}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
+                {/* Status do Pagamento - Primeiro item */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Status do Pagamento
                   </label>
                   <select
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                     value={formData.statusPagamento}
                     onChange={(e) => updateFormData('statusPagamento', e.target.value)}
                   >
@@ -1103,7 +1234,224 @@ Redirecionando para a lista de procedimentos...`)
                       <option key={status} value={status}>{status}</option>
                     ))}
                   </select>
-            </div>
+                </div>
+
+                {/* Campos condicionais baseados no status */}
+                {formData.statusPagamento === 'Pendente' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Input
+                        label="Valor do Procedimento Anestésico"
+                        placeholder="0,00"
+                        icon={<span className="text-gray-500 font-medium">R$</span>}
+                        value={formData.valor}
+                        onChange={(e) => updateFormData('valor', e.target.value)}
+                      />
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Forma de Pagamento
+                        </label>
+                        <select
+                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                          value={formData.formaPagamento}
+                          onChange={(e) => updateFormData('formaPagamento', e.target.value)}
+                        >
+                          <option value="">Selecione a forma de pagamento</option>
+                          {FORMAS_PAGAMENTO_PENDENTE.map(forma => (
+                            <option key={forma} value={forma}>{forma}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    
+                    {/* Campo condicional para número de parcelas */}
+                    {formData.formaPagamento === 'Parcelado' && (
+                      <div className="space-y-4">
+                        <div className="max-w-xs">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Total de Parcelas
+                          </label>
+                          <input
+                            type="number"
+                            min="2"
+                            max="24"
+                            placeholder="Ex: 3"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            value={formData.numero_parcelas}
+                            onChange={(e) => updateFormData('numero_parcelas', e.target.value)}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Informe em quantas vezes será dividido o pagamento
+                          </p>
+                        </div>
+                        
+                        {/* Parcelas individuais */}
+                        {formData.parcelas.length > 0 && (
+                          <div className="space-y-3">
+                            <h4 className="text-sm font-medium text-gray-700">Controle de Parcelas</h4>
+                            {formData.parcelas.map((parcela, index) => (
+                              <div key={index} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-sm font-medium text-gray-700">
+                                    Parcela {parcela.numero}
+                                  </span>
+                                  <span className="text-sm font-bold text-teal-600">
+                                    R$ {parcela.valor.toFixed(2).replace('.', ',')}
+                                  </span>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <label className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={parcela.recebida}
+                                      onChange={(e) => updateParcela(index, 'recebida', e.target.checked)}
+                                      className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                                    />
+                                    <span className="text-sm text-gray-600">Recebida</span>
+                                  </label>
+                                  
+                                  {parcela.recebida && (
+                                    <div className="ml-6">
+                                      <label className="block text-xs text-gray-500 mb-1">
+                                        Data de recebimento
+                                      </label>
+                                      <input
+                                        type="date"
+                                        value={parcela.data_recebimento}
+                                        onChange={(e) => updateParcela(index, 'data_recebimento', e.target.value)}
+                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {formData.statusPagamento === 'Pago' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Input
+                        label="Valor do Procedimento Anestésico"
+                        placeholder="0,00"
+                        icon={<span className="text-gray-500 font-medium">R$</span>}
+                        value={formData.valor}
+                        onChange={(e) => updateFormData('valor', e.target.value)}
+                      />
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Data do Pagamento
+                        </label>
+                        <input
+                          type="date"
+                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                          value={formData.dataPagamento}
+                          onChange={(e) => updateFormData('dataPagamento', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Forma de Pagamento
+                        </label>
+                        <select
+                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                          value={formData.formaPagamento}
+                          onChange={(e) => updateFormData('formaPagamento', e.target.value)}
+                        >
+                          <option value="">Selecione a forma de pagamento</option>
+                          {FORMAS_PAGAMENTO_PAGO.map(forma => (
+                            <option key={forma} value={forma}>{forma}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      {/* Campos condicionais para parcelas */}
+                      {formData.formaPagamento === 'Parcelado' && (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Total de Parcelas
+                            </label>
+                            <input
+                              type="number"
+                              min="2"
+                              max="24"
+                              placeholder="Ex: 3"
+                              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                              value={formData.numero_parcelas}
+                              onChange={(e) => updateFormData('numero_parcelas', e.target.value)}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Informe em quantas vezes foi dividido o pagamento
+                            </p>
+                          </div>
+                          
+                          {/* Parcelas individuais */}
+                          {formData.parcelas.length > 0 && (
+                            <div className="space-y-3">
+                              <h4 className="text-sm font-medium text-gray-700">Controle de Parcelas</h4>
+                              {formData.parcelas.map((parcela, index) => (
+                                <div key={index} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm font-medium text-gray-700">
+                                      Parcela {parcela.numero}
+                                    </span>
+                                    <span className="text-sm font-bold text-teal-600">
+                                      R$ {parcela.valor.toFixed(2).replace('.', ',')}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="space-y-2">
+                                    <label className="flex items-center space-x-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={parcela.recebida}
+                                        onChange={(e) => updateParcela(index, 'recebida', e.target.checked)}
+                                        className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                                      />
+                                      <span className="text-sm text-gray-600">Recebida</span>
+                                    </label>
+                                    
+                                    {parcela.recebida && (
+                                      <div className="ml-6">
+                                        <label className="block text-xs text-gray-500 mb-1">
+                                          Data de recebimento
+                                        </label>
+                                        <input
+                                          type="date"
+                                          value={parcela.data_recebimento}
+                                          onChange={(e) => updateParcela(index, 'data_recebimento', e.target.value)}
+                                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {formData.statusPagamento === 'Aguardando' && (
+                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="text-sm text-gray-600">
+                      Quando o valor for definido, você poderá atualizar o status do pagamento.
+                    </p>
+                  </div>
+                )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1639,7 +1987,8 @@ Redirecionando para a lista de procedimentos...`)
                 </Button>
               ) : (
                 <Button 
-                  type="submit" 
+                  type="button" 
+                  onClick={handleSubmit}
                   disabled={loading}
                   className="w-full py-4 text-lg font-medium bg-green-600 hover:bg-green-700"
                 >
@@ -1682,7 +2031,7 @@ Redirecionando para a lista de procedimentos...`)
                   <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
                 </Button>
               ) : (
-                <Button type="submit" disabled={loading}>
+                <Button type="button" onClick={handleSubmit} disabled={loading}>
                   <Save className="w-4 h-4 mr-2" />
                   {loading ? 'Salvando...' : 'Finalizar e Salvar'}
                 </Button>
