@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { 
   Plus, 
@@ -20,7 +20,7 @@ import {
   Check
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { procedureService, Procedure } from '@/lib/procedures'
@@ -52,11 +52,21 @@ export default function Procedimentos() {
     }
   }, [user])
 
-  // Detectar procedureId na URL e abrir modal automaticamente
+  // Detectar parâmetros na URL e configurar filtros/modal automaticamente
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search)
       const procedureId = urlParams.get('procedureId')
+      const statusParam = urlParams.get('status')
+      
+      // Configurar filtro de status se presente na URL
+      if (statusParam) {
+        if (statusParam === 'pending,not_launched') {
+          setStatusFilter('pending,not_launched')
+        } else {
+          setStatusFilter(statusParam)
+        }
+      }
       
       if (procedureId && procedures.length > 0) {
         const procedure = procedures.find(p => p.id === procedureId)
@@ -69,7 +79,7 @@ export default function Procedimentos() {
         }
       }
     }
-  }, [procedures])
+  }, [procedures.length]) // Mudança: usar procedures.length em vez de procedures
 
   useEffect(() => {
     let filtered = procedures
@@ -86,11 +96,18 @@ export default function Procedimentos() {
 
     // Filtro por status
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(procedure => procedure.payment_status === statusFilter)
+      if (statusFilter === 'pending,not_launched') {
+        // Filtrar por pendente e não lançado
+        filtered = filtered.filter(procedure => 
+          procedure.payment_status === 'pending' || procedure.payment_status === 'cancelled'
+        )
+    } else {
+        filtered = filtered.filter(procedure => procedure.payment_status === statusFilter)
+      }
     }
 
     setFilteredProcedures(filtered)
-  }, [searchTerm, procedures, statusFilter])
+  }, [searchTerm, statusFilter, procedures])
 
   const loadProcedures = async () => {
     if (!user?.id) return
@@ -105,6 +122,7 @@ export default function Procedimentos() {
       setLoading(false)
     }
   }
+
 
   const handleDeleteClick = (procedure: Procedure) => {
     setProcedureToDelete(procedure)
@@ -169,12 +187,12 @@ export default function Procedimentos() {
     setEditedData({})
   }
 
-  const updateField = (field: string, value: any) => {
-    setEditedData({
-      ...editedData,
+  const updateField = React.useCallback((field: string, value: any) => {
+    setEditedData(prev => ({
+      ...prev,
       [field]: value
-    })
-  }
+    }))
+  }, [])
 
   const saveEdit = async () => {
     if (!selectedProcedure) return
@@ -223,6 +241,54 @@ export default function Procedimentos() {
     { value: 'refunded', label: 'Reembolsado' }
   ]
 
+  // Componente separado para campos editáveis com input não controlado
+  const EditableInput = React.memo(({ field, label, value, type = 'text', options = null }: {
+    field: string
+    label: string
+    value: string
+    type?: 'text' | 'select' | 'date' | 'time' | 'number'
+    options?: { value: string; label: string }[] | null
+  }) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      const newValue = e.target.value
+      // Atualizar estado global de forma assíncrona para evitar conflitos
+      requestAnimationFrame(() => {
+        updateField(field, newValue)
+      })
+    }
+
+    if (type === 'select' && options) {
+      return (
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-gray-600">{label}</label>
+          <select
+            defaultValue={value}
+            onChange={handleChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+          >
+            {options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-1">
+        <label className="text-sm font-medium text-gray-600">{label}</label>
+        <input
+          type={type}
+          defaultValue={value}
+          onChange={handleChange}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+        />
+      </div>
+    )
+  })
+
   const EditableField = ({ field, label, value, type = 'text', options = null }: {
     field: string
     label: string
@@ -234,29 +300,13 @@ export default function Procedimentos() {
 
     if (isEditingMode) {
       return (
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-gray-600">{label}</label>
-          {type === 'select' && options ? (
-            <select
-              value={currentValue}
-              onChange={(e) => updateField(field, e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-            >
-              {options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type={type}
-              value={currentValue}
-              onChange={(e) => updateField(field, e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-            />
-          )}
-        </div>
+        <EditableInput
+          field={field}
+          label={label}
+          value={currentValue}
+          type={type}
+          options={options}
+        />
       )
     }
 
@@ -361,6 +411,7 @@ export default function Procedimentos() {
                       <option value="pending">Pendente</option>
                       <option value="paid">Pago</option>
                       <option value="cancelled">Não Lançado</option>
+                      <option value="pending,not_launched">Pendente + Não Lançado</option>
                     </select>
                   </div>
                   <div className="flex items-end">
@@ -381,6 +432,7 @@ export default function Procedimentos() {
           </div>
         </Card>
 
+
         {/* Procedures List */}
         <Card>
           <CardHeader>
@@ -389,15 +441,17 @@ export default function Procedimentos() {
           <div className="p-6">
             {loading ? (
               <Loading text="Carregando procedimentos..." />
-            ) : filteredProcedures.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">Nenhum procedimento encontrado</p>
-                <p className="text-sm text-gray-500 mt-1">
-                  {searchTerm ? 'Tente ajustar os filtros de busca' : 'Comece criando seu primeiro procedimento'}
-                </p>
-              </div>
             ) : (
+              <>
+                {filteredProcedures.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600">Nenhum procedimento encontrado</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {searchTerm ? 'Tente ajustar os filtros de busca' : 'Comece criando seu primeiro procedimento'}
+                    </p>
+                  </div>
+                ) : (
               <div className="space-y-4">
                 {filteredProcedures.map((procedure) => (
                   <div 
@@ -448,6 +502,8 @@ export default function Procedimentos() {
                   </div>
                 ))}
               </div>
+                )}
+              </>
             )}
           </div>
         </Card>

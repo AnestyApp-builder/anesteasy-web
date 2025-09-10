@@ -65,3 +65,43 @@ export const CardTitle = React.forwardRef<HTMLHeadingElement, CardTitleProps>(
 )
 
 CardTitle.displayName = 'CardTitle'
+
+interface CardContentProps extends React.HTMLAttributes<HTMLDivElement> {
+  children: React.ReactNode
+}
+
+export const CardContent = React.forwardRef<HTMLDivElement, CardContentProps>(
+  ({ className, children, ...props }, ref) => {
+    return (
+      <div
+        ref={ref}
+        className={cn('', className)}
+        {...props}
+      >
+        {children}
+      </div>
+    )
+  }
+)
+
+CardContent.displayName = 'CardContent'
+
+interface CardDescriptionProps extends React.HTMLAttributes<HTMLParagraphElement> {
+  children: React.ReactNode
+}
+
+export const CardDescription = React.forwardRef<HTMLParagraphElement, CardDescriptionProps>(
+  ({ className, children, ...props }, ref) => {
+    return (
+      <p
+        ref={ref}
+        className={cn('text-sm text-gray-600', className)}
+        {...props}
+      >
+        {children}
+      </p>
+    )
+  }
+)
+
+CardDescription.displayName = 'CardDescription'

@@ -113,6 +113,7 @@ export const authService = {
     try {
       // Verificar se há sessão ativa no Supabase
       const { data: { session } } = await supabase.auth.getSession()
+      
       if (session?.user) {
         // Usar apenas dados da sessão do Supabase Auth
         return {

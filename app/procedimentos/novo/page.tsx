@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   Save, 
@@ -21,7 +21,10 @@ import {
   Stethoscope,
   UserCheck,
   MapPin,
-  FileImage
+  FileImage,
+  Search,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import Link from 'next/link'
 import { Layout } from '@/components/layout/Layout'
@@ -66,6 +69,96 @@ interface FormData {
   etiquetaOCR: string
 }
 
+// Lista expandida de anestesias com códigos TSSU
+const TIPOS_ANESTESIA_COMPLETOS = [
+  // Anestesia Geral
+  { nome: 'Anestesia Geral - Intubação Orotraqueal', codigo: '31001001', categoria: 'Anestesia Geral' },
+  { nome: 'Anestesia Geral - Máscara Laríngea', codigo: '31001002', categoria: 'Anestesia Geral' },
+  { nome: 'Anestesia Geral - Via Aérea Natural', codigo: '31001003', categoria: 'Anestesia Geral' },
+  { nome: 'Anestesia Geral - TIVA (Total Intravenous Anesthesia)', codigo: '31001004', categoria: 'Anestesia Geral' },
+  { nome: 'Anestesia Geral - Balanceada', codigo: '31001005', categoria: 'Anestesia Geral' },
+  
+  // Anestesia Regional
+  { nome: 'Raquianestesia', codigo: '31002001', categoria: 'Anestesia Regional' },
+  { nome: 'Peridural', codigo: '31002002', categoria: 'Anestesia Regional' },
+  { nome: 'Raqui-Peridural Combinada', codigo: '31002003', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Plexo Braquial', codigo: '31002004', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Plexo Lombossacral', codigo: '31002005', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Femoral', codigo: '31002006', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Ciático', codigo: '31002007', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Isquiático', codigo: '31002008', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Tibial', codigo: '31002009', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Fibular', codigo: '31002010', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Mediano', codigo: '31002011', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Ulnar', codigo: '31002012', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Radial', codigo: '31002013', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio Intercostal', codigo: '31002014', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Occipital', codigo: '31002015', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Trigêmeo', codigo: '31002016', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Facial', codigo: '31002017', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Vago', codigo: '31002018', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Frênico', codigo: '31002019', categoria: 'Anestesia Regional' },
+  { nome: 'Bloqueio do Nervo Pudendo', codigo: '31002020', categoria: 'Anestesia Regional' },
+  
+  // Anestesia Local
+  { nome: 'Anestesia Local Infiltrativa', codigo: '31003001', categoria: 'Anestesia Local' },
+  { nome: 'Anestesia Local por Bloqueio de Campo', codigo: '31003002', categoria: 'Anestesia Local' },
+  { nome: 'Anestesia Local por Bloqueio de Nervo', codigo: '31003003', categoria: 'Anestesia Local' },
+  { nome: 'Anestesia Local Tópica', codigo: '31003004', categoria: 'Anestesia Local' },
+  { nome: 'Anestesia Local por Bloqueio de Plexo', codigo: '31003005', categoria: 'Anestesia Local' },
+  
+  // Sedação
+  { nome: 'Sedação Consciente', codigo: '31004001', categoria: 'Sedação' },
+  { nome: 'Sedação Profunda', codigo: '31004002', categoria: 'Sedação' },
+  { nome: 'Sedação com Propofol', codigo: '31004003', categoria: 'Sedação' },
+  { nome: 'Sedação com Midazolam', codigo: '31004004', categoria: 'Sedação' },
+  { nome: 'Sedação com Dexmedetomidina', codigo: '31004005', categoria: 'Sedação' },
+  { nome: 'Sedação com Ketamina', codigo: '31004006', categoria: 'Sedação' },
+  { nome: 'Sedação com Óxido Nitroso', codigo: '31004007', categoria: 'Sedação' },
+  
+  // Analgesia de Parto
+  { nome: 'Analgesia de Parto - Peridural', codigo: '31005001', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - Raquianestesia', codigo: '31005002', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - Raqui-Peridural', codigo: '31005003', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - PCA (Patient Controlled Analgesia)', codigo: '31005004', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - Remifentanil', codigo: '31005005', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - Sufentanil', codigo: '31005006', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - Fentanil', codigo: '31005007', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - Bupivacaína', codigo: '31005008', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - Ropivacaína', codigo: '31005009', categoria: 'Analgesia de Parto' },
+  { nome: 'Analgesia de Parto - Levobupivacaína', codigo: '31005010', categoria: 'Analgesia de Parto' },
+  
+  // Bloqueios Periféricos Específicos
+  { nome: 'Bloqueio do Nervo Supraescapular', codigo: '31006001', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Axilar', codigo: '31006002', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Musculocutâneo', codigo: '31006003', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Mediano no Punho', codigo: '31006004', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Ulnar no Punho', codigo: '31006005', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Radial no Punho', codigo: '31006006', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Digital', codigo: '31006007', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Plantar', codigo: '31006008', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Sural', codigo: '31006009', categoria: 'Bloqueios Periféricos' },
+  { nome: 'Bloqueio do Nervo Safeno', codigo: '31006010', categoria: 'Bloqueios Periféricos' },
+  
+  // Anestesia para Procedimentos Específicos
+  { nome: 'Anestesia para Endoscopia Digestiva', codigo: '31007001', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Colonoscopia', codigo: '31007002', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Broncoscopia', codigo: '31007003', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cateterismo Cardíaco', codigo: '31007004', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Angioplastia', codigo: '31007005', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia Robótica', codigo: '31007006', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia Laparoscópica', codigo: '31007007', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia Torácica', codigo: '31007008', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia Cardíaca', codigo: '31007009', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia Neurológica', codigo: '31007010', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia Pediátrica', codigo: '31007011', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia Obstétrica', codigo: '31007012', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia de Emergência', codigo: '31007013', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia Ambulatorial', codigo: '31007014', categoria: 'Procedimentos Específicos' },
+  { nome: 'Anestesia para Cirurgia de Trauma', codigo: '31007015', categoria: 'Procedimentos Específicos' }
+]
+
+// Lista simplificada para compatibilidade
 const TIPOS_ANESTESIA = [
   'Anestesia Geral',
   'Anestesia Regional',
@@ -141,6 +234,14 @@ export default function NovoProcedimento() {
   const [feedbackType, setFeedbackType] = useState<'error' | 'success' | 'info' | null>(null)
   const [currentSection, setCurrentSection] = useState(0) // Começar com OCR (seção 0)
 
+  // Função otimizada para atualizar formData
+  const updateFormData = React.useCallback((field: keyof FormData, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }, [])
+
   // Funções auxiliares para feedback
   const showFeedback = (type: 'error' | 'success' | 'info', message: string) => {
     setFeedbackType(type)
@@ -166,6 +267,16 @@ export default function NovoProcedimento() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
   const router = useRouter()
+
+  // Estados para o campo de anestesia com busca
+  const [anestesiaSelecionada, setAnestesiaSelecionada] = useState<{
+    nome: string
+    codigo: string
+    categoria: string
+  } | null>(null)
+  const [buscaAnestesia, setBuscaAnestesia] = useState('')
+  const [mostrarListaAnestesia, setMostrarListaAnestesia] = useState(false)
+  const [anestesiasFiltradas, setAnestesiasFiltradas] = useState(TIPOS_ANESTESIA_COMPLETOS)
 
   // Calcular duração automaticamente
   useEffect(() => {
@@ -259,6 +370,63 @@ export default function NovoProcedimento() {
         ? prev.tipoAnestesia.filter(t => t !== tipo)
         : [...prev.tipoAnestesia, tipo]
     }))
+  }
+
+  // Filtrar anestesias por busca
+  useEffect(() => {
+    if (buscaAnestesia.trim() === '') {
+      setAnestesiasFiltradas(TIPOS_ANESTESIA_COMPLETOS)
+    } else {
+      const filtradas = TIPOS_ANESTESIA_COMPLETOS.filter(anestesia =>
+        anestesia.nome.toLowerCase().includes(buscaAnestesia.toLowerCase()) ||
+        anestesia.codigo.includes(buscaAnestesia) ||
+        anestesia.categoria.toLowerCase().includes(buscaAnestesia.toLowerCase())
+      )
+      setAnestesiasFiltradas(filtradas)
+    }
+  }, [buscaAnestesia])
+
+  // Fechar lista quando clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest('.anestesia-dropdown')) {
+        setMostrarListaAnestesia(false)
+      }
+    }
+
+    if (mostrarListaAnestesia) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [mostrarListaAnestesia])
+
+  // Selecionar anestesia
+  const selecionarAnestesia = (anestesia: { nome: string; codigo: string; categoria: string }) => {
+    setAnestesiaSelecionada(anestesia)
+    setBuscaAnestesia(anestesia.nome)
+    setMostrarListaAnestesia(false)
+    
+    // Adicionar ao formData se não estiver já selecionada
+    if (!formData.tipoAnestesia.includes(anestesia.nome)) {
+      setFormData(prev => ({
+        ...prev,
+        tipoAnestesia: [...prev.tipoAnestesia, anestesia.nome]
+      }))
+    }
+  }
+
+  // Remover anestesia selecionada
+  const removerAnestesia = () => {
+    if (anestesiaSelecionada) {
+      setFormData(prev => ({
+        ...prev,
+        tipoAnestesia: prev.tipoAnestesia.filter(t => t !== anestesiaSelecionada.nome)
+      }))
+    }
+    setAnestesiaSelecionada(null)
+    setBuscaAnestesia('')
+    setMostrarListaAnestesia(false)
   }
 
   // OCR Simulation (placeholder)
@@ -632,7 +800,7 @@ Redirecionando para a lista de procedimentos...`)
                 placeholder="Nome completo do paciente"
                 icon={<User className="w-5 h-5" />}
                     value={formData.nomePaciente}
-                    onChange={(e) => setFormData({ ...formData, nomePaciente: e.target.value })}
+                    onChange={(e) => updateFormData('nomePaciente', e.target.value)}
                 required
               />
               <Input
@@ -640,7 +808,7 @@ Redirecionando para a lista de procedimentos...`)
                     type="date"
                     icon={<Calendar className="w-5 h-5" />}
                     value={formData.dataNascimento}
-                    onChange={(e) => setFormData({ ...formData, dataNascimento: e.target.value })}
+                    onChange={(e) => updateFormData('dataNascimento', e.target.value)}
                 required
               />
             </div>
@@ -651,13 +819,13 @@ Redirecionando para a lista de procedimentos...`)
                     placeholder="Ex: Unimed, Particular"
                     icon={<CreditCard className="w-5 h-5" />}
                     value={formData.convenio}
-                    onChange={(e) => setFormData({ ...formData, convenio: e.target.value })}
+                    onChange={(e) => updateFormData('convenio', e.target.value)}
               />
               <Input
                     label="Nº da Carteirinha"
                     placeholder="Número da carteirinha do convênio"
                     value={formData.carteirinha}
-                    onChange={(e) => setFormData({ ...formData, carteirinha: e.target.value })}
+                    onChange={(e) => updateFormData('carteirinha', e.target.value)}
               />
             </div>
 
@@ -667,7 +835,7 @@ Redirecionando para a lista de procedimentos...`)
                     placeholder="Ex: Cirurgia de Apendicite"
                     icon={<FileText className="w-5 h-5" />}
                     value={formData.tipoProcedimento}
-                    onChange={(e) => setFormData({ ...formData, tipoProcedimento: e.target.value })}
+                    onChange={(e) => updateFormData('tipoProcedimento', e.target.value)}
                     required
                   />
                   <div>
@@ -677,7 +845,7 @@ Redirecionando para a lista de procedimentos...`)
                     <select
                       className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                       value={formData.especialidadeCirurgiao}
-                      onChange={(e) => setFormData({ ...formData, especialidadeCirurgiao: e.target.value })}
+                      onChange={(e) => updateFormData('especialidadeCirurgiao', e.target.value)}
                     >
                       <option value="">Selecione a especialidade</option>
                       {ESPECIALIDADES.map(esp => (
@@ -693,14 +861,14 @@ Redirecionando para a lista de procedimentos...`)
                     placeholder="Nome do cirurgião responsável"
                     icon={<UserCheck className="w-5 h-5" />}
                     value={formData.nomeCirurgiao}
-                    onChange={(e) => setFormData({ ...formData, nomeCirurgiao: e.target.value })}
+                    onChange={(e) => updateFormData('nomeCirurgiao', e.target.value)}
                   />
                   <Input
                     label="Hospital / Clínica"
                     placeholder="Nome do hospital ou clínica"
                     icon={<Building className="w-5 h-5" />}
                     value={formData.hospital}
-                    onChange={(e) => setFormData({ ...formData, hospital: e.target.value })}
+                    onChange={(e) => updateFormData('hospital', e.target.value)}
                   />
                 </div>
               </div>
@@ -723,7 +891,7 @@ Redirecionando para a lista de procedimentos...`)
                 type="date"
                 icon={<Calendar className="w-5 h-5" />}
                     value={formData.dataCirurgia}
-                    onChange={(e) => setFormData({ ...formData, dataCirurgia: e.target.value })}
+                    onChange={(e) => updateFormData('dataCirurgia', e.target.value)}
                     required
                   />
                   <Input
@@ -731,7 +899,7 @@ Redirecionando para a lista de procedimentos...`)
                     type="time"
                     icon={<Clock className="w-5 h-5" />}
                     value={formData.horaInicio}
-                    onChange={(e) => setFormData({ ...formData, horaInicio: e.target.value })}
+                    onChange={(e) => updateFormData('horaInicio', e.target.value)}
                 required
               />
               <Input
@@ -739,28 +907,140 @@ Redirecionando para a lista de procedimentos...`)
                 type="time"
                 icon={<Clock className="w-5 h-5" />}
                     value={formData.horaTermino}
-                    onChange={(e) => setFormData({ ...formData, horaTermino: e.target.value })}
+                    onChange={(e) => updateFormData('horaTermino', e.target.value)}
                 required
               />
             </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Tipo de Anestesia * (selecione uma ou mais)
+                {/* Campo de Anestesia com Busca e Código TSSU */}
+                <div className="space-y-4">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Tipo de Anestesia Utilizada * (com código TSSU)
                   </label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {TIPOS_ANESTESIA.map(tipo => (
-                      <label key={tipo} className="flex items-center space-x-2 cursor-pointer">
+                  
+                  {/* Campo de busca */}
+                  <div className="relative anestesia-dropdown">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                         <input
-                          type="checkbox"
-                          checked={formData.tipoAnestesia.includes(tipo)}
-                          onChange={() => handleTipoAnestesia(tipo)}
-                          className="w-4 h-4 text-teal-600 focus:ring-teal-500 border-gray-300 rounded"
-                        />
-                        <span className="text-sm text-gray-700">{tipo}</span>
+                        type="text"
+                        placeholder="Buscar por nome, código TSSU ou categoria..."
+                        value={buscaAnestesia}
+                        onChange={(e) => {
+                          setBuscaAnestesia(e.target.value)
+                          setMostrarListaAnestesia(true)
+                        }}
+                        onFocus={() => setMostrarListaAnestesia(true)}
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      />
+                      {anestesiaSelecionada && (
+                        <button
+                          type="button"
+                          onClick={removerAnestesia}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-red-500"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Lista de anestesias filtradas */}
+                    {mostrarListaAnestesia && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-80 overflow-y-auto">
+                        {anestesiasFiltradas.length > 0 ? (
+                          <div className="py-2">
+                            {anestesiasFiltradas.map((anestesia, index) => (
+                              <button
+                                key={index}
+                                type="button"
+                                onClick={() => selecionarAnestesia(anestesia)}
+                                className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1">
+                                    <div className="font-medium text-gray-900 text-sm">
+                                      {anestesia.nome}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      {anestesia.categoria}
+                                    </div>
+                                  </div>
+                                  <div className="ml-4">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                                      TSSU: {anestesia.codigo}
+                                    </span>
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-4 py-3 text-gray-500 text-sm">
+                            Nenhuma anestesia encontrada para "{buscaAnestesia}"
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Anestesia selecionada */}
+                  {anestesiaSelecionada && (
+                    <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <CheckCircle className="w-5 h-5 text-teal-600" />
+                            <div>
+                              <div className="font-medium text-teal-900">
+                                {anestesiaSelecionada.nome}
+                              </div>
+                              <div className="text-sm text-teal-700">
+                                {anestesiaSelecionada.categoria}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-teal-100 text-teal-800">
+                            TSSU: {anestesiaSelecionada.codigo}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={removerAnestesia}
+                            className="text-teal-600 hover:text-red-500"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Lista de anestesias selecionadas (compatibilidade) */}
+                  {formData.tipoAnestesia.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Anestesias Selecionadas:
                       </label>
+                      <div className="flex flex-wrap gap-2">
+                        {formData.tipoAnestesia.map((tipo, index) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
+                          >
+                            {tipo}
+                            <button
+                              type="button"
+                              onClick={() => handleTipoAnestesia(tipo)}
+                              className="ml-2 text-blue-600 hover:text-red-500"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
                     ))}
                   </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-gray-50 p-4 rounded-lg">
@@ -791,7 +1071,7 @@ Redirecionando para a lista de procedimentos...`)
                     placeholder="R$ 0,00"
                     icon={<DollarSign className="w-5 h-5" />}
                     value={formData.valor}
-                    onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
+                    onChange={(e) => updateFormData('valor', e.target.value)}
                   />
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -800,7 +1080,7 @@ Redirecionando para a lista de procedimentos...`)
                     <select
                       className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                       value={formData.formaPagamento}
-                      onChange={(e) => setFormData({ ...formData, formaPagamento: e.target.value })}
+                      onChange={(e) => updateFormData('formaPagamento', e.target.value)}
                     >
                       <option value="">Selecione a forma de pagamento</option>
                       {FORMAS_PAGAMENTO.map(forma => (
@@ -817,7 +1097,7 @@ Redirecionando para a lista de procedimentos...`)
                   <select
                     className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     value={formData.statusPagamento}
-                    onChange={(e) => setFormData({ ...formData, statusPagamento: e.target.value })}
+                    onChange={(e) => updateFormData('statusPagamento', e.target.value)}
                   >
                     {STATUS_PAGAMENTO.map(status => (
                       <option key={status} value={status}>{status}</option>
@@ -834,7 +1114,7 @@ Redirecionando para a lista de procedimentos...`)
                 rows={4}
                     placeholder="Observações sobre pagamento, convênio, etc..."
                     value={formData.observacoes}
-                    onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
+                    onChange={(e) => updateFormData('observacoes', e.target.value)}
                   />
                 </div>
               </div>
@@ -1038,22 +1318,22 @@ Redirecionando para a lista de procedimentos...`)
                                   Imagem Selecionada
                                 </CardTitle>
                                 <Button
-                                  type="button"
+                                type="button"
                                   variant="destructive"
                                   size="sm"
-                                  onClick={() => {
-                                    setSelectedImage(null)
-                                    setOcrText('')
+                                onClick={() => {
+                                  setSelectedImage(null)
+                                  setOcrText('')
                                     clearFeedback()
-                                    if (fileInputRef.current) {
-                                      fileInputRef.current.value = ''
-                                    }
-                                  }}
+                                  if (fileInputRef.current) {
+                                    fileInputRef.current.value = ''
+                                  }
+                                }}
                                   className="h-8 w-8 p-0"
-                                >
+                              >
                                   <X className="w-4 h-4" />
                                 </Button>
-                              </div>
+                            </div>
                             </CardHeader>
                             <div className="px-6 pb-6">
                               <div className="relative">
@@ -1063,7 +1343,7 @@ Redirecionando para a lista de procedimentos...`)
                                   className="w-full h-48 object-contain rounded-lg border border-gray-200 bg-gray-50"
                                 />
                                 <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-10 transition-all duration-200 rounded-lg"></div>
-                              </div>
+                          </div>
                             </div>
                           </Card>
                         </div>
@@ -1080,20 +1360,20 @@ Redirecionando para a lista de procedimentos...`)
                                   Dados Extraídos com Sucesso
                                 </CardTitle>
                                 <Button
-                                  type="button"
+                                type="button"
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => setOcrText('')}
+                                onClick={() => setOcrText('')}
                                   className="text-gray-500 hover:text-gray-700"
-                                >
+                              >
                                   <X className="w-4 h-4" />
                                 </Button>
-                              </div>
+                            </div>
                             </CardHeader>
                             <div className="px-6 pb-6">
                               {/* Professional Data Grid */}
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                {/* Nome do Paciente */}
+                              {/* Nome do Paciente */}
                                 <div className="space-y-2">
                                   <label className="text-sm font-medium text-gray-700">Nome do Paciente</label>
                                   <div className="flex items-center space-x-2">
@@ -1109,9 +1389,9 @@ Redirecionando para a lista de procedimentos...`)
                                       </Badge>
                                     )}
                                   </div>
-                                </div>
-                                
-                                {/* Data de Nascimento */}
+                              </div>
+                              
+                              {/* Data de Nascimento */}
                                 <div className="space-y-2">
                                   <label className="text-sm font-medium text-gray-700">Data de Nascimento</label>
                                   <div className="flex items-center space-x-2">
@@ -1127,9 +1407,9 @@ Redirecionando para a lista de procedimentos...`)
                                       </Badge>
                                     )}
                                   </div>
-                                </div>
-                                
-                                {/* Convênio */}
+                              </div>
+                              
+                              {/* Convênio */}
                                 <div className="space-y-2">
                                   <label className="text-sm font-medium text-gray-700">Convênio</label>
                                   <div className="flex items-center space-x-2">
@@ -1145,9 +1425,9 @@ Redirecionando para a lista de procedimentos...`)
                                       </Badge>
                                     )}
                                   </div>
-                                </div>
-                                
-                                {/* Procedimento */}
+                              </div>
+                              
+                              {/* Procedimento */}
                                 <div className="space-y-2">
                                   <label className="text-sm font-medium text-gray-700">Procedimento</label>
                                   <div className="flex items-center space-x-2">
@@ -1163,9 +1443,9 @@ Redirecionando para a lista de procedimentos...`)
                                       </Badge>
                                     )}
                                   </div>
-                                </div>
-                                
-                                {/* Hospital */}
+                              </div>
+                              
+                              {/* Hospital */}
                                 <div className="space-y-2 md:col-span-2">
                                   <label className="text-sm font-medium text-gray-700">Hospital</label>
                                   <div className="flex items-center space-x-2">
@@ -1181,9 +1461,9 @@ Redirecionando para a lista de procedimentos...`)
                                       </Badge>
                                     )}
                                   </div>
-                                </div>
                               </div>
-                              
+                            </div>
+                            
                               {/* Professional Raw Text Section */}
                               <details className="mt-4">
                                 <summary className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900 flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
@@ -1192,14 +1472,14 @@ Redirecionando para a lista de procedimentos...`)
                                     Ver texto extraído completo
                                   </div>
                                   <span className="text-xs text-gray-500">▼</span>
-                                </summary>
+                              </summary>
                                 <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                                   <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words max-h-32 overflow-y-auto font-mono leading-relaxed">
-                                    {ocrText}
-                                  </pre>
-                                </div>
-                              </details>
-                              
+                                  {ocrText}
+                                </pre>
+                              </div>
+                            </details>
+                            
                               {/* Professional Info Alert */}
                               <Alert className="mt-4">
                                 <AlertCircle className="h-4 w-4" />
@@ -1243,7 +1523,7 @@ Redirecionando para a lista de procedimentos...`)
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-700">Nome do Paciente</label>
-                        <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2">
                           {formData.nomePaciente ? (
                             <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -1255,12 +1535,12 @@ Redirecionando para a lista de procedimentos...`)
                               Não extraído
                             </Badge>
                           )}
-                        </div>
-                      </div>
+                    </div>
+                    </div>
                       
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-700">Data de Nascimento</label>
-                        <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2">
                           {formData.dataNascimento ? (
                             <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -1272,12 +1552,12 @@ Redirecionando para a lista de procedimentos...`)
                               Não extraído
                             </Badge>
                           )}
-                        </div>
+                    </div>
                       </div>
                       
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-700">Convênio</label>
-                        <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2">
                           {formData.convenio ? (
                             <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -1289,9 +1569,9 @@ Redirecionando para a lista de procedimentos...`)
                               Não extraído
                             </Badge>
                           )}
-                        </div>
-                      </div>
-                      
+                    </div>
+                  </div>
+                  
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-700">Procedimento</label>
                         <div className="flex items-center space-x-2">
@@ -1306,8 +1586,8 @@ Redirecionando para a lista de procedimentos...`)
                               Não extraído
                             </Badge>
                           )}
-                        </div>
                       </div>
+                    </div>
                       
                       <div className="space-y-2 md:col-span-2">
                         <label className="text-sm font-medium text-gray-700">Hospital</label>
@@ -1322,10 +1602,10 @@ Redirecionando para a lista de procedimentos...`)
                               <AlertCircle className="w-3 h-3 mr-1" />
                               Não extraído
                             </Badge>
-                          )}
-                        </div>
-                      </div>
+                  )}
+                </div>
                     </div>
+                  </div>
                     
                     {formData.nomePaciente && (
                       <Alert className="bg-green-50 border-green-200">
