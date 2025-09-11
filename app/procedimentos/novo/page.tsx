@@ -320,6 +320,7 @@ export default function NovoProcedimento() {
   const [ocrProgress, setOcrProgress] = useState(0)
   const [ocrText, setOcrText] = useState('')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [showDebugText, setShowDebugText] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
   const router = useRouter()
@@ -492,6 +493,155 @@ export default function NovoProcedimento() {
     }
   }
 
+  // Função para pré-processar imagem e melhorar o OCR
+  const preprocessImage = async (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')!
+      const img = new Image()
+      
+      img.onload = () => {
+        // Redimensionar para melhor qualidade (mínimo 1000px de largura)
+        const maxWidth = Math.max(1000, img.width)
+        const maxHeight = Math.max(1000, img.height)
+        const scale = Math.min(maxWidth / img.width, maxHeight / img.height)
+        
+        canvas.width = img.width * scale
+        canvas.height = img.height * scale
+        
+        // Desenhar imagem redimensionada
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        
+        // Aplicar filtros para melhorar o OCR
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const data = imageData.data
+        
+        // Aumentar contraste e reduzir ruído
+        for (let i = 0; i < data.length; i += 4) {
+          // Converter para escala de cinza
+          const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+          
+          // Aumentar contraste
+          const contrast = gray > 128 ? 255 : 0
+          
+          data[i] = contrast     // R
+          data[i + 1] = contrast // G
+          data[i + 2] = contrast // B
+          // data[i + 3] mantém o alpha
+        }
+        
+        ctx.putImageData(imageData, 0, 0)
+        
+        // Converter de volta para File
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const processedFile = new File([blob], file.name, { type: 'image/png' })
+            resolve(processedFile)
+          } else {
+            resolve(file)
+          }
+        }, 'image/png', 0.95)
+      }
+      
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
+  // Função para realizar múltiplas tentativas de OCR com diferentes configurações
+  const performMultipleOCR = async (file: File) => {
+    const ocrConfigs = [
+      {
+        name: 'Português + LSTM',
+        lang: 'por',
+        options: {
+          tessedit_pageseg_mode: '6', // Uniform block of text
+          tessedit_ocr_engine_mode: '1', // LSTM only
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/-()',
+        }
+      },
+      {
+        name: 'Português + Legacy',
+        lang: 'por',
+        options: {
+          tessedit_pageseg_mode: '6',
+          tessedit_ocr_engine_mode: '0', // Legacy only
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/-()',
+        }
+      },
+      {
+        name: 'Português + Auto',
+        lang: 'por',
+        options: {
+          tessedit_pageseg_mode: '3', // Fully automatic page segmentation
+          tessedit_ocr_engine_mode: '3', // Default
+        }
+      },
+      {
+        name: 'Inglês + Português',
+        lang: 'eng+por',
+        options: {
+          tessedit_pageseg_mode: '6',
+          tessedit_ocr_engine_mode: '1',
+        }
+      }
+    ]
+
+    const results = []
+    
+    for (let i = 0; i < ocrConfigs.length; i++) {
+      const config = ocrConfigs[i]
+      try {
+        setOcrProgress(Math.round(((i + 1) / ocrConfigs.length) * 100))
+        
+        const { data } = await Tesseract.recognize(file, config.lang, {
+          ...config.options,
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              const progress = ((i / ocrConfigs.length) + (m.progress / ocrConfigs.length)) * 100
+              setOcrProgress(Math.round(progress))
+            }
+          }
+        })
+        
+        results.push({
+          config: config.name,
+          text: data.text,
+          confidence: data.confidence,
+          words: data.words?.length || 0
+        })
+        
+        console.log(`OCR ${config.name}:`, {
+          text: data.text.substring(0, 100) + '...',
+          confidence: data.confidence,
+          words: data.words?.length || 0
+        })
+      } catch (error) {
+        console.error(`Erro no OCR ${config.name}:`, error)
+      }
+    }
+    
+    return results
+  }
+
+  // Função para selecionar o melhor resultado de OCR
+  const selectBestOCRResult = (results: any[]) => {
+    if (results.length === 0) {
+      return { text: '', confidence: 0 }
+    }
+    
+    // Ordenar por confiança e quantidade de palavras
+    const sortedResults = results.sort((a, b) => {
+      const scoreA = a.confidence + (a.words * 0.1) // Confiança + bonus por palavras
+      const scoreB = b.confidence + (b.words * 0.1)
+      return scoreB - scoreA
+    })
+    
+    const best = sortedResults[0]
+    console.log('Melhor resultado OCR:', best)
+    
+    return best
+  }
+
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -521,29 +671,26 @@ export default function NovoProcedimento() {
     clearFeedback()
 
     try {
-      const { data: { text } } = await Tesseract.recognize(
-        file,
-        'por', // Português
-        {
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              setOcrProgress(Math.round(m.progress * 100))
-            }
-          }
-        }
-      )
-
-      setOcrText(text)
+      // Pré-processar a imagem para melhorar o OCR
+      const processedImage = await preprocessImage(file)
       
-      // Extrair dados do texto usando regex
-      const extractedData = extractDataFromText(text)
+      // Tentar múltiplas configurações de OCR para melhor precisão
+      const ocrResults = await performMultipleOCR(processedImage)
+      
+      // Escolher o melhor resultado baseado na confiança e quantidade de texto
+      const bestResult = selectBestOCRResult(ocrResults)
+      
+      setOcrText(bestResult.text)
+      
+      // Extrair dados do texto usando algoritmos melhorados
+      const extractedData = extractDataFromText(bestResult.text)
       
       setFormData(prev => ({
         ...prev,
         ...extractedData
       }))
       
-      showFeedback('success', '✅ Dados extraídos da etiqueta com sucesso! Revise e edite se necessário.')
+      showFeedback('success', `✅ Dados extraídos com ${Math.round(bestResult.confidence)}% de confiança! Revise e edite se necessário.`)
     } catch (error) {
       console.error('Erro no OCR:', error)
       showFeedback('error', '❌ Erro ao processar a imagem. Tente novamente com uma imagem mais clara.')
@@ -561,70 +708,129 @@ export default function NovoProcedimento() {
     
     // Limpar e normalizar o texto
     const cleanText = text.replace(/\s+/g, ' ').trim()
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
     
-    // Extrair dados com regex mais robustos e inteligentes
+    // Função auxiliar para encontrar padrões mais inteligentes
+    const findPattern = (patterns: RegExp[], text: string, fallback?: string) => {
+      for (const pattern of patterns) {
+        const match = text.match(pattern)
+        if (match && match[1] && match[1].trim().length > 2) {
+          return match[1].trim()
+        }
+      }
+      return fallback || ""
+    }
+    
+    // Extrair dados com algoritmos mais inteligentes
     const dados = {
-      // Nome - procurar por padrões de nome (maiúsculas, palavras separadas)
-      nome: text.match(/Nome\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || 
-            text.match(/([A-Z][A-Z\s]+[A-Z])(?:\s|$)/)?.[1]?.trim() || 
-            text.match(/([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/)?.[1]?.trim() || "",
+      // Nome - múltiplas estratégias
+      nome: findPattern([
+        /Nome\s*:?\s*([^\n\r,]+)/i,
+        /Paciente\s*:?\s*([^\n\r,]+)/i,
+        /([A-Z][A-Z\s]{3,}[A-Z])(?:\s|$|,)/, // Nomes em maiúscula
+        /([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?:\s|$|,)/, // Nomes em formato normal
+        /([A-Z][a-z]+\s+[A-Z][a-z]+)/ // Nomes simples
+      ], text),
       
-      // Data de nascimento - vários formatos
-      nascimento: text.match(/(\d{2}\/\d{2}\/\d{4})/)?.[1] || 
-                  text.match(/(\d{2}-\d{2}-\d{4})/)?.[1] || 
-                  text.match(/(\d{2}\.\d{2}\.\d{4})/)?.[1] || "",
+      // Data de nascimento - múltiplos formatos
+      nascimento: findPattern([
+        /Nascimento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+        /Nasc\.?\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+        /(\d{2}\/\d{2}\/\d{4})/,
+        /(\d{2}-\d{2}-\d{4})/,
+        /(\d{2}\.\d{2}\.\d{4})/
+      ], text),
       
-      // Convênio - procurar por padrões comuns
-      convenio: text.match(/Conv[eê]nio\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || 
-                text.match(/([A-Z][A-Z\s]+(?:SAUDE|PLANO|MEDICO|HOSPITAL))/i)?.[1]?.trim() || 
-                text.match(/([A-Z][A-Z\s]+(?:FESP|UNIMED|BRADESCO|SULAMERICA))/i)?.[1]?.trim() || "",
-      
-      // Plano
-      plano: text.match(/Plano\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || "",
+      // Convênio - padrões mais específicos
+      convenio: findPattern([
+        /Conv[eê]nio\s*:?\s*([^\n\r,]+)/i,
+        /Plano\s*:?\s*([^\n\r,]+)/i,
+        /([A-Z][A-Z\s]+(?:SAUDE|PLANO|MEDICO|HOSPITAL|FESP|UNIMED|BRADESCO|SULAMERICA|NOTREDAME|AMIL|GOLDEN|CROSS))/i,
+        /([A-Z][A-Z\s]{2,}(?:SAUDE|PLANO|MEDICO|HOSPITAL))/i
+      ], text),
       
       // Hospital/Clínica
-      hospital: text.match(/Hospital\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || 
-                text.match(/Cl[ií]nica\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || 
-                text.match(/([A-Z][A-Z\s]+(?:HOSPITAL|CLINICA|CENTRO))/i)?.[1]?.trim() || "",
+      hospital: findPattern([
+        /Hospital\s*:?\s*([^\n\r,]+)/i,
+        /Cl[ií]nica\s*:?\s*([^\n\r,]+)/i,
+        /Institui[cç][aã]o\s*:?\s*([^\n\r,]+)/i,
+        /([A-Z][A-Z\s]+(?:HOSPITAL|CLINICA|CENTRO|SANTA|S[ÃA]O|UNIVERSIT[AÁ]RIO))/i,
+        /([A-Z][a-z]+\s+(?:Hospital|Cl[ií]nica|Centro))/i
+      ], text),
       
       // Procedimento
-      procedimento: text.match(/Procedimento\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || 
-                    text.match(/([A-Z][A-Z\s]+(?:CIRURGIA|PROCEDIMENTO))/i)?.[1]?.trim() || "",
+      procedimento: findPattern([
+        /Procedimento\s*:?\s*([^\n\r,]+)/i,
+        /Cirurgia\s*:?\s*([^\n\r,]+)/i,
+        /Tipo\s*:?\s*([^\n\r,]+)/i,
+        /([A-Z][A-Z\s]+(?:CIRURGIA|PROCEDIMENTO|LAPAROSCOPIA|ENDOSCOPIA))/i,
+        /([A-Z][a-z]+\s+(?:Cirurgia|Procedimento|Laparoscopia|Endoscopia))/i
+      ], text),
       
       // Especialidade
-      especialidade: text.match(/Especialidade\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || "",
+      especialidade: findPattern([
+        /Especialidade\s*:?\s*([^\n\r,]+)/i,
+        /Espec\.?\s*:?\s*([^\n\r,]+)/i,
+        /([A-Z][a-z]+\s+(?:Geral|Ortopedia|Cardiologia|Neurologia|Ginecologia|Urologia|Oftalmologia|Pl[aá]stica|Vascular))/i
+      ], text),
       
       // Cirurgião
-      cirurgiao: text.match(/Cirurgi[aã]o\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || 
-                 text.match(/Dr\.?\s*([A-Z][a-z]+\s+[A-Z][a-z]+)/)?.[1]?.trim() || "",
+      cirurgiao: findPattern([
+        /Cirurgi[aã]o\s*:?\s*([^\n\r,]+)/i,
+        /M[eé]dico\s*:?\s*([^\n\r,]+)/i,
+        /Dr\.?\s*([A-Z][a-z]+\s+[A-Z][a-z]+)/i,
+        /([A-Z][a-z]+\s+[A-Z][a-z]+)(?:\s|$|,)/ // Nome completo
+      ], text),
       
-      // Carteirinha
-      carteirinha: text.match(/Carteirinha\s*:?\s*(\d+)/i)?.[1] || 
-                   text.match(/(\d{6,})/)?.[1] || "",
+      // Carteirinha - mais específico
+      carteirinha: findPattern([
+        /Carteirinha\s*:?\s*(\d+)/i,
+        /Cart\.?\s*:?\s*(\d+)/i,
+        /Matr[ií]cula\s*:?\s*(\d+)/i,
+        /(\d{6,12})/ // Números de 6 a 12 dígitos
+      ], text),
       
-      // Outros campos
-      leito: text.match(/Leito\s*:?\s*(\d+)/i)?.[1] || "",
-      atendimento: text.match(/Atend\.?\s*:?\s*(\d+)/i)?.[1] || "",
-      prontuario: text.match(/Pront\.?\s*:?\s*(\d+)/i)?.[1] || "",
-      situacao: text.match(/Situa[cç][aã]o\s*:?\s*([^\n\r]+)/i)?.[1]?.trim() || "",
-      entrada: text.match(/(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2})/)?.[1] || "",
-      codBarras: text.match(/\d{17,}/)?.[0] || ""
+      // Outros campos úteis
+      leito: findPattern([/Leito\s*:?\s*(\d+)/i], text),
+      atendimento: findPattern([/Atend\.?\s*:?\s*(\d+)/i], text),
+      prontuario: findPattern([/Pront\.?\s*:?\s*(\d+)/i], text),
+      situacao: findPattern([/Situa[cç][aã]o\s*:?\s*([^\n\r,]+)/i], text),
+      entrada: findPattern([/(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})/], text),
+      codBarras: findPattern([/\d{17,}/], text)
     }
     
-    // Mapear para os campos do formulário
-    if (dados.nome) extracted.nomePaciente = dados.nome
-    if (dados.nascimento) extracted.dataNascimento = dados.nascimento
-    if (dados.convenio) extracted.convenio = dados.convenio
-    if (dados.plano && dados.convenio) {
-      extracted.convenio = `${dados.convenio} - ${dados.plano}`
-    } else if (dados.plano) {
-      extracted.convenio = dados.plano
+    // Mapear para os campos do formulário com validação
+    if (dados.nome && dados.nome.length > 3) {
+      extracted.nomePaciente = dados.nome
     }
-    if (dados.carteirinha) extracted.carteirinha = dados.carteirinha
-    if (dados.hospital) extracted.hospital = dados.hospital
-    if (dados.procedimento) extracted.tipoProcedimento = dados.procedimento
-    if (dados.especialidade) extracted.especialidadeCirurgiao = dados.especialidade
-    if (dados.cirurgiao) extracted.nomeCirurgiao = dados.cirurgiao
+    
+    if (dados.nascimento && /^\d{2}\/\d{2}\/\d{4}$/.test(dados.nascimento)) {
+      extracted.dataNascimento = dados.nascimento
+    }
+    
+    if (dados.convenio && dados.convenio.length > 2) {
+      extracted.convenio = dados.convenio
+    }
+    
+    if (dados.carteirinha && dados.carteirinha.length >= 6) {
+      extracted.carteirinha = dados.carteirinha
+    }
+    
+    if (dados.hospital && dados.hospital.length > 3) {
+      extracted.hospital = dados.hospital
+    }
+    
+    if (dados.procedimento && dados.procedimento.length > 3) {
+      extracted.tipoProcedimento = dados.procedimento
+    }
+    
+    if (dados.especialidade && dados.especialidade.length > 3) {
+      extracted.especialidadeCirurgiao = dados.especialidade
+    }
+    
+    if (dados.cirurgiao && dados.cirurgiao.length > 3) {
+      extracted.nomeCirurgiao = dados.cirurgiao
+    }
     
     // Log dos dados extraídos para debug
     console.log("Dados extraídos:", dados)
@@ -1571,10 +1777,10 @@ Redirecionando para a lista de procedimentos...`)
                   </p>
                   
                   {/* Professional Alert */}
-                  <Alert className="mb-6 max-w-2xl mx-auto">
-                    <CheckCircle className="h-4 w-4" />
-                    <AlertTitle>Preenchimento Automático Inteligente</AlertTitle>
-                    <AlertDescription>
+                  <Alert className="mb-6 max-w-2xl mx-auto bg-teal-50 border-teal-200">
+                    <CheckCircle className="h-4 w-4 text-teal-600" />
+                    <AlertTitle className="text-teal-800">Preenchimento Automático Inteligente</AlertTitle>
+                    <AlertDescription className="text-teal-700">
                       Nome, data de nascimento, convênio, procedimento e hospital serão extraídos e preenchidos automaticamente usando tecnologia OCR avançada.
                     </AlertDescription>
                   </Alert>
@@ -1707,15 +1913,27 @@ Redirecionando para a lista de procedimentos...`)
                                   <CheckCircle className="w-5 h-5 mr-2 text-teal-600" />
                                   Dados Extraídos com Sucesso
                                 </CardTitle>
-                                <Button
-                                type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                onClick={() => setOcrText('')}
-                                  className="text-gray-500 hover:text-gray-700"
-                              >
-                                  <X className="w-4 h-4" />
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setShowDebugText(!showDebugText)}
+                                    className="h-8 text-xs"
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />
+                                    {showDebugText ? 'Ocultar' : 'Ver'} Texto Bruto
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setOcrText('')}
+                                    className="text-gray-500 hover:text-gray-700 h-8 w-8 p-0"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </div>
                             </div>
                             </CardHeader>
                             <div className="px-6 pb-6">
@@ -1813,26 +2031,29 @@ Redirecionando para a lista de procedimentos...`)
                             </div>
                             
                               {/* Professional Raw Text Section */}
-                              <details className="mt-4">
-                                <summary className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900 flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
-                                  <div className="flex items-center">
-                                    <FileText className="w-4 h-4 mr-2" />
-                                    Ver texto extraído completo
+                              {/* Debug Text Section */}
+                              {showDebugText && (
+                                <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-sm font-medium text-gray-700 flex items-center">
+                                      <FileText className="w-4 h-4 mr-2" />
+                                      Texto Bruto Extraído pelo OCR
+                                    </h4>
+                                    <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">
+                                      Debug
+                                    </Badge>
                                   </div>
-                                  <span className="text-xs text-gray-500">▼</span>
-                              </summary>
-                                <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                                  <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words max-h-32 overflow-y-auto font-mono leading-relaxed">
-                                  {ocrText}
-                                </pre>
-                              </div>
-                            </details>
+                                  <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words max-h-40 overflow-y-auto font-mono leading-relaxed bg-white p-3 rounded border">
+                                    {ocrText}
+                                  </pre>
+                                </div>
+                              )}
                             
                               {/* Professional Info Alert */}
-                              <Alert className="mt-4">
-                                <AlertCircle className="h-4 w-4" />
-                                <AlertTitle>Informação Importante</AlertTitle>
-                                <AlertDescription>
+                              <Alert className="mt-4 bg-teal-50 border-teal-200">
+                                <AlertCircle className="h-4 w-4 text-teal-600" />
+                                <AlertTitle className="text-teal-800">Informação Importante</AlertTitle>
+                                <AlertDescription className="text-teal-700">
                                   Este texto foi extraído automaticamente da imagem usando tecnologia OCR. 
                                   Os dados acima foram processados e podem ser editados nas próximas seções se necessário.
                                 </AlertDescription>
@@ -1844,10 +2065,10 @@ Redirecionando para a lista de procedimentos...`)
                       
                       {/* Professional Format Info */}
                       <div className="text-center max-w-md mx-auto">
-                        <Alert>
-                          <AlertCircle className="h-4 w-4" />
-                          <AlertTitle>Formatos Suportados</AlertTitle>
-                          <AlertDescription>
+                        <Alert className="bg-teal-50 border-teal-200">
+                          <AlertCircle className="h-4 w-4 text-teal-600" />
+                          <AlertTitle className="text-teal-800">Formatos Suportados</AlertTitle>
+                          <AlertDescription className="text-teal-700">
                             <div className="space-y-1">
                               <p>📱 <strong>Captura:</strong> Use a câmera do dispositivo</p>
                               <p>📁 <strong>Upload:</strong> JPG, PNG, GIF (máx. 10MB)</p>

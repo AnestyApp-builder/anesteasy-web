@@ -34,7 +34,7 @@ export function Navigation() {
   const { user, logout, isAuthenticated } = useAuth()
 
   return (
-    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <nav className="bg-gradient-to-r from-teal-600 to-teal-700 border-b border-teal-800 sticky top-0 z-50 shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           {/* Logo */}
@@ -51,7 +51,7 @@ export function Navigation() {
                 <Link
                   key={item.name}
                   href={item.href}
-                  className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 text-white hover:text-white hover:bg-teal-500/20"
                 >
                   <item.icon className="w-4 h-4" />
                   <span>{item.name}</span>
@@ -86,6 +86,7 @@ export function Navigation() {
             <Button
               variant="ghost"
               size="sm"
+              className="text-white hover:text-white hover:bg-teal-500/20"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               {mobileMenuOpen ? (
@@ -100,30 +101,30 @@ export function Navigation() {
 
       {/* Mobile Navigation */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-gray-200 bg-white animate-slide-in">
+        <div className="md:hidden border-t border-teal-800 bg-gradient-to-b from-teal-700 to-teal-800 animate-slide-in">
           <div className="px-4 py-2 space-y-1">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 href={item.href}
-                className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 text-white hover:text-white hover:bg-teal-500/20"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <item.icon className="w-5 h-5" />
                 <span>{item.name}</span>
               </Link>
             ))}
-            <div className="border-t border-gray-200 pt-2 mt-2">
+            <div className="border-t border-teal-800 pt-2 mt-2">
               <div className="flex items-center space-x-3 px-3 py-2">
-                <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                  <User className="w-4 h-4 text-primary-600" />
+                <div className="w-8 h-8 bg-teal-500/20 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-teal-200" />
                 </div>
-                <span className="text-sm font-medium text-gray-700">Perfil</span>
+                <span className="text-sm font-medium text-white">Perfil</span>
               </div>
               <Button 
                 variant="ghost" 
                 size="sm" 
-                className="w-full justify-start"
+                className="w-full justify-start text-white hover:text-white hover:bg-teal-500/20"
                 onClick={logout}
               >
                 <LogOut className="w-4 h-4 mr-2" />

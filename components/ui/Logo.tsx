@@ -53,7 +53,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
       </div>
       
       {showText && (
-        <span className={`font-bold text-gray-900 ${textSizeClasses[size]}`}>
+        <span className={`font-bold text-white ${textSizeClasses[size]}`}>
           AnestEasy
         </span>
       )}
