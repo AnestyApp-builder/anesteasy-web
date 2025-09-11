@@ -21,6 +21,7 @@ import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { procedureService } from '@/lib/procedures'
+import { goalService } from '@/lib/goals'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import { ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts'
@@ -130,12 +131,23 @@ export default function Financeiro() {
     if (!user?.id) return
     
     try {
-      // Simular carregamento da meta do banco de dados
-      const savedGoal = localStorage.getItem(`monthlyGoal_${user.id}`)
-      if (savedGoal) {
-        const goal = JSON.parse(savedGoal)
-        setMonthlyGoal(goal)
-        calculateProgress(goal)
+      // Primeiro, tentar carregar do banco de dados
+      let goal = await goalService.getGoal(user.id)
+      
+      // Se não encontrou no banco, tentar migrar do localStorage
+      if (!goal) {
+        goal = await goalService.migrateFromLocalStorage(user.id)
+      }
+      
+      if (goal) {
+        // Converter formato do banco para formato do componente
+        const goalData = {
+          targetValue: goal.target_value,
+          resetDay: goal.reset_day,
+          isEnabled: goal.is_enabled
+        }
+        setMonthlyGoal(goalData)
+        calculateProgress(goalData)
       }
     } catch (error) {
       console.error('Erro ao carregar meta mensal:', error)
@@ -185,11 +197,25 @@ export default function Financeiro() {
     if (!user?.id) return
     
     try {
-      // Salvar no localStorage (em produção, salvar no banco de dados)
-      localStorage.setItem(`monthlyGoal_${user.id}`, JSON.stringify(goal))
-      setMonthlyGoal(goal)
-      calculateProgress(goal)
-      setShowGoalModal(false)
+      // Converter formato do componente para formato do banco
+      const goalData = {
+        user_id: user.id,
+        target_value: goal.targetValue,
+        reset_day: goal.resetDay,
+        is_enabled: goal.isEnabled
+      }
+      
+      // Salvar no banco de dados
+      const savedGoal = await goalService.saveGoal(goalData)
+      
+      if (savedGoal) {
+        setMonthlyGoal(goal)
+        calculateProgress(goal)
+        setShowGoalModal(false)
+        console.log('Meta salva com sucesso no banco de dados')
+      } else {
+        console.error('Erro ao salvar meta no banco de dados')
+      }
     } catch (error) {
       console.error('Erro ao salvar meta mensal:', error)
     }

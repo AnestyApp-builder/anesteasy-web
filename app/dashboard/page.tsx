@@ -188,6 +188,34 @@ export default function Dashboard() {
     return `${parcelasRecebidas}/${totalParcelas}`
   }
 
+  // Função para obter cor do status
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return 'bg-green-500 text-white shadow-sm'
+      case 'pending':
+        return 'bg-amber-500 text-white shadow-sm'
+      case 'cancelled':
+        return 'bg-red-500 text-white shadow-sm'
+      default:
+        return 'bg-red-500 text-white shadow-sm'
+    }
+  }
+
+  // Função para obter texto do status
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return 'Pago'
+      case 'pending':
+        return 'Pendente'
+      case 'cancelled':
+        return 'Aguardando'
+      default:
+        return 'Aguardando'
+    }
+  }
+
   const handleProcedureClick = (procedure: any) => {
     // Redirecionar para a página de procedimentos com o ID do procedimento
     window.location.href = `/procedimentos?procedureId=${procedure.id}`
@@ -578,11 +606,16 @@ export default function Dashboard() {
         </div>
 
         {/* Recent Procedures */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Procedimentos Recentes</CardTitle>
-          </CardHeader>
-          <div className="p-4 sm:p-6">
+        <div>
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
+            <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Procedimentos Recentes</h2>
+            <Link 
+              href="/procedimentos" 
+              className="text-green-600 hover:text-green-700 font-medium text-sm sm:text-base transition-colors duration-200"
+            >
+              Ver mais
+            </Link>
+          </div>
             {loading ? (
               <Loading text="Carregando dados..." />
             ) : recentProcedures.length === 0 ? (
@@ -592,66 +625,122 @@ export default function Dashboard() {
                 <p className="text-sm text-gray-500 mt-1">Comece criando seu primeiro procedimento</p>
               </div>
             ) : (
-              <div className="space-y-3 sm:space-y-4">
+            <div className="space-y-3 sm:space-y-4">
                 {recentProcedures.map((procedure) => (
                   <div 
                     key={procedure.id} 
-                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 sm:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                    onClick={() => handleCardPress(() => handleProcedureClick(procedure))}
-                  >
-                    <div className="flex items-center space-x-3 sm:space-x-4 mb-2 sm:mb-0">
-                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-teal-100 rounded-full flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-teal-600" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center space-x-2">
-                          <p className="font-semibold text-gray-900 text-base sm:text-lg truncate">
-                            {procedure.patient_name || 'Nome não informado'}
-                          </p>
-                          {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
-                            <Paperclip className="w-4 h-4 text-blue-500" />
-                          )}
+                  className="group relative overflow-hidden bg-white rounded-xl border border-gray-200/50 shadow-sm hover:shadow-lg hover:shadow-gray-200/50 hover:border-gray-300/50 cursor-pointer transition-all duration-300 ease-in-out transform hover:-translate-y-1"
+                  onClick={() => handleCardPress(() => handleProcedureClick(procedure))}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-gray-50/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  {/* Mobile Layout */}
+                  <div className="lg:hidden relative p-4">
+                    <div className="flex flex-col gap-3">
+                      {/* Primeira linha: Nome + Status */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3 flex-1 min-w-0">
+                          <div className="w-12 h-12 bg-gradient-to-br from-teal-100 to-teal-200 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
+                            <FileText className="w-6 h-6 text-teal-700" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <p className="font-semibold text-gray-900 text-base truncate">
+                                {procedure.patient_name || 'Nome não informado'}
+                              </p>
+                              {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
+                                <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600 truncate font-medium mb-1">
+                              {procedure.procedure_name || procedure.procedure_type || 'Procedimento não informado'}
+                            </p>
+                            {getParcelStatus(procedure) && (
+                              <p className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-1 rounded-full inline-block">
+                                Parcelas: {getParcelStatus(procedure)}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm sm:text-base text-gray-600 truncate font-medium">
-                          {procedure.procedure_name || procedure.procedure_type || 'Procedimento não informado'}
-                        </p>
-                        {getParcelStatus(procedure) && (
-                          <p className="text-xs text-teal-600 font-medium">Parcelas: {getParcelStatus(procedure)}</p>
-                        )}
+                        <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(procedure.payment_status || 'cancelled')}`}>
+                          {getStatusText(procedure.payment_status || 'cancelled')}
+                        </span>
+                      </div>
+                      
+                      {/* Segunda linha: Valor + Data */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <DollarSign className="w-5 h-5 mr-2 text-gray-600" />
+                          <span className="font-bold text-gray-900 text-lg">{formatCurrency(procedure.procedure_value || 0)}</span>
+                        </div>
+                        <div className="text-sm text-gray-500 font-medium">
+                          {formatDate(procedure.procedure_date)}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-left sm:text-right">
-                      <p className="font-bold text-gray-900 text-base sm:text-lg">
+                  </div>
+
+                  {/* Desktop Layout */}
+                  <div className="hidden lg:flex flex-col relative p-6">
+                    {/* Primeira linha: Nome + Status */}
+                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 bg-gradient-to-br from-teal-100 to-teal-200 rounded-xl flex items-center justify-center shadow-sm">
+                          <FileText className="w-6 h-6 text-teal-700" />
+                      </div>
+                      <div>
+                          <div className="flex items-center space-x-2 mb-1">
+                            <p className="font-semibold text-gray-900 text-lg">
+                              {procedure.patient_name || 'Nome não informado'}
+                            </p>
+                            {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
+                              <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 font-medium mb-1">
+                            {procedure.procedure_name || procedure.procedure_type || 'Procedimento não informado'}
+                          </p>
+                          {getParcelStatus(procedure) && (
+                            <p className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-1 rounded-full inline-block">
+                              Parcelas: {getParcelStatus(procedure)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(procedure.payment_status || 'cancelled')}`}>
+                        {getStatusText(procedure.payment_status || 'cancelled')}
+                      </span>
+                    </div>
+                    
+                    {/* Segunda linha: Informações + Valor */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-6 text-sm text-gray-500">
+                        <div className="flex items-center">
+                          <Calendar className="w-4 h-4 mr-1" />
+                          {formatDate(procedure.procedure_date)}
+                      </div>
+                    </div>
+                      <div className="flex items-center space-x-4">
+                    <div className="text-right">
+                          <p className="font-bold text-gray-900 text-xl flex items-center justify-end">
+                            <DollarSign className="w-5 h-5 mr-2 text-gray-600" />
                         {formatCurrency(procedure.procedure_value || 0)}
                       </p>
-                      <p className="text-sm sm:text-base text-gray-600 font-medium">
-                        {formatDate(procedure.procedure_date)}
-                      </p>
+                        </div>
+                      </div>
+                    </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            <div className="mt-4 sm:mt-6">
-              <Link href="/procedimentos">
-                <Button 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={() => handleButtonPress(undefined, 'light')}
-                >
-                  Ver todos os procedimentos
-                </Button>
-              </Link>
-            </div>
           </div>
-        </Card>
 
         {/* Mobile Quick Actions */}
         <div className="lg:hidden">
-          <Card>
-            <CardHeader>
+        <Card>
+          <CardHeader>
               <CardTitle className="text-lg sm:text-xl font-bold text-gray-900">Ações Rápidas</CardTitle>
-            </CardHeader>
+          </CardHeader>
             <div className="p-4">
               <div className="grid grid-cols-2 gap-3">
                 <Button 
@@ -669,10 +758,10 @@ export default function Dashboard() {
                 >
                   <Users className="w-5 h-5 mb-1" />
                   <span className="text-sm font-medium">Adicionar Paciente</span>
-                </Button>
-              </div>
+              </Button>
             </div>
-          </Card>
+          </div>
+        </Card>
         </div>
 
       </div>

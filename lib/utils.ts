@@ -32,6 +32,32 @@ export function formatDateTime(date: string | Date): string {
   }).format(dateObj)
 }
 
+export function formatTime(date: string | Date): string {
+  const dateObj = typeof date === 'string' ? new Date(date) : date
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(dateObj)
+}
+
+export function formatShiftDates(startDate: string | Date, endDate: string | Date): string {
+  const start = typeof startDate === 'string' ? new Date(startDate) : startDate
+  const end = typeof endDate === 'string' ? new Date(endDate) : endDate
+  
+  const startDay = start.getDate()
+  const startMonth = start.getMonth() + 1
+  const endDay = end.getDate()
+  const endMonth = end.getMonth() + 1
+  
+  // Se for o mesmo dia (plantão diurno)
+  if (startDay === endDay && startMonth === endMonth) {
+    return `${startDay.toString().padStart(2, '0')}/${startMonth.toString().padStart(2, '0')}`
+  }
+  
+  // Se for plantão noturno (cruza a meia-noite)
+  return `${startDay.toString().padStart(2, '0')}/${startMonth.toString().padStart(2, '0')} ao ${endDay.toString().padStart(2, '0')}/${endMonth.toString().padStart(2, '0')}`
+}
+
 // Função para obter saudação baseada no horário
 export function getTimeBasedGreeting(): string {
   const hour = new Date().getHours()

@@ -12,7 +12,8 @@ import {
   FileText,
   DollarSign,
   BarChart3,
-  Settings
+  Settings,
+  Calendar
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Logo } from '@/components/ui/Logo'
@@ -22,6 +23,7 @@ import { useAuth } from '@/contexts/AuthContext'
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Procedimentos', href: '/procedimentos', icon: FileText },
+  { name: 'Agenda', href: '/agenda', icon: Calendar },
   { name: 'Financeiro', href: '/financeiro', icon: DollarSign },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
   { name: 'Configurações', href: '/configuracoes', icon: Settings },

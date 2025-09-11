@@ -2,19 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Fundo transparente para todas as páginas */
+/* Fundo padrão para páginas */
 html, body {
-  background-color: transparent !important;
+  background-color: #f1f5f9 !important;
 }
 
-/* Remove qualquer fundo amarelo */
-* {
-  background-color: inherit;
-}
-
-/* Fundo transparente em elementos específicos */
-.min-h-screen {
-  background-color: transparent !important;
+/* Fundo específico para área do usuário */
+.user-area-bg {
+  background-color: #f1f5f9 !important;
 }
 
 /* Remove fundo amarelo de elementos de loading */

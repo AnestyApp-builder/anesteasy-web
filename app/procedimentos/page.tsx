@@ -793,16 +793,11 @@ export default function Procedimentos() {
 
 
         {/* Procedures List */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Lista de Procedimentos</CardTitle>
-          </CardHeader>
-          <div className="p-6">
+        <div>
+          <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">Lista de Procedimentos</h2>
             {loading ? (
               <Loading text="Carregando procedimentos..." />
-            ) : (
-              <>
-                {filteredProcedures.length === 0 ? (
+          ) : filteredProcedures.length === 0 ? (
                   <div className="text-center py-8">
                     <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-600">Nenhum procedimento encontrado</p>
@@ -811,164 +806,112 @@ export default function Procedimentos() {
                     </p>
                   </div>
                 ) : (
-              <div className="space-y-3">
+            <div className="space-y-3">
                 {filteredProcedures.map((procedure) => (
                   <div 
                     key={procedure.id} 
-                    className="bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer relative"
-                    onClick={() => handleCardPress(() => handleProcedureClick(procedure))}
-                  >
-                    {/* Mobile Layout */}
-                    <div className="lg:hidden p-3">
-                      <div className="flex items-start justify-between mb-2">
+                  className="group relative overflow-hidden bg-white rounded-xl border border-gray-200/50 shadow-sm hover:shadow-lg hover:shadow-gray-200/50 hover:border-gray-300/50 cursor-pointer transition-all duration-300 ease-in-out transform hover:-translate-y-1"
+                  onClick={() => handleCardPress(() => handleProcedureClick(procedure))}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-gray-50/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  {/* Mobile Layout */}
+                  <div className="lg:hidden relative p-4">
+                    <div className="flex flex-col gap-3">
+                      {/* Primeira linha: Nome + Status */}
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center flex-shrink-0">
-                            <FileText className="w-5 h-5 text-teal-600" />
+                          <div className="w-12 h-12 bg-gradient-to-br from-teal-100 to-teal-200 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
+                            <FileText className="w-6 h-6 text-teal-700" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-2 mb-1">
                               <p className="font-semibold text-gray-900 text-base truncate">{procedure.patient_name}</p>
                               {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
-                                <Paperclip className="w-4 h-4 text-blue-500" />
+                                <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
                               )}
                             </div>
-                            <p className="text-sm text-gray-600 truncate">{procedure.procedure_type}</p>
+                            <p className="text-sm text-gray-600 truncate font-medium mb-1">{procedure.procedure_type}</p>
                             {getParcelStatus(procedure) && (
-                              <p className="text-xs text-teal-600 font-medium">Parcelas: {getParcelStatus(procedure)}</p>
+                              <p className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-1 rounded-full inline-block">
+                                Parcelas: {getParcelStatus(procedure)}
+                              </p>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => setActiveActionMenu(activeActionMenu === procedure.id ? null : procedure.id)}
-                            className="p-1"
-                          >
-                            <MoreVertical className="w-4 h-4 text-gray-500" />
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3 text-sm text-gray-600">
-                          <div className="flex items-center">
-                            <Calendar className="w-4 h-4 mr-1" />
-                            <span className="font-medium">{formatDate(procedure.procedure_date)}</span>
-                          </div>
-                          <div className="flex items-center">
-                            <DollarSign className="w-4 h-4 mr-1" />
-                            <span className="font-semibold text-gray-900">{formatCurrency(procedure.procedure_value)}</span>
-                          </div>
-                        </div>
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(procedure.payment_status || 'pending')}`}>
+                        <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(procedure.payment_status || 'pending')}`}>
                           {getStatusText(procedure.payment_status || 'pending')}
                         </span>
                       </div>
-
-                      {/* Action Menu */}
-                      {activeActionMenu === procedure.id && (
-                        <div className="mt-3 pt-3 border-t border-gray-200">
-                          <div className="flex gap-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => {
-                                setActiveActionMenu(null)
-                                handleCardPress(() => handleProcedureClick(procedure))
-                              }}
-                              className="flex-1 text-sm"
-                            >
-                              <Eye className="w-4 h-4 mr-1" />
-                              Ver Detalhes
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => {
-                                setActiveActionMenu(null)
-                                handleButtonPress(() => handleProcedureClick(procedure), 'light')
-                              }}
-                              className="flex-1 text-sm"
-                            >
-                              <Edit className="w-4 h-4 mr-1" />
-                              Editar
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => {
-                                setActiveActionMenu(null)
-                                handleButtonPress(() => handleDeleteClick(procedure), 'medium')
-                              }}
-                              className="text-sm text-red-600 border-red-200 hover:bg-red-50"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
+                      
+                      {/* Segunda linha: Valor + Data */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <DollarSign className="w-5 h-5 mr-2 text-gray-600" />
+                          <span className="font-bold text-gray-900 text-lg">{formatCurrency(procedure.procedure_value)}</span>
                         </div>
-                      )}
+                        <div className="text-sm text-gray-500 font-medium">
+                          {formatDate(procedure.procedure_date)}
+                        </div>
+                      </div>
+                      
                     </div>
+                  </div>
 
-                    {/* Desktop Layout */}
-                    <div className="hidden lg:flex items-center justify-between p-4">
+                  {/* Desktop Layout */}
+                  <div className="hidden lg:flex flex-col relative p-6">
+                    {/* Primeira linha: Nome + Status */}
+                    <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
-                        <FileText className="w-6 h-6 text-teal-600" />
+                        <div className="w-12 h-12 bg-gradient-to-br from-teal-100 to-teal-200 rounded-xl flex items-center justify-center shadow-sm">
+                          <FileText className="w-6 h-6 text-teal-700" />
                       </div>
                       <div>
-                        <div className="flex items-center space-x-2">
-                        <p className="font-medium text-gray-900">{procedure.patient_name}</p>
-                          {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
-                            <Paperclip className="w-4 h-4 text-blue-500" />
+                          <div className="flex items-center space-x-2 mb-1">
+                            <p className="font-semibold text-gray-900 text-lg">{procedure.patient_name}</p>
+                            {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
+                              <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 font-medium mb-1">{procedure.procedure_type}</p>
+                          {getParcelStatus(procedure) && (
+                            <p className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-1 rounded-full inline-block">
+                              Parcelas: {getParcelStatus(procedure)}
+                            </p>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600">{procedure.procedure_type}</p>
-                        {getParcelStatus(procedure) && (
-                          <p className="text-xs text-teal-600 font-medium">Parcelas: {getParcelStatus(procedure)}</p>
-                        )}
-                        <div className="flex items-center space-x-4 mt-1">
-                          <div className="flex items-center text-sm text-gray-500">
+                      </div>
+                      <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(procedure.payment_status || 'pending')}`}>
+                        {getStatusText(procedure.payment_status || 'pending')}
+                      </span>
+                    </div>
+                    
+                    {/* Segunda linha: Informações + Valor */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-6 text-sm text-gray-500">
+                        <div className="flex items-center">
                             <Calendar className="w-4 h-4 mr-1" />
                             {formatDate(procedure.procedure_date)} às {procedure.procedure_time}
                           </div>
-                          <div className="flex items-center text-sm text-gray-500">
+                        <div className="flex items-center">
                             <User className="w-4 h-4 mr-1" />
                             {user?.name}
-                          </div>
-                        </div>
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
                       <div className="text-right">
-                        <p className="font-medium text-gray-900 flex items-center">
-                          <DollarSign className="w-4 h-4 mr-1" />
+                          <p className="font-bold text-gray-900 text-xl flex items-center justify-end">
+                            <DollarSign className="w-5 h-5 mr-2 text-gray-600" />
                           {formatCurrency(procedure.procedure_value)}
                         </p>
-                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(procedure.payment_status || 'pending')}`}>
-                          {getStatusText(procedure.payment_status || 'pending')}
-                        </span>
                       </div>
-                      <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          title="Excluir"
-                            onClick={() => handleButtonPress(() => handleDeleteClick(procedure), 'light')}
-                        >
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
-                        </div>
+                      </div>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-                )}
-              </>
             )}
           </div>
-        </Card>
       </div>
 
       {/* Modal de Detalhes do Procedimento */}
