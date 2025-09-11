@@ -21,6 +21,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { procedureService, ProcedureAttachment } from '@/lib/procedures'
+import { goalService } from '@/lib/goals'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, getFullGreeting, handleButtonPress, handleCardPress } from '@/lib/utils'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
@@ -100,11 +101,26 @@ export default function Dashboard() {
     if (!user?.id) return
     
     try {
-      // Carregar meta do localStorage (igual ao financeiro)
-      const savedGoal = localStorage.getItem(`monthlyGoal_${user.id}`)
-      if (savedGoal) {
-        const goal = JSON.parse(savedGoal)
-        setMonthlyGoal(goal)
+      // Primeiro tentar carregar do Supabase
+      const goal = await goalService.getGoal(user.id)
+      
+      if (goal) {
+        // Converter formato do banco para formato do estado
+        setMonthlyGoal({
+          targetValue: goal.target_value,
+          resetDay: goal.reset_day,
+          isEnabled: goal.is_enabled
+        })
+      } else {
+        // Se não encontrar no banco, tentar migrar do localStorage
+        const migratedGoal = await goalService.migrateFromLocalStorage(user.id)
+        if (migratedGoal) {
+          setMonthlyGoal({
+            targetValue: migratedGoal.target_value,
+            resetDay: migratedGoal.reset_day,
+            isEnabled: migratedGoal.is_enabled
+          })
+        }
       }
     } catch (error) {
       console.error('Erro ao carregar meta mensal:', error)
@@ -115,10 +131,22 @@ export default function Dashboard() {
     if (!user?.id) return
     
     try {
-      // Salvar no localStorage (igual ao financeiro)
-      localStorage.setItem(`monthlyGoal_${user.id}`, JSON.stringify(goal))
-      setMonthlyGoal(goal)
-      setShowGoalModal(false)
+      // Salvar no Supabase
+      const goalData = {
+        user_id: user.id,
+        target_value: goal.targetValue,
+        reset_day: goal.resetDay,
+        is_enabled: goal.isEnabled
+      }
+      
+      const savedGoal = await goalService.saveGoal(goalData)
+      
+      if (savedGoal) {
+        setMonthlyGoal(goal)
+        setShowGoalModal(false)
+      } else {
+        console.error('Erro ao salvar meta no banco de dados')
+      }
     } catch (error) {
       console.error('Erro ao salvar meta mensal:', error)
     }
