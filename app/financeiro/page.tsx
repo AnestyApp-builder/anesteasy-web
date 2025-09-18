@@ -38,6 +38,7 @@ export default function Financeiro() {
   })
   const [loading, setLoading] = useState(true)
   const [procedureChartData, setProcedureChartData] = useState<any[]>([])
+  const [monthlyRevenueData, setMonthlyRevenueData] = useState<any[]>([])
   const [monthlyGoal, setMonthlyGoal] = useState({
     targetValue: 0,
     resetDay: 1,
@@ -78,6 +79,7 @@ export default function Financeiro() {
       // Carregar dados dos procedimentos para o gráfico
       const procedures = await procedureService.getProcedures(user.id)
       calculateProcedureChartData(procedures)
+      calculateMonthlyRevenueData(procedures)
     } catch (error) {
       console.error('Erro ao carregar dados financeiros:', error)
     } finally {
@@ -125,6 +127,38 @@ export default function Financeiro() {
     ]
 
     setProcedureChartData(chartData)
+  }
+
+  const calculateMonthlyRevenueData = (procedures: any[]) => {
+    // Obter os últimos 6 meses
+    const months = []
+    const currentDate = new Date()
+    
+    for (let i = 5; i >= 0; i--) {
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1)
+      months.push({
+        date: date,
+        name: date.toLocaleDateString('pt-BR', { month: 'short' }),
+        receita: 0
+      })
+    }
+
+    // Calcular receita por mês baseada nos procedimentos pagos
+    procedures.forEach(procedure => {
+      if (procedure.payment_status === 'paid' && procedure.procedure_date) {
+        const procedureDate = new Date(procedure.procedure_date)
+        const monthIndex = months.findIndex(month => 
+          month.date.getMonth() === procedureDate.getMonth() && 
+          month.date.getFullYear() === procedureDate.getFullYear()
+        )
+        
+        if (monthIndex !== -1) {
+          months[monthIndex].receita += procedure.procedure_value || 0
+        }
+      }
+    })
+
+    setMonthlyRevenueData(months)
   }
 
   const loadMonthlyGoal = async () => {
@@ -257,14 +291,7 @@ export default function Financeiro() {
     { name: 'Pendente', value: stats.pendingValue, color: '#f59e0b' }
   ]
 
-  const monthlyData = [
-    { name: 'Jan', receita: 12000 },
-    { name: 'Fev', receita: 15000 },
-    { name: 'Mar', receita: 18000 },
-    { name: 'Abr', receita: 14000 },
-    { name: 'Mai', receita: 16000 },
-    { name: 'Jun', receita: 20000 }
-  ]
+  // monthlyData agora vem do banco de dados via monthlyRevenueData
 
   return (
     <Layout>
@@ -464,7 +491,7 @@ export default function Financeiro() {
             <CardContent>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={monthlyData}>
+                  <AreaChart data={monthlyRevenueData}>
                     <defs>
                       <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.8}/>

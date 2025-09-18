@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Stethoscope, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Stethoscope, Mail, Lock, Eye, EyeOff, AlertCircle, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -65,12 +65,25 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-6 md:space-y-8">
-        {/* Logo - Mobile Optimized */}
-        <div className="text-center">
-          <Link href="/">
-            <Logo size="lg" />
+    <div className="min-h-screen bg-white flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8 relative">
+      {/* Botão Voltar */}
+      <div className="absolute top-6 left-6">
+        <Link href="/">
+          <Button 
+            variant="ghost" 
+            className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span className="text-sm font-medium">Voltar</span>
+          </Button>
+        </Link>
+      </div>
+
+      <div className="max-w-md w-full">
+        {/* Logo - Centralizado com o card */}
+        <div className="text-center mb-6">
+          <Link href="/" className="inline-block">
+            <Logo size="md" showText={false} />
           </Link>
         </div>
 
@@ -115,7 +128,7 @@ export default function Login() {
               />
               <button
                 type="button"
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 flex items-center justify-center"
                 onClick={() => setShowPassword(!showPassword)}
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}

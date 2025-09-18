@@ -1777,11 +1777,11 @@ Redirecionando para a lista de procedimentos...`)
                   </p>
                   
                   {/* Professional Alert */}
-                  <Alert className="mb-6 max-w-2xl mx-auto bg-teal-50 border-teal-200">
-                    <CheckCircle className="h-4 w-4 text-teal-600" />
-                    <AlertTitle className="text-teal-800">Preenchimento Automático Inteligente</AlertTitle>
-                    <AlertDescription className="text-teal-700">
-                      Nome, data de nascimento, convênio, procedimento e hospital serão extraídos e preenchidos automaticamente usando tecnologia OCR avançada.
+                  <Alert className="mb-6 max-w-2xl mx-auto bg-blue-50 border-blue-200">
+                    <AlertCircle className="h-4 w-4 text-blue-600" />
+                    <AlertTitle className="text-blue-800">Funcionalidade em Desenvolvimento</AlertTitle>
+                    <AlertDescription className="text-blue-700">
+                      A funcionalidade de OCR para reconhecimento automático de etiquetas hospitalares estará disponível em breve. Por enquanto, preencha os campos manualmente.
                     </AlertDescription>
                   </Alert>
                   
@@ -1801,14 +1801,8 @@ Redirecionando para a lista de procedimentos...`)
                         {/* Capturar foto */}
                         <Button
                           type="button"
-                          onClick={() => {
-                            if (fileInputRef.current) {
-                              fileInputRef.current.setAttribute('capture', 'environment')
-                              fileInputRef.current.click()
-                            }
-                          }}
-                          className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white py-6 px-8 rounded-xl shadow-lg hover:shadow-xl active:scale-95 transition-all duration-200 border-0"
-                          disabled={ocrLoading}
+                          className="w-full bg-gradient-to-r from-gray-400 to-gray-500 text-white py-6 px-8 rounded-xl shadow-lg border-0 cursor-not-allowed opacity-75"
+                          disabled={true}
                         >
                           <div className="flex flex-col items-center space-y-2">
                             <Camera className="w-7 h-7" />
@@ -1816,7 +1810,7 @@ Redirecionando para a lista de procedimentos...`)
                               Capturar Foto
                             </span>
                             <span className="text-xs opacity-90">
-                              Use a câmera do dispositivo
+                              Em Breve
                             </span>
                           </div>
                         </Button>
@@ -1824,14 +1818,8 @@ Redirecionando para a lista de procedimentos...`)
                         {/* Upload de imagem */}
                         <Button
                           type="button"
-                          onClick={() => {
-                            if (fileInputRef.current) {
-                              fileInputRef.current.removeAttribute('capture')
-                              fileInputRef.current.click()
-                            }
-                          }}
-                          className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white py-6 px-8 rounded-xl shadow-lg hover:shadow-xl active:scale-95 transition-all duration-200 border-0"
-                          disabled={ocrLoading}
+                          className="w-full bg-gradient-to-r from-gray-400 to-gray-500 text-white py-6 px-8 rounded-xl shadow-lg border-0 cursor-not-allowed opacity-75"
+                          disabled={true}
                         >
                           <div className="flex flex-col items-center space-y-2">
                             <Upload className="w-7 h-7" />
@@ -1839,7 +1827,7 @@ Redirecionando para a lista de procedimentos...`)
                               Upload Imagem
                             </span>
                             <span className="text-xs opacity-90">
-                              Selecione do dispositivo
+                              Em Breve
                             </span>
                           </div>
                         </Button>
