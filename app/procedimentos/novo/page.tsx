@@ -856,7 +856,7 @@ export default function NovoProcedimento() {
 
     // Validações básicas com mensagens específicas
     if (!formData.nomePaciente || !formData.dataNascimento || !formData.dataCirurgia || 
-        !formData.horaInicio || !formData.horaTermino || !formData.tipoAnestesia.length) {
+        !formData.horaInicio || !formData.tipoAnestesia.length) {
       showFeedback('error', '⚠️ Campos obrigatórios não preenchidos. Verifique se todos os campos marcados com * estão preenchidos.')
       return
     }
@@ -867,7 +867,8 @@ export default function NovoProcedimento() {
       return
     }
 
-    if (!validateEndTime(formData.horaInicio, formData.horaTermino)) {
+    // Validar hora de término apenas se estiver preenchida
+    if (formData.horaTermino && !validateEndTime(formData.horaInicio, formData.horaTermino)) {
       showFeedback('error', '⚠️ Horário inválido: A hora de término deve ser maior que a hora de início.')
       return
     }
@@ -1023,7 +1024,7 @@ Redirecionando para a lista de procedimentos...`)
     { id: 1, title: 'Identificação do Procedimento', icon: User },
     { id: 2, title: 'Dados do Procedimento', icon: Stethoscope },
     { id: 3, title: 'Dados Administrativos', icon: DollarSign },
-    { id: 4, title: 'Upload de Fichas', icon: Upload }
+    { id: 4, title: 'Upload de Fichas (Opcional)', icon: Upload }
   ]
 
   return (
@@ -1264,12 +1265,11 @@ Redirecionando para a lista de procedimentos...`)
                 required
               />
               <Input
-                    label="Hora de Término da Anestesia *"
+                    label="Hora de Término da Anestesia"
                 type="time"
                 icon={<Clock className="w-5 h-5" />}
                     value={formData.horaTermino}
                     onChange={(e) => updateFormData('horaTermino', e.target.value)}
-                required
               />
             </div>
 
@@ -1681,17 +1681,17 @@ Redirecionando para a lista de procedimentos...`)
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Upload className="w-5 h-5 mr-2" />
-                  Upload de Ficha Anestésica
+                  Upload de Ficha Anestésica (Opcional)
                 </CardTitle>
               </CardHeader>
               <div className="p-6 space-y-6">
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                   <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Upload de Fichas Anestésicas
+                    Upload de Fichas Anestésicas (Opcional)
                   </h3>
                   <p className="text-gray-600 mb-4">
-                    Faça upload de até 10 arquivos (PDF, JPG, PNG)
+                    Faça upload de até 10 arquivos (PDF, JPG, PNG) - Campo opcional
                   </p>
                   <input
                     type="file"

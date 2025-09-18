@@ -49,7 +49,7 @@ export default function Agenda() {
     title: '',
     start_date: '',
     end_date: '',
-    shift_type: 'hospital_fixo' as 'hospital_fixo' | 'sobreaviso',
+    shift_type: 'hospital_fixo' as 'hospital_fixo' | 'sobreaviso' | 'cirurgia_eletiva',
     hospital_name: '',
     description: '',
     is_recurring: false,
@@ -316,8 +316,8 @@ export default function Agenda() {
         return
       }
 
-      if (formData.shift_type === 'hospital_fixo' && !formData.hospital_name.trim()) {
-        showNotificationModal('Nome do hospital é obrigatório para plantão fixo')
+      if ((formData.shift_type === 'hospital_fixo' || formData.shift_type === 'cirurgia_eletiva') && !formData.hospital_name.trim()) {
+        showNotificationModal('Nome do hospital é obrigatório para plantão fixo e cirurgias eletivas')
         return
       }
 
@@ -347,7 +347,7 @@ export default function Agenda() {
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
         shift_type: formData.shift_type,
-        hospital_name: formData.shift_type === 'hospital_fixo' ? formData.hospital_name.trim() : undefined,
+        hospital_name: (formData.shift_type === 'hospital_fixo' || formData.shift_type === 'cirurgia_eletiva') ? formData.hospital_name.trim() : undefined,
         description: formData.description.trim() || undefined,
         is_recurring: formData.is_recurring,
         recurrence_type: formData.is_recurring ? formData.recurrence_type : undefined,
@@ -608,6 +608,8 @@ export default function Agenda() {
                                       text-xs px-1 py-0.5 h-4 sm:h-5 w-full text-center font-medium
                                       ${shift.shift_type === 'hospital_fixo' 
                                         ? 'bg-blue-500 hover:bg-blue-600 text-white' 
+                                        : shift.shift_type === 'cirurgia_eletiva'
+                                        ? 'bg-green-500 hover:bg-green-600 text-white'
                                         : 'bg-amber-500 hover:bg-amber-600 text-white'
                                       }
                                     `}
@@ -650,6 +652,10 @@ export default function Agenda() {
               <div className="flex items-center space-x-2">
                 <div className="w-4 h-4 bg-amber-500 rounded"></div>
                 <span className="text-sm text-gray-700">📞 Plantão Sobreaviso</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 bg-green-500 rounded"></div>
+                <span className="text-sm text-gray-700">⚕️ Cirurgias Eletivas</span>
               </div>
             </div>
           </CardContent>
@@ -695,17 +701,18 @@ export default function Agenda() {
                       value={formData.shift_type}
                       onChange={(e) => setFormData(prev => ({ 
                         ...prev, 
-                        shift_type: e.target.value as 'hospital_fixo' | 'sobreaviso',
+                        shift_type: e.target.value as 'hospital_fixo' | 'sobreaviso' | 'cirurgia_eletiva',
                         hospital_name: e.target.value === 'sobreaviso' ? '' : prev.hospital_name
                       }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                     >
                       <option value="hospital_fixo">🏥 Hospital Fixo</option>
                       <option value="sobreaviso">📞 Sobreaviso</option>
+                      <option value="cirurgia_eletiva">⚕️ Cirurgias Eletivas</option>
                     </select>
                   </div>
 
-                  {formData.shift_type === 'hospital_fixo' && (
+                  {(formData.shift_type === 'hospital_fixo' || formData.shift_type === 'cirurgia_eletiva') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Hospital/Clínica *
@@ -934,8 +941,8 @@ export default function Agenda() {
                                     style={{
                                       left: `${leftPercent}%`,
                                       width: `${widthPercent}%`,
-                                      borderLeftColor: shift.shift_type === 'hospital_fixo' ? '#3b82f6' : '#f59e0b',
-                                      backgroundColor: shift.shift_type === 'hospital_fixo' ? '#dbeafe' : '#fef3c7'
+                                      borderLeftColor: shift.shift_type === 'hospital_fixo' ? '#3b82f6' : shift.shift_type === 'cirurgia_eletiva' ? '#10b981' : '#f59e0b',
+                                      backgroundColor: shift.shift_type === 'hospital_fixo' ? '#dbeafe' : shift.shift_type === 'cirurgia_eletiva' ? '#d1fae5' : '#fef3c7'
                                     }}
                                     title={`${shift.title} - ${formatTime(shift.start_date)} às ${formatTime(shift.end_date)}`}
                                     onClick={() => {
@@ -946,7 +953,7 @@ export default function Agenda() {
                                     <div className="flex items-center justify-between w-full min-w-0">
                                       <div className="flex items-center space-x-2 min-w-0 flex-1">
                                         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                          shift.shift_type === 'hospital_fixo' ? 'bg-blue-500' : 'bg-amber-500'
+                                          shift.shift_type === 'hospital_fixo' ? 'bg-blue-500' : shift.shift_type === 'cirurgia_eletiva' ? 'bg-green-500' : 'bg-amber-500'
                                         }`}></div>
                                         <span className="text-xs font-medium text-gray-800 truncate">
                                           {shift.title}
@@ -982,6 +989,10 @@ export default function Agenda() {
                                 <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
                                 <span className="text-gray-600">Sobreaviso</span>
                               </div>
+                              <div className="flex items-center space-x-1">
+                                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                <span className="text-gray-600">Cirurgias Eletivas</span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -996,6 +1007,8 @@ export default function Agenda() {
                           p-4 rounded-lg border transition-all hover:shadow-md
                           ${shift.shift_type === 'hospital_fixo' 
                             ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' 
+                            : shift.shift_type === 'cirurgia_eletiva'
+                            ? 'bg-green-50 border-green-200 hover:bg-green-100'
                             : 'bg-amber-50 border-amber-200 hover:bg-amber-100'
                           }
                         `}
@@ -1004,14 +1017,14 @@ export default function Agenda() {
                           <div className="flex-1">
                              <div className="flex items-center space-x-3 mb-2">
                                <span className="text-2xl">
-                                 {shift.shift_type === 'hospital_fixo' ? '🏥' : '📞'}
+                                 {shift.shift_type === 'hospital_fixo' ? '🏥' : shift.shift_type === 'cirurgia_eletiva' ? '⚕️' : '📞'}
                                </span>
                                <h3 className="text-lg font-semibold text-gray-900">{shift.title}</h3>
                                <span className={`
                                  px-3 py-1 rounded-full text-sm font-medium text-white
-                                 ${shift.shift_type === 'hospital_fixo' ? 'bg-blue-500' : 'bg-amber-500'}
+                                 ${shift.shift_type === 'hospital_fixo' ? 'bg-blue-500' : shift.shift_type === 'cirurgia_eletiva' ? 'bg-green-500' : 'bg-amber-500'}
                                `}>
-                                 {shift.shift_type === 'hospital_fixo' ? 'Hospital Fixo' : 'Sobreaviso'}
+                                 {shift.shift_type === 'hospital_fixo' ? 'Hospital Fixo' : shift.shift_type === 'cirurgia_eletiva' ? 'Cirurgias Eletivas' : 'Sobreaviso'}
                                </span>
                                {(shift.is_recurring || shift.parent_shift_id) && (
                                  <span className="px-2 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
