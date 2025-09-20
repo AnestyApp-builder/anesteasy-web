@@ -12,8 +12,6 @@ import {
   Clock,
   AlertCircle,
   Upload,
-  Camera,
-  Eye,
   X,
   CheckCircle,
   Building,
@@ -39,7 +37,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useSecretaria } from '@/contexts/SecretariaContext'
 import { formatCurrency } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
-import Tesseract from 'tesseract.js'
 
 interface FormData {
   // 1. Identificação do Procedimento
@@ -79,7 +76,6 @@ interface FormData {
   fichas: File[]
   
   // 5. OCR
-  etiquetaOCR: string
 }
 
 // Lista expandida de anestesias com códigos TSSU
@@ -246,7 +242,6 @@ export default function NovoProcedimento() {
     dataPagamento: '',
     observacoes: '',
     fichas: [],
-    etiquetaOCR: ''
   })
   
   const [loading, setLoading] = useState(false)
@@ -331,12 +326,6 @@ export default function NovoProcedimento() {
     return formatCurrency(numericValue)
   }
   const [previewFiles, setPreviewFiles] = useState<string[]>([])
-  const [ocrLoading, setOcrLoading] = useState(false)
-  const [ocrProgress, setOcrProgress] = useState(0)
-  const [ocrText, setOcrText] = useState('')
-  const [selectedImage, setSelectedImage] = useState<string | null>(null)
-  const [showDebugText, setShowDebugText] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
   // Estados para o campo de anestesia com busca
@@ -500,359 +489,6 @@ export default function NovoProcedimento() {
     setMostrarListaAnestesia(false)
   }
 
-  // OCR Simulation (placeholder)
-  const handleOCR = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click()
-    }
-  }
-
-  // Função para pré-processar imagem e melhorar o OCR
-  const preprocessImage = async (file: File): Promise<File> => {
-    return new Promise((resolve) => {
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')!
-      const img = new Image()
-      
-      img.onload = () => {
-        // Redimensionar para melhor qualidade (mínimo 1000px de largura)
-        const maxWidth = Math.max(1000, img.width)
-        const maxHeight = Math.max(1000, img.height)
-        const scale = Math.min(maxWidth / img.width, maxHeight / img.height)
-        
-        canvas.width = img.width * scale
-        canvas.height = img.height * scale
-        
-        // Desenhar imagem redimensionada
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        
-        // Aplicar filtros para melhorar o OCR
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const data = imageData.data
-        
-        // Aumentar contraste e reduzir ruído
-        for (let i = 0; i < data.length; i += 4) {
-          // Converter para escala de cinza
-          const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
-          
-          // Aumentar contraste
-          const contrast = gray > 128 ? 255 : 0
-          
-          data[i] = contrast     // R
-          data[i + 1] = contrast // G
-          data[i + 2] = contrast // B
-          // data[i + 3] mantém o alpha
-        }
-        
-        ctx.putImageData(imageData, 0, 0)
-        
-        // Converter de volta para File
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const processedFile = new File([blob], file.name, { type: 'image/png' })
-            resolve(processedFile)
-          } else {
-            resolve(file)
-          }
-        }, 'image/png', 0.95)
-      }
-      
-      img.src = URL.createObjectURL(file)
-    })
-  }
-
-  // Função para realizar múltiplas tentativas de OCR com diferentes configurações
-  const performMultipleOCR = async (file: File) => {
-    const ocrConfigs = [
-      {
-        name: 'Português + LSTM',
-        lang: 'por',
-        options: {
-          tessedit_pageseg_mode: '6', // Uniform block of text
-          tessedit_ocr_engine_mode: '1', // LSTM only
-          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/-()',
-        }
-      },
-      {
-        name: 'Português + Legacy',
-        lang: 'por',
-        options: {
-          tessedit_pageseg_mode: '6',
-          tessedit_ocr_engine_mode: '0', // Legacy only
-          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/-()',
-        }
-      },
-      {
-        name: 'Português + Auto',
-        lang: 'por',
-        options: {
-          tessedit_pageseg_mode: '3', // Fully automatic page segmentation
-          tessedit_ocr_engine_mode: '3', // Default
-        }
-      },
-      {
-        name: 'Inglês + Português',
-        lang: 'eng+por',
-        options: {
-          tessedit_pageseg_mode: '6',
-          tessedit_ocr_engine_mode: '1',
-        }
-      }
-    ]
-
-    const results = []
-    
-    for (let i = 0; i < ocrConfigs.length; i++) {
-      const config = ocrConfigs[i]
-      try {
-        setOcrProgress(Math.round(((i + 1) / ocrConfigs.length) * 100))
-        
-        const { data } = await Tesseract.recognize(file, config.lang, {
-          ...config.options,
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              const progress = ((i / ocrConfigs.length) + (m.progress / ocrConfigs.length)) * 100
-              setOcrProgress(Math.round(progress))
-            }
-          }
-        })
-        
-        results.push({
-          config: config.name,
-          text: data.text,
-          confidence: data.confidence,
-          words: (data as any).words?.length || 0
-        })
-        
-        console.log(`OCR ${config.name}:`, {
-          text: data.text.substring(0, 100) + '...',
-          confidence: data.confidence,
-          words: (data as any).words?.length || 0
-        })
-      } catch (error) {
-        console.error(`Erro no OCR ${config.name}:`, error)
-      }
-    }
-    
-    return results
-  }
-
-  // Função para selecionar o melhor resultado de OCR
-  const selectBestOCRResult = (results: any[]) => {
-    if (results.length === 0) {
-      return { text: '', confidence: 0 }
-    }
-    
-    // Ordenar por confiança e quantidade de palavras
-    const sortedResults = results.sort((a, b) => {
-      const scoreA = a.confidence + (a.words * 0.1) // Confiança + bonus por palavras
-      const scoreB = b.confidence + (b.words * 0.1)
-      return scoreB - scoreA
-    })
-    
-    const best = sortedResults[0]
-    console.log('Melhor resultado OCR:', best)
-    
-    return best
-  }
-
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    // Verificar se é uma imagem
-    if (!file.type.startsWith('image/')) {
-      showFeedback('error', '⚠️ Tipo de arquivo inválido: Selecione apenas arquivos de imagem (JPG, PNG, etc.)')
-      return
-    }
-
-    // Verificar tamanho do arquivo (máximo 10MB)
-    const maxSize = 10 * 1024 * 1024 // 10MB
-    if (file.size > maxSize) {
-      showFeedback('error', '⚠️ Arquivo muito grande: Tamanho máximo permitido é 10MB')
-      return
-    }
-
-    // Criar preview da imagem
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      setSelectedImage(e.target?.result as string)
-    }
-    reader.readAsDataURL(file)
-
-    setOcrLoading(true)
-    setOcrProgress(0)
-    clearFeedback()
-
-    try {
-      // Pré-processar a imagem para melhorar o OCR
-      const processedImage = await preprocessImage(file)
-      
-      // Tentar múltiplas configurações de OCR para melhor precisão
-      const ocrResults = await performMultipleOCR(processedImage)
-      
-      // Escolher o melhor resultado baseado na confiança e quantidade de texto
-      const bestResult = selectBestOCRResult(ocrResults)
-      
-      setOcrText(bestResult.text)
-      
-      // Extrair dados do texto usando algoritmos melhorados
-      const extractedData = extractDataFromText(bestResult.text)
-      
-      setFormData(prev => ({
-        ...prev,
-        ...extractedData
-      }))
-      
-      showFeedback('success', `✅ Dados extraídos com ${Math.round(bestResult.confidence)}% de confiança! Revise e edite se necessário.`)
-    } catch (error) {
-      console.error('Erro no OCR:', error)
-      showFeedback('error', '❌ Erro ao processar a imagem. Tente novamente com uma imagem mais clara.')
-    } finally {
-      setOcrLoading(false)
-      setOcrProgress(0)
-    }
-  }
-
-  const extractDataFromText = (text: string) => {
-    const extracted: Partial<FormData> = {}
-    
-    // Log do texto bruto para debug
-    console.log("OCR Bruto:", text)
-    
-    // Limpar e normalizar o texto
-    const cleanText = text.replace(/\s+/g, ' ').trim()
-    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
-    
-    // Função auxiliar para encontrar padrões mais inteligentes
-    const findPattern = (patterns: RegExp[], text: string, fallback?: string) => {
-      for (const pattern of patterns) {
-        const match = text.match(pattern)
-        if (match && match[1] && match[1].trim().length > 2) {
-          return match[1].trim()
-        }
-      }
-      return fallback || ""
-    }
-    
-    // Extrair dados com algoritmos mais inteligentes
-    const dados = {
-      // Nome - múltiplas estratégias
-      nome: findPattern([
-        /Nome\s*:?\s*([^\n\r,]+)/i,
-        /Paciente\s*:?\s*([^\n\r,]+)/i,
-        /([A-Z][A-Z\s]{3,}[A-Z])(?:\s|$|,)/, // Nomes em maiúscula
-        /([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?:\s|$|,)/, // Nomes em formato normal
-        /([A-Z][a-z]+\s+[A-Z][a-z]+)/ // Nomes simples
-      ], text),
-      
-      // Data de nascimento - múltiplos formatos
-      nascimento: findPattern([
-        /Nascimento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
-        /Nasc\.?\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
-        /(\d{2}\/\d{2}\/\d{4})/,
-        /(\d{2}-\d{2}-\d{4})/,
-        /(\d{2}\.\d{2}\.\d{4})/
-      ], text),
-      
-      // Convênio - padrões mais específicos
-      convenio: findPattern([
-        /Conv[eê]nio\s*:?\s*([^\n\r,]+)/i,
-        /Plano\s*:?\s*([^\n\r,]+)/i,
-        /([A-Z][A-Z\s]+(?:SAUDE|PLANO|MEDICO|HOSPITAL|FESP|UNIMED|BRADESCO|SULAMERICA|NOTREDAME|AMIL|GOLDEN|CROSS))/i,
-        /([A-Z][A-Z\s]{2,}(?:SAUDE|PLANO|MEDICO|HOSPITAL))/i
-      ], text),
-      
-      // Hospital/Clínica
-      hospital: findPattern([
-        /Hospital\s*:?\s*([^\n\r,]+)/i,
-        /Cl[ií]nica\s*:?\s*([^\n\r,]+)/i,
-        /Institui[cç][aã]o\s*:?\s*([^\n\r,]+)/i,
-        /([A-Z][A-Z\s]+(?:HOSPITAL|CLINICA|CENTRO|SANTA|S[ÃA]O|UNIVERSIT[AÁ]RIO))/i,
-        /([A-Z][a-z]+\s+(?:Hospital|Cl[ií]nica|Centro))/i
-      ], text),
-      
-      // Procedimento
-      procedimento: findPattern([
-        /Procedimento\s*:?\s*([^\n\r,]+)/i,
-        /Cirurgia\s*:?\s*([^\n\r,]+)/i,
-        /Tipo\s*:?\s*([^\n\r,]+)/i,
-        /([A-Z][A-Z\s]+(?:CIRURGIA|PROCEDIMENTO|LAPAROSCOPIA|ENDOSCOPIA))/i,
-        /([A-Z][a-z]+\s+(?:Cirurgia|Procedimento|Laparoscopia|Endoscopia))/i
-      ], text),
-      
-      // Especialidade
-      especialidade: findPattern([
-        /Especialidade\s*:?\s*([^\n\r,]+)/i,
-        /Espec\.?\s*:?\s*([^\n\r,]+)/i,
-        /([A-Z][a-z]+\s+(?:Geral|Ortopedia|Cardiologia|Neurologia|Ginecologia|Urologia|Oftalmologia|Pl[aá]stica|Vascular))/i
-      ], text),
-      
-      // Cirurgião
-      cirurgiao: findPattern([
-        /Cirurgi[aã]o\s*:?\s*([^\n\r,]+)/i,
-        /M[eé]dico\s*:?\s*([^\n\r,]+)/i,
-        /Dr\.?\s*([A-Z][a-z]+\s+[A-Z][a-z]+)/i,
-        /([A-Z][a-z]+\s+[A-Z][a-z]+)(?:\s|$|,)/ // Nome completo
-      ], text),
-      
-      // Carteirinha - mais específico
-      carteirinha: findPattern([
-        /Carteirinha\s*:?\s*(\d+)/i,
-        /Cart\.?\s*:?\s*(\d+)/i,
-        /Matr[ií]cula\s*:?\s*(\d+)/i,
-        /(\d{6,12})/ // Números de 6 a 12 dígitos
-      ], text),
-      
-      // Outros campos úteis
-      leito: findPattern([/Leito\s*:?\s*(\d+)/i], text),
-      atendimento: findPattern([/Atend\.?\s*:?\s*(\d+)/i], text),
-      prontuario: findPattern([/Pront\.?\s*:?\s*(\d+)/i], text),
-      situacao: findPattern([/Situa[cç][aã]o\s*:?\s*([^\n\r,]+)/i], text),
-      entrada: findPattern([/(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})/], text),
-      codBarras: findPattern([/\d{17,}/], text)
-    }
-    
-    // Mapear para os campos do formulário com validação
-    if (dados.nome && dados.nome.length > 3) {
-      extracted.nomePaciente = dados.nome
-    }
-    
-    if (dados.nascimento && /^\d{2}\/\d{2}\/\d{4}$/.test(dados.nascimento)) {
-      extracted.dataNascimento = dados.nascimento
-    }
-    
-    if (dados.convenio && dados.convenio.length > 2) {
-      extracted.convenio = dados.convenio
-    }
-    
-    if (dados.carteirinha && dados.carteirinha.length >= 6) {
-      extracted.carteirinha = dados.carteirinha
-    }
-    
-    if (dados.hospital && dados.hospital.length > 3) {
-      extracted.hospital = dados.hospital
-    }
-    
-    if (dados.procedimento && dados.procedimento.length > 3) {
-      extracted.tipoProcedimento = dados.procedimento
-    }
-    
-    if (dados.especialidade && dados.especialidade.length > 3) {
-      extracted.especialidadeCirurgiao = dados.especialidade
-    }
-    
-    if (dados.cirurgiao && dados.cirurgiao.length > 3) {
-      extracted.nomeCirurgiao = dados.cirurgiao
-    }
-    
-    // Log dos dados extraídos para debug
-    console.log("Dados extraídos:", dados)
-    console.log("Mapeamento para formulário:", extracted)
-    
-    return extracted
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     clearFeedback()
@@ -863,7 +499,7 @@ export default function NovoProcedimento() {
     }
 
     // Só salvar o procedimento se estivermos na etapa final (Upload)
-    if (currentSection !== 4) {
+    if (currentSection !== 3) {
       showFeedback('error', '⚠️ Complete todas as etapas antes de finalizar.')
       return
     }
@@ -1036,11 +672,10 @@ Redirecionando para a lista de procedimentos...`)
   }
 
   const sections = [
-    { id: 0, title: 'OCR da Etiqueta Hospitalar', icon: Camera },
-    { id: 1, title: 'Identificação do Procedimento', icon: User },
-    { id: 2, title: 'Dados do Procedimento', icon: Stethoscope },
-    { id: 3, title: 'Dados Administrativos', icon: DollarSign },
-    { id: 4, title: 'Upload de Fichas (Opcional)', icon: Upload }
+    { id: 0, title: 'Identificação do Procedimento', icon: User },
+    { id: 1, title: 'Dados do Procedimento', icon: Stethoscope },
+    { id: 2, title: 'Dados Administrativos', icon: DollarSign },
+    { id: 3, title: 'Upload de Fichas (Opcional)', icon: Upload }
   ]
 
   return (
@@ -1154,8 +789,8 @@ Redirecionando para a lista de procedimentos...`)
             </div>
           )}
 
-          {/* Section 1: Identificação do Procedimento */}
-          {currentSection === 1 && (
+          {/* Section 0: Identificação do Procedimento */}
+          {currentSection === 0 && (
         <Card>
           <CardHeader>
                 <CardTitle className="flex items-center">
@@ -1253,8 +888,8 @@ Redirecionando para a lista de procedimentos...`)
             </Card>
           )}
 
-          {/* Section 2: Dados do Procedimento */}
-          {currentSection === 2 && (
+          {/* Section 1: Dados do Procedimento */}
+          {currentSection === 1 && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -1432,8 +1067,8 @@ Redirecionando para a lista de procedimentos...`)
             </Card>
           )}
 
-          {/* Section 3: Dados Administrativos */}
-          {currentSection === 3 && (
+          {/* Section 2: Dados Administrativos */}
+          {currentSection === 2 && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -1713,8 +1348,8 @@ Redirecionando para a lista de procedimentos...`)
             </Card>
           )}
 
-          {/* Section 4: Upload de Fichas */}
-          {currentSection === 4 && (
+          {/* Section 3: Upload de Fichas */}
+          {currentSection === 3 && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -1792,441 +1427,15 @@ Redirecionando para a lista de procedimentos...`)
             </Card>
           )}
 
-          {/* Section 0: OCR da Etiqueta */}
-          {currentSection === 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Camera className="w-5 h-5 mr-2" />
-                  OCR da Etiqueta Hospitalar
-                </CardTitle>
-              </CardHeader>
-              <div className="p-6 space-y-6">
-                {/* Header Section */}
-                <div className="text-center">
-                  <div className="w-20 h-20 bg-gradient-to-br from-teal-500 to-teal-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <Camera className="w-10 h-10 text-white" />
-                  </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                    Reconhecimento Inteligente de Etiquetas
-                  </h3>
-                  <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
-                    <strong>Comece aqui!</strong> Tire uma foto da etiqueta hospitalar para preenchimento automático de todos os campos do formulário.
-                  </p>
-                  
-                  {/* Professional Alert */}
-                  <Alert className="mb-6 max-w-2xl mx-auto bg-blue-50 border-blue-200">
-                    <AlertCircle className="h-4 w-4 text-blue-600" />
-                    <AlertTitle className="text-blue-800">Funcionalidade em Desenvolvimento</AlertTitle>
-                    <AlertDescription className="text-blue-700">
-                      A funcionalidade de OCR para reconhecimento automático de etiquetas hospitalares estará disponível em breve. Por enquanto, preencha os campos manualmente.
-                    </AlertDescription>
-                  </Alert>
-                  
-                  {/* Action Buttons Section */}
-                  <div className="space-y-6">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                    
-                    {/* Professional Action Buttons */}
-                    <div className="flex flex-col items-center space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-lg">
-                        {/* Capturar foto */}
-                        <Button
-                          type="button"
-                          className="w-full bg-gradient-to-r from-gray-400 to-gray-500 text-white py-6 px-8 rounded-xl shadow-lg border-0 cursor-not-allowed opacity-75"
-                          disabled={true}
-                        >
-                          <div className="flex flex-col items-center space-y-2">
-                            <Camera className="w-7 h-7" />
-                            <span className="text-base font-semibold">
-                              Capturar Foto
-                            </span>
-                            <span className="text-xs opacity-90">
-                              Em Breve
-                            </span>
-                          </div>
-                        </Button>
-                        
-                        {/* Upload de imagem */}
-                        <Button
-                          type="button"
-                          className="w-full bg-gradient-to-r from-gray-400 to-gray-500 text-white py-6 px-8 rounded-xl shadow-lg border-0 cursor-not-allowed opacity-75"
-                          disabled={true}
-                        >
-                          <div className="flex flex-col items-center space-y-2">
-                            <Upload className="w-7 h-7" />
-                            <span className="text-base font-semibold">
-                              Upload Imagem
-                            </span>
-                            <span className="text-xs opacity-90">
-                              Em Breve
-                            </span>
-                          </div>
-                        </Button>
-                      </div>
-                      
-                      {/* Professional Progress Bar */}
-                      {ocrLoading && (
-                        <div className="w-full max-w-md space-y-3">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium text-gray-700">Processando imagem...</span>
-                            <Badge variant="secondary" className="bg-teal-100 text-teal-800">
-                              {ocrProgress}%
-                            </Badge>
-                          </div>
-                          <Progress value={ocrProgress} className="h-3" />
-                          <p className="text-xs text-gray-500 text-center">
-                            Analisando texto da etiqueta hospitalar
-                          </p>
-                        </div>
-                      )}
-                      
-                      {/* Professional Image Preview */}
-                      {selectedImage && (
-                        <div className="w-full max-w-md">
-                          <Card className="overflow-hidden">
-                            <CardHeader className="pb-3">
-                              <div className="flex items-center justify-between">
-                                <CardTitle className="text-base flex items-center">
-                                  <FileImage className="w-4 h-4 mr-2" />
-                                  Imagem Selecionada
-                                </CardTitle>
-                                <Button
-                                type="button"
-                                  variant="destructive"
-                                  size="sm"
-                                onClick={() => {
-                                  setSelectedImage(null)
-                                  setOcrText('')
-                                    clearFeedback()
-                                  if (fileInputRef.current) {
-                                    fileInputRef.current.value = ''
-                                  }
-                                }}
-                                  className="h-8 w-8 p-0"
-                              >
-                                  <X className="w-4 h-4" />
-                                </Button>
-                            </div>
-                            </CardHeader>
-                            <div className="px-6 pb-6">
-                              <div className="relative">
-                                <img 
-                                  src={selectedImage} 
-                                  alt="Preview da etiqueta" 
-                                  className="w-full h-48 object-contain rounded-lg border border-gray-200 bg-gray-50"
-                                />
-                                <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-10 transition-all duration-200 rounded-lg"></div>
-                          </div>
-                            </div>
-                          </Card>
-                        </div>
-                      )}
-                      
-                      {/* Professional Extracted Data Preview */}
-                      {ocrText && (
-                        <div className="w-full max-w-2xl">
-                          <Card>
-                            <CardHeader>
-                              <div className="flex items-center justify-between">
-                                <CardTitle className="text-lg flex items-center">
-                                  <CheckCircle className="w-5 h-5 mr-2 text-teal-600" />
-                                  Dados Extraídos com Sucesso
-                                </CardTitle>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setShowDebugText(!showDebugText)}
-                                    className="h-8 text-xs"
-                                  >
-                                    <Eye className="w-3 h-3 mr-1" />
-                                    {showDebugText ? 'Ocultar' : 'Ver'} Texto Bruto
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setOcrText('')}
-                                    className="text-gray-500 hover:text-gray-700 h-8 w-8 p-0"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                            </div>
-                            </CardHeader>
-                            <div className="px-6 pb-6">
-                              {/* Professional Data Grid */}
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                              {/* Nome do Paciente */}
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium text-gray-700">Nome do Paciente</label>
-                                  <div className="flex items-center space-x-2">
-                                    {formData.nomePaciente ? (
-                                      <Badge className="bg-teal-100 text-teal-800 hover:bg-teal-100">
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        {formData.nomePaciente}
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                                        <AlertCircle className="w-3 h-3 mr-1" />
-                                        Não extraído
-                                      </Badge>
-                                    )}
-                                  </div>
-                              </div>
-                              
-                              {/* Data de Nascimento */}
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium text-gray-700">Data de Nascimento</label>
-                                  <div className="flex items-center space-x-2">
-                                    {formData.dataNascimento ? (
-                                      <Badge className="bg-teal-100 text-teal-800 hover:bg-teal-100">
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        {formData.dataNascimento}
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                                        <AlertCircle className="w-3 h-3 mr-1" />
-                                        Não extraído
-                                      </Badge>
-                                    )}
-                                  </div>
-                              </div>
-                              
-                              {/* Convênio */}
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium text-gray-700">Convênio</label>
-                                  <div className="flex items-center space-x-2">
-                                    {formData.convenio ? (
-                                      <Badge className="bg-teal-100 text-teal-800 hover:bg-teal-100">
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        {formData.convenio}
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                                        <AlertCircle className="w-3 h-3 mr-1" />
-                                        Não extraído
-                                      </Badge>
-                                    )}
-                                  </div>
-                              </div>
-                              
-                              {/* Procedimento */}
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium text-gray-700">Procedimento</label>
-                                  <div className="flex items-center space-x-2">
-                                    {formData.tipoProcedimento ? (
-                                      <Badge className="bg-teal-100 text-teal-800 hover:bg-teal-100">
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        {formData.tipoProcedimento}
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                                        <AlertCircle className="w-3 h-3 mr-1" />
-                                        Não extraído
-                                      </Badge>
-                                    )}
-                                  </div>
-                              </div>
-                              
-                              {/* Hospital */}
-                                <div className="space-y-2 md:col-span-2">
-                                  <label className="text-sm font-medium text-gray-700">Hospital</label>
-                                  <div className="flex items-center space-x-2">
-                                    {formData.hospital ? (
-                                      <Badge className="bg-teal-100 text-teal-800 hover:bg-teal-100">
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        {formData.hospital}
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                                        <AlertCircle className="w-3 h-3 mr-1" />
-                                        Não extraído
-                                      </Badge>
-                                    )}
-                                  </div>
-                              </div>
-                            </div>
-                            
-                              {/* Professional Raw Text Section */}
-                              {/* Debug Text Section */}
-                              {showDebugText && (
-                                <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <h4 className="text-sm font-medium text-gray-700 flex items-center">
-                                      <FileText className="w-4 h-4 mr-2" />
-                                      Texto Bruto Extraído pelo OCR
-                                    </h4>
-                                    <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">
-                                      Debug
-                                    </Badge>
-                                  </div>
-                                  <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words max-h-40 overflow-y-auto font-mono leading-relaxed bg-white p-3 rounded border">
-                                    {ocrText}
-                                  </pre>
-                                </div>
-                              )}
-                            
-                              {/* Professional Info Alert */}
-                              <Alert className="mt-4 bg-teal-50 border-teal-200">
-                                <AlertCircle className="h-4 w-4 text-teal-600" />
-                                <AlertTitle className="text-teal-800">Informação Importante</AlertTitle>
-                                <AlertDescription className="text-teal-700">
-                                  Este texto foi extraído automaticamente da imagem usando tecnologia OCR. 
-                                  Os dados acima foram processados e podem ser editados nas próximas seções se necessário.
-                                </AlertDescription>
-                              </Alert>
-                            </div>
-                          </Card>
-                        </div>
-                      )}
-                      
-                      {/* Professional Format Info */}
-                      <div className="text-center max-w-md mx-auto">
-                        <Alert className="bg-teal-50 border-teal-200">
-                          <AlertCircle className="h-4 w-4 text-teal-600" />
-                          <AlertTitle className="text-teal-800">Formatos Suportados</AlertTitle>
-                          <AlertDescription className="text-teal-700">
-                            <div className="space-y-1">
-                              <p>📱 <strong>Captura:</strong> Use a câmera do dispositivo</p>
-                              <p>📁 <strong>Upload:</strong> JPG, PNG, GIF (máx. 10MB)</p>
-                            </div>
-                          </AlertDescription>
-                        </Alert>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Professional Summary Section */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Building className="w-5 h-5 mr-2" />
-                      Resumo dos Dados Extraídos
-                    </CardTitle>
-                  </CardHeader>
-                  <div className="px-6 pb-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Nome do Paciente</label>
-                    <div className="flex items-center space-x-2">
-                          {formData.nomePaciente ? (
-                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              {formData.nomePaciente}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                              <AlertCircle className="w-3 h-3 mr-1" />
-                              Não extraído
-                            </Badge>
-                          )}
-                    </div>
-                    </div>
-                      
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Data de Nascimento</label>
-                    <div className="flex items-center space-x-2">
-                          {formData.dataNascimento ? (
-                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              {formData.dataNascimento}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                              <AlertCircle className="w-3 h-3 mr-1" />
-                              Não extraído
-                            </Badge>
-                          )}
-                    </div>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Convênio</label>
-                    <div className="flex items-center space-x-2">
-                          {formData.convenio ? (
-                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              {formData.convenio}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                              <AlertCircle className="w-3 h-3 mr-1" />
-                              Não extraído
-                            </Badge>
-                          )}
-                    </div>
-                  </div>
-                  
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Procedimento</label>
-                        <div className="flex items-center space-x-2">
-                          {formData.tipoProcedimento ? (
-                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              {formData.tipoProcedimento}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                              <AlertCircle className="w-3 h-3 mr-1" />
-                              Não extraído
-                            </Badge>
-                          )}
-                      </div>
-                    </div>
-                      
-                      <div className="space-y-2 md:col-span-2">
-                        <label className="text-sm font-medium text-gray-700">Hospital</label>
-                        <div className="flex items-center space-x-2">
-                          {formData.hospital ? (
-                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              {formData.hospital}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-gray-100 text-gray-600">
-                              <AlertCircle className="w-3 h-3 mr-1" />
-                              Não extraído
-                            </Badge>
-                  )}
-                </div>
-                    </div>
-                  </div>
-                    
-                    {formData.nomePaciente && (
-                      <Alert className="bg-green-50 border-green-200">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                        <AlertTitle className="text-green-800">Extração Concluída com Sucesso!</AlertTitle>
-                        <AlertDescription className="text-green-700">
-                          Os dados foram extraídos e preenchidos automaticamente. 
-                          Continue para as próximas seções para completar o procedimento.
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                  </div>
-                </Card>
-
-              </div>
-            </Card>
-          )}
 
           {/* Navigation - Mobile Optimized */}
           <div className="mt-8">
             {/* Mobile: Stacked buttons */}
             <div className="block md:hidden space-y-3">
-              {currentSection < 4 ? (
+              {currentSection < 3 ? (
                 <Button
                   type="button"
-                  onClick={() => setCurrentSection(Math.min(4, currentSection + 1))}
+                  onClick={() => setCurrentSection(Math.min(3, currentSection + 1))}
                   className="w-full py-4 text-lg font-medium"
                 >
                   Próximo
@@ -2269,10 +1478,10 @@ Redirecionando para a lista de procedimentos...`)
                 Anterior
               </Button>
 
-              {currentSection < 4 ? (
+              {currentSection < 3 ? (
                 <Button
                   type="button"
-                  onClick={() => setCurrentSection(Math.min(4, currentSection + 1))}
+                  onClick={() => setCurrentSection(Math.min(3, currentSection + 1))}
                 >
                   Próximo
                   <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
