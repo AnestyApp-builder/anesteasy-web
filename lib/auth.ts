@@ -218,5 +218,81 @@ export const authService = {
     })
 
     return { data: { subscription } }
+  },
+
+  // Funções específicas para secretarias
+  async createSecretariaAccount(email: string, password: string, nome: string, telefone?: string): Promise<boolean> {
+    try {
+      // Criar usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password
+      })
+
+      if (authError) {
+        console.error('Erro ao criar conta da secretaria:', authError.message)
+        return false
+      }
+
+      if (authData.user) {
+        // Criar registro na tabela secretarias
+        const { error: secretariaError } = await supabase
+          .from('secretarias')
+          .insert({
+            id: authData.user.id,
+            nome,
+            email,
+            telefone,
+            status: 'ativo'
+          })
+
+        if (secretariaError) {
+          console.error('Erro ao criar perfil da secretaria:', secretariaError.message)
+          return false
+        }
+
+        return true
+      }
+
+      return false
+    } catch (error) {
+      console.error('Erro ao criar conta da secretaria:', error)
+      return false
+    }
+  },
+
+  async loginSecretaria(email: string, password: string): Promise<any | null> {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+
+      if (error) {
+        console.error('Erro no login da secretaria:', error.message)
+        return null
+      }
+
+      if (data.user) {
+        // Buscar dados da secretaria
+        const { data: secretariaData, error: secretariaError } = await supabase
+          .from('secretarias')
+          .select('*')
+          .eq('email', email)
+          .single()
+
+        if (secretariaError) {
+          console.error('Erro ao buscar dados da secretaria:', secretariaError.message)
+          return null
+        }
+
+        return secretariaData
+      }
+
+      return null
+    } catch (error) {
+      console.error('Erro no login da secretaria:', error)
+      return null
+    }
   }
 }

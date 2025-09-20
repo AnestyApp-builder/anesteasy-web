@@ -64,9 +64,9 @@ export const reportService = {
       procedure.procedure_type,
       formatDate(procedure.procedure_date),
       procedure.procedure_time,
-      formatCurrency(procedure.value),
-      procedure.status === 'completed' ? 'Concluído' : 
-      procedure.status === 'pending' ? 'Pendente' : 'Cancelado',
+      formatCurrency(procedure.procedure_value),
+      procedure.payment_status === 'paid' ? 'Concluído' : 
+      procedure.payment_status === 'pending' ? 'Pendente' : 'Cancelado',
       procedure.notes || ''
     ])
 
@@ -165,9 +165,9 @@ export const reportService = {
               <td>${procedure.patient_name}</td>
               <td>${procedure.procedure_type}</td>
               <td>${formatDate(procedure.procedure_date)}</td>
-              <td>${formatCurrency(procedure.value)}</td>
-              <td>${procedure.status === 'completed' ? 'Concluído' : 
-                   procedure.status === 'pending' ? 'Pendente' : 'Cancelado'}</td>
+              <td>${formatCurrency(procedure.procedure_value)}</td>
+              <td>${procedure.payment_status === 'paid' ? 'Concluído' : 
+                   procedure.payment_status === 'pending' ? 'Pendente' : 'Cancelado'}</td>
             </tr>
           `).join('')}
         </tbody>

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { SecretariaProvider } from '@/contexts/SecretariaContext'
 
 export const metadata: Metadata = {
   title: 'AnestEasy - Gestão Financeira para Anestesistas',
@@ -9,9 +10,9 @@ export const metadata: Metadata = {
   authors: [{ name: 'AnestEasy Team' }],
   manifest: '/manifest.json',
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
-    apple: '/favicon.svg',
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
   },
   appleWebApp: {
     capable: true,
@@ -53,7 +54,9 @@ export default function RootLayout({
     <html lang="pt-BR" className="h-full">
       <body className="h-full font-sans antialiased">
         <AuthProvider>
-          {children}
+          <SecretariaProvider>
+            {children}
+          </SecretariaProvider>
         </AuthProvider>
       </body>
     </html>

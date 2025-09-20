@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
@@ -20,10 +21,32 @@ export default function Login() {
   const { login, isLoading, user, isAuthenticated } = useAuth()
   const router = useRouter()
 
-  // Redirecionar se já estiver logado
+  // Redirecionar se já estiver logado (apenas para anestesistas)
   useEffect(() => {
     if (isAuthenticated && user) {
-      router.push('/dashboard')
+      // Verificar se é uma secretaria logada
+      const checkIfSecretaria = async () => {
+        try {
+          const { data: secretaria } = await supabase
+            .from('secretarias')
+            .select('*')
+            .eq('email', user.email)
+            .single()
+
+          if (secretaria) {
+            // É secretaria, redirecionar para dashboard da secretaria
+            router.push('/secretaria/dashboard')
+          } else {
+            // É anestesista, redirecionar para dashboard normal
+            router.push('/dashboard')
+          }
+        } catch (error) {
+          // Em caso de erro, redirecionar para dashboard normal
+          router.push('/dashboard')
+        }
+      }
+
+      checkIfSecretaria()
     }
   }, [isAuthenticated, user, router])
 
@@ -58,9 +81,54 @@ export default function Login() {
       return
     }
 
-    const success = await login(formData.email, formData.password)
-    if (!success) {
-      setError('Email ou senha incorretos')
+    try {
+      // Primeiro, verificar se é uma secretaria (antes de fazer login no Supabase)
+      const { data: secretaria, error: secretariaError } = await supabase
+        .from('secretarias')
+        .select('*')
+        .eq('email', formData.email)
+        .single()
+
+      if (secretaria && !secretariaError) {
+        // É uma secretaria - fazer login e redirecionar
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password
+        })
+
+        if (authError) {
+          setError('Email ou senha incorretos')
+          return
+        }
+
+        if (data.user) {
+          // Redirecionar para dashboard da secretaria
+          router.push('/secretaria/dashboard')
+          return
+        }
+      }
+
+      // Se não é secretaria, verificar se é anestesista
+      const { data: anestesista, error: anestesistaError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', formData.email)
+        .single()
+
+      if (anestesista && !anestesistaError) {
+        // É um anestesista - usar o contexto de autenticação normal
+        const success = await login(formData.email, formData.password)
+        if (!success) {
+          setError('Email ou senha incorretos')
+        }
+        return
+      }
+
+      // Se chegou aqui, o usuário não existe em nenhuma das tabelas
+      setError('Usuário não encontrado no sistema')
+    } catch (error) {
+      console.error('Erro no login:', error)
+      setError('Erro interno. Tente novamente.')
     }
   }
 
@@ -95,6 +163,9 @@ export default function Login() {
             </CardTitle>
             <p className="text-center text-gray-600 mt-2">
               Entre na sua conta para continuar
+            </p>
+            <p className="text-center text-sm text-gray-500 mt-1">
+              Para anestesistas e secretárias
             </p>
           </CardHeader>
           

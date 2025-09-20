@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { procedureService } from '@/lib/procedures'
 import { useAuth } from '@/contexts/AuthContext'
+import { useSecretaria } from '@/contexts/SecretariaContext'
 import { formatCurrency } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import Tesseract from 'tesseract.js'
@@ -70,6 +71,7 @@ interface FormData {
     data_recebimento: string
   }>
   statusPagamento: string
+  secretariaId: string
   dataPagamento: string
   observacoes: string
   
@@ -218,6 +220,8 @@ const ESPECIALIDADES = [
 ]
 
 export default function NovoProcedimento() {
+  const { user } = useAuth()
+  const { secretaria } = useSecretaria()
   const [formData, setFormData] = useState<FormData>({
     nomePaciente: '',
     dataNascimento: '',
@@ -238,6 +242,7 @@ export default function NovoProcedimento() {
     parcelas_recebidas: '0',
     parcelas: [],
     statusPagamento: 'Pendente',
+    secretariaId: '',
     dataPagamento: '',
     observacoes: '',
     fichas: [],
@@ -249,6 +254,16 @@ export default function NovoProcedimento() {
   const [success, setSuccess] = useState('')
   const [feedbackType, setFeedbackType] = useState<'error' | 'success' | 'info' | null>(null)
   const [currentSection, setCurrentSection] = useState(0) // Começar com OCR (seção 0)
+
+  // Definir secretaria automaticamente se houver uma vinculada
+  useEffect(() => {
+    if (secretaria) {
+      setFormData(prev => ({
+        ...prev,
+        secretariaId: secretaria.id
+      }))
+    }
+  }, [secretaria])
 
   // Função otimizada para atualizar formData
   const updateFormData = React.useCallback((field: keyof FormData, value: any) => {
@@ -322,7 +337,6 @@ export default function NovoProcedimento() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [showDebugText, setShowDebugText] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { user } = useAuth()
   const router = useRouter()
 
   // Estados para o campo de anestesia com busca
@@ -607,13 +621,13 @@ export default function NovoProcedimento() {
           config: config.name,
           text: data.text,
           confidence: data.confidence,
-          words: data.words?.length || 0
+          words: (data as any).words?.length || 0
         })
         
         console.log(`OCR ${config.name}:`, {
           text: data.text.substring(0, 100) + '...',
           confidence: data.confidence,
-          words: data.words?.length || 0
+          words: (data as any).words?.length || 0
         })
       } catch (error) {
         console.error(`Erro no OCR ${config.name}:`, error)
@@ -910,7 +924,9 @@ export default function NovoProcedimento() {
         forma_pagamento: formData.formaPagamento,
         numero_parcelas: formData.numero_parcelas ? parseInt(formData.numero_parcelas) : null,
         parcelas_recebidas: formData.parcelas ? formData.parcelas.filter(p => p.recebida).length : 0,
-        observacoes_financeiras: formData.observacoes
+        observacoes_financeiras: formData.observacoes,
+        secretaria_id: formData.secretariaId || null,
+        user_id: user.id
       }
 
       console.log('Dados do procedimento para salvar:', procedureData)
@@ -1658,6 +1674,28 @@ Redirecionando para a lista de procedimentos...`)
                     </p>
                   </div>
                 )}
+
+                {/* Campo Secretaria */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Secretaria Responsável
+                  </label>
+                  <select
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    value={formData.secretariaId}
+                    onChange={(e) => updateFormData('secretariaId', e.target.value)}
+                  >
+                    <option value="">Nenhuma secretaria</option>
+                    {secretaria && (
+                      <option value={secretaria.id}>{secretaria.nome}</option>
+                    )}
+                  </select>
+                  {secretaria && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      Secretaria vinculada: {secretaria.nome} ({secretaria.email})
+                    </p>
+                  )}
+                </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

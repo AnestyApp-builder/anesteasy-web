@@ -31,7 +31,7 @@ export const goalService = {
         .from('goals')
         .select('*')
         .eq('user_id', userId)
-        .single()
+        .maybeSingle()
 
       if (error) {
         if (error.code === 'PGRST116') {

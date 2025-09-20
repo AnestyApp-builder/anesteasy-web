@@ -6,7 +6,7 @@ export interface Shift {
   title: string
   start_date: string
   end_date: string
-  shift_type: 'hospital_fixo' | 'sobreaviso'
+  shift_type: 'hospital_fixo' | 'sobreaviso' | 'cirurgia_eletiva'
   hospital_name?: string
   description?: string
   is_recurring?: boolean
@@ -23,7 +23,7 @@ export interface ShiftInsert {
   title: string
   start_date: string
   end_date: string
-  shift_type: 'hospital_fixo' | 'sobreaviso'
+  shift_type: 'hospital_fixo' | 'sobreaviso' | 'cirurgia_eletiva'
   hospital_name?: string
   description?: string
   is_recurring?: boolean
@@ -37,7 +37,7 @@ export interface ShiftUpdate {
   title?: string
   start_date?: string
   end_date?: string
-  shift_type?: 'hospital_fixo' | 'sobreaviso'
+  shift_type?: 'hospital_fixo' | 'sobreaviso' | 'cirurgia_eletiva'
   hospital_name?: string
   description?: string
   is_recurring?: boolean
@@ -245,6 +245,8 @@ export const shiftService = {
         return 'Hospital Fixo'
       case 'sobreaviso':
         return 'Sobreaviso'
+      case 'cirurgia_eletiva':
+        return 'Cirurgias Eletivas'
       default:
         return type
     }
@@ -256,6 +258,8 @@ export const shiftService = {
         return 'bg-blue-500'
       case 'sobreaviso':
         return 'bg-amber-500'
+      case 'cirurgia_eletiva':
+        return 'bg-green-500'
       default:
         return 'bg-gray-500'
     }
@@ -267,6 +271,8 @@ export const shiftService = {
         return '🏥'
       case 'sobreaviso':
         return '📞'
+      case 'cirurgia_eletiva':
+        return '⚕️'
       default:
         return '📅'
     }

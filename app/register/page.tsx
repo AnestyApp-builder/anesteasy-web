@@ -3,18 +3,24 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Stethoscope, Mail, Lock, User, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react'
+import { Stethoscope, Mail, Lock, User, Eye, EyeOff, CheckCircle, AlertCircle, Users, UserCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
 import { useAuth } from '@/contexts/AuthContext'
+import { authService } from '@/lib/auth'
 
 export default function Register() {
+  const [activeTab, setActiveTab] = useState<'anestesista' | 'secretaria'>('anestesista')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
-  const [formData, setFormData] = useState({
+  const [success, setSuccess] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  
+  // Formulário para anestesista
+  const [anestesistaForm, setAnestesistaForm] = useState({
     name: '',
     email: '',
     password: '',
@@ -22,8 +28,17 @@ export default function Register() {
     specialty: '',
     crm: ''
   })
+  
+  // Formulário para secretaria
+  const [secretariaForm, setSecretariaForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    phone: ''
+  })
 
-  const { register, isLoading, user, isAuthenticated } = useAuth()
+  const { register, user, isAuthenticated } = useAuth()
   const router = useRouter()
 
   // Redirecionar se já estiver logado
@@ -53,31 +68,85 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccess('')
+    setIsLoading(true)
     
-    if (!formData.name || !formData.email || !formData.password || !formData.specialty || !formData.crm) {
-      setError('Por favor, preencha todos os campos')
-      return
-    }
+    if (activeTab === 'anestesista') {
+      // Validação para anestesista
+      if (!anestesistaForm.name || !anestesistaForm.email || !anestesistaForm.password || !anestesistaForm.specialty || !anestesistaForm.crm) {
+        setError('Por favor, preencha todos os campos')
+        setIsLoading(false)
+        return
+      }
 
-    if (formData.password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres')
-      return
-    }
+      if (anestesistaForm.password.length < 6) {
+        setError('A senha deve ter pelo menos 6 caracteres')
+        setIsLoading(false)
+        return
+      }
 
-    if (formData.password !== formData.confirmPassword) {
-      setError('As senhas não coincidem')
-      return
-    }
+      if (anestesistaForm.password !== anestesistaForm.confirmPassword) {
+        setError('As senhas não coincidem')
+        setIsLoading(false)
+        return
+      }
 
-    const success = await register(formData.email, formData.password, {
-      name: formData.name,
-      specialty: formData.specialty,
-      crm: formData.crm
-    })
+      const success = await register(anestesistaForm.email, anestesistaForm.password, {
+        name: anestesistaForm.name,
+        specialty: anestesistaForm.specialty,
+        crm: anestesistaForm.crm
+      })
 
-    if (!success) {
-      setError('Erro ao criar conta. Tente novamente.')
+      if (!success) {
+        setError('Erro ao criar conta. Tente novamente.')
+      }
+    } else {
+      // Validação para secretaria
+      if (!secretariaForm.name || !secretariaForm.email || !secretariaForm.password) {
+        setError('Por favor, preencha todos os campos obrigatórios')
+        setIsLoading(false)
+        return
+      }
+
+      if (secretariaForm.password.length < 6) {
+        setError('A senha deve ter pelo menos 6 caracteres')
+        setIsLoading(false)
+        return
+      }
+
+      if (secretariaForm.password !== secretariaForm.confirmPassword) {
+        setError('As senhas não coincidem')
+        setIsLoading(false)
+        return
+      }
+
+      try {
+        const success = await authService.createSecretariaAccount(
+          secretariaForm.email,
+          secretariaForm.password,
+          secretariaForm.name,
+          secretariaForm.phone || undefined
+        )
+
+        if (success) {
+          setSuccess('Conta da secretaria criada com sucesso! Você pode fazer login agora.')
+          setSecretariaForm({
+            name: '',
+            email: '',
+            password: '',
+            confirmPassword: '',
+            phone: ''
+          })
+        } else {
+          setError('Erro ao criar conta da secretaria. Tente novamente.')
+        }
+      } catch (error) {
+        console.error('Erro ao criar conta da secretaria:', error)
+        setError('Erro interno. Tente novamente.')
+      }
     }
+    
+    setIsLoading(false)
   }
 
   return (
@@ -85,8 +154,8 @@ export default function Register() {
       <div className="max-w-md w-full space-y-8">
         {/* Logo */}
         <div className="text-center">
-          <Link href="/">
-            <Logo size="lg" />
+          <Link href="/" className="inline-block">
+            <Logo size="lg" showText={false} />
           </Link>
         </div>
 
@@ -101,6 +170,36 @@ export default function Register() {
             </p>
           </CardHeader>
           
+          {/* Tabs */}
+          <div className="px-6 pt-0">
+            <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setActiveTab('anestesista')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'anestesista'
+                    ? 'bg-white text-teal-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <UserCheck className="w-4 h-4 mr-2" />
+                Anestesista
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('secretaria')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'secretaria'
+                    ? 'bg-white text-teal-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Users className="w-4 h-4 mr-2" />
+                Secretaria
+              </button>
+            </div>
+          </div>
+          
           <form onSubmit={handleSubmit} className="space-y-6 p-6 pt-0">
             {error && (
               <div className="flex items-center space-x-2 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -109,13 +208,27 @@ export default function Register() {
               </div>
             )}
 
+            {success && (
+              <div className="flex items-center space-x-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+                <span className="text-sm text-green-600">{success}</span>
+              </div>
+            )}
+
+            {/* Campos comuns */}
             <Input
               label="Nome completo"
               type="text"
-              placeholder="Dr. João Silva"
+              placeholder={activeTab === 'anestesista' ? 'Dr. João Silva' : 'Maria Silva'}
               icon={<User className="w-5 h-5" />}
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              value={activeTab === 'anestesista' ? anestesistaForm.name : secretariaForm.name}
+              onChange={(e) => {
+                if (activeTab === 'anestesista') {
+                  setAnestesistaForm({ ...anestesistaForm, name: e.target.value })
+                } else {
+                  setSecretariaForm({ ...secretariaForm, name: e.target.value })
+                }
+              }}
               required
             />
 
@@ -124,38 +237,64 @@ export default function Register() {
               type="email"
               placeholder="seu@email.com"
               icon={<Mail className="w-5 h-5" />}
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              value={activeTab === 'anestesista' ? anestesistaForm.email : secretariaForm.email}
+              onChange={(e) => {
+                if (activeTab === 'anestesista') {
+                  setAnestesistaForm({ ...anestesistaForm, email: e.target.value })
+                } else {
+                  setSecretariaForm({ ...secretariaForm, email: e.target.value })
+                }
+              }}
               required
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* Campos específicos para anestesista */}
+            {activeTab === 'anestesista' && (
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Especialidade"
+                  type="text"
+                  placeholder="Anestesiologia"
+                  value={anestesistaForm.specialty}
+                  onChange={(e) => setAnestesistaForm({ ...anestesistaForm, specialty: e.target.value })}
+                  required
+                />
+                <Input
+                  label="CRM"
+                  type="text"
+                  placeholder="123456"
+                  value={anestesistaForm.crm}
+                  onChange={(e) => setAnestesistaForm({ ...anestesistaForm, crm: e.target.value })}
+                  required
+                />
+              </div>
+            )}
+
+            {/* Campos específicos para secretaria */}
+            {activeTab === 'secretaria' && (
               <Input
-                label="Especialidade"
-                type="text"
-                placeholder="Anestesiologia"
-                value={formData.specialty}
-                onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
-                required
+                label="Telefone (opcional)"
+                type="tel"
+                placeholder="(11) 99999-9999"
+                value={secretariaForm.phone}
+                onChange={(e) => setSecretariaForm({ ...secretariaForm, phone: e.target.value })}
               />
-              <Input
-                label="CRM"
-                type="text"
-                placeholder="123456"
-                value={formData.crm}
-                onChange={(e) => setFormData({ ...formData, crm: e.target.value })}
-                required
-              />
-            </div>
+            )}
             
             <div className="relative">
               <Input
                 label="Senha"
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Mínimo 8 caracteres"
+                placeholder="Mínimo 6 caracteres"
                 icon={<Lock className="w-5 h-5" />}
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                value={activeTab === 'anestesista' ? anestesistaForm.password : secretariaForm.password}
+                onChange={(e) => {
+                  if (activeTab === 'anestesista') {
+                    setAnestesistaForm({ ...anestesistaForm, password: e.target.value })
+                  } else {
+                    setSecretariaForm({ ...secretariaForm, password: e.target.value })
+                  }
+                }}
                 required
               />
               <button
@@ -173,8 +312,14 @@ export default function Register() {
                 type={showConfirmPassword ? 'text' : 'password'}
                 placeholder="Digite a senha novamente"
                 icon={<Lock className="w-5 h-5" />}
-                value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                value={activeTab === 'anestesista' ? anestesistaForm.confirmPassword : secretariaForm.confirmPassword}
+                onChange={(e) => {
+                  if (activeTab === 'anestesista') {
+                    setAnestesistaForm({ ...anestesistaForm, confirmPassword: e.target.value })
+                  } else {
+                    setSecretariaForm({ ...secretariaForm, confirmPassword: e.target.value })
+                  }
+                }}
                 required
               />
               <button
@@ -211,7 +356,7 @@ export default function Register() {
             </div>
 
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Criando conta...' : 'Criar conta'}
+              {isLoading ? 'Criando conta...' : `Criar conta de ${activeTab === 'anestesista' ? 'Anestesista' : 'Secretaria'}`}
             </Button>
           </form>
 
@@ -225,13 +370,18 @@ export default function Register() {
               </div>
             </div>
 
-            <div className="mt-6 text-center">
+            <div className="mt-6 text-center space-y-2">
               <p className="text-sm text-gray-600">
                 Já tem uma conta?{' '}
                 <Link href="/login" className="font-medium text-primary-600 hover:text-primary-500">
                   Faça login
                 </Link>
               </p>
+              {activeTab === 'secretaria' && (
+                <p className="text-xs text-gray-500">
+                  Secretarias fazem login na mesma tela que anestesistas
+                </p>
+              )}
             </div>
           </div>
         </Card>

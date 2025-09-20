@@ -131,7 +131,7 @@ export default function Financeiro() {
 
   const calculateMonthlyRevenueData = (procedures: any[]) => {
     // Obter os últimos 6 meses
-    const months = []
+    const months: { date: Date; name: string; receita: number }[] = []
     const currentDate = new Date()
     
     for (let i = 5; i >= 0; i--) {
@@ -467,7 +467,7 @@ export default function Financeiro() {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={(props: any) => `${props.name} ${(props.percent * 100).toFixed(0)}%`}
                       outerRadius={80}
                       fill="#8884d8"
                       dataKey="value"

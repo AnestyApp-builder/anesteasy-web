@@ -21,6 +21,157 @@ export type Database = {
   }
   public: {
     Tables: {
+      secretarias: {
+        Row: {
+          id: string
+          nome: string
+          email: string
+          telefone: string | null
+          data_cadastro: string
+          status: string
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          nome: string
+          email: string
+          telefone?: string | null
+          data_cadastro?: string
+          status?: string
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          nome?: string
+          email?: string
+          telefone?: string | null
+          data_cadastro?: string
+          status?: string
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      anestesista_secretaria: {
+        Row: {
+          id: string
+          anestesista_id: string
+          secretaria_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          anestesista_id: string
+          secretaria_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          anestesista_id?: string
+          secretaria_id?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anestesista_secretaria_anestesista_id_fkey"
+            columns: ["anestesista_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anestesista_secretaria_secretaria_id_fkey"
+            columns: ["secretaria_id"]
+            isOneToOne: false
+            referencedRelation: "secretarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      procedure_logs: {
+        Row: {
+          id: string
+          procedure_id: string
+          changed_by_id: string
+          changed_by_type: string
+          changed_by_name: string
+          field_name: string
+          old_value: string | null
+          new_value: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          procedure_id: string
+          changed_by_id: string
+          changed_by_type: string
+          changed_by_name: string
+          field_name: string
+          old_value?: string | null
+          new_value?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          procedure_id?: string
+          changed_by_id?: string
+          changed_by_type?: string
+          changed_by_name?: string
+          field_name?: string
+          old_value?: string | null
+          new_value?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "procedure_logs_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          id: string
+          user_id: string
+          title: string
+          message: string
+          type: string
+          is_read: boolean
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          title: string
+          message: string
+          type?: string
+          is_read?: boolean
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          title?: string
+          message?: string
+          type?: string
+          is_read?: boolean
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number
@@ -122,6 +273,7 @@ export type Database = {
           procedure_type: string
           procedure_value: number
           room_number: string | null
+          secretaria_id: string | null
           surgeon_name: string | null
           tipo_anestesia: string | null
           updated_at: string | null
@@ -158,6 +310,7 @@ export type Database = {
           procedure_type: string
           procedure_value: number
           room_number?: string | null
+          secretaria_id?: string | null
           surgeon_name?: string | null
           tipo_anestesia?: string | null
           updated_at?: string | null
@@ -194,6 +347,7 @@ export type Database = {
           procedure_type?: string
           procedure_value?: number
           room_number?: string | null
+          secretaria_id?: string | null
           surgeon_name?: string | null
           tipo_anestesia?: string | null
           updated_at?: string | null
@@ -205,6 +359,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "procedures_secretaria_id_fkey"
+            columns: ["secretaria_id"]
+            isOneToOne: false
+            referencedRelation: "secretarias"
             referencedColumns: ["id"]
           },
         ]

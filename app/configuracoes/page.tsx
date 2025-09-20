@@ -11,16 +11,23 @@ import {
   Download,
   Upload,
   Check,
-  AlertCircle
+  AlertCircle,
+  Users,
+  Plus,
+  X,
+  Mail,
+  Phone
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useAuth } from '@/contexts/AuthContext'
+import { useSecretaria } from '@/contexts/SecretariaContext'
 
 export default function Configuracoes() {
   const { user, updateUser, isLoading } = useAuth()
+  const { secretaria, linkSecretaria, unlinkSecretaria, isLoading: secretariaLoading } = useSecretaria()
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -29,7 +36,14 @@ export default function Configuracoes() {
     phone: '',
     gender: ''
   })
+  const [secretariaForm, setSecretariaForm] = useState({
+    email: '',
+    nome: '',
+    telefone: ''
+  })
   const [isSaving, setIsSaving] = useState(false)
+  const [isLinkingSecretaria, setIsLinkingSecretaria] = useState(false)
+  const [showSecretariaForm, setShowSecretariaForm] = useState(false)
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null)
 
   // Carregar dados do usuário
@@ -79,6 +93,68 @@ export default function Configuracoes() {
       setIsSaving(false)
     }
   }
+
+  // Função para vincular secretaria
+  const handleLinkSecretaria = async () => {
+    if (!secretariaForm.email.trim()) {
+      setFeedbackMessage({ type: 'error', message: 'Email é obrigatório.' })
+      setTimeout(() => setFeedbackMessage(null), 3000)
+      return
+    }
+
+    setIsLinkingSecretaria(true)
+    setFeedbackMessage(null)
+
+    try {
+      const success = await linkSecretaria(
+        secretariaForm.email,
+        secretariaForm.nome || undefined,
+        secretariaForm.telefone || undefined
+      )
+      
+      if (success) {
+        setFeedbackMessage({ type: 'success', message: 'Secretaria vinculada com sucesso!' })
+        setSecretariaForm({ email: '', nome: '', telefone: '' })
+        setShowSecretariaForm(false)
+        setTimeout(() => setFeedbackMessage(null), 3000)
+      } else {
+        setFeedbackMessage({ type: 'error', message: 'Erro ao vincular secretaria. Tente novamente.' })
+        setTimeout(() => setFeedbackMessage(null), 5000)
+      }
+    } catch (error) {
+      console.error('Erro ao vincular secretaria:', error)
+      setFeedbackMessage({ type: 'error', message: 'Erro ao vincular secretaria.' })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+    } finally {
+      setIsLinkingSecretaria(false)
+    }
+  }
+
+  // Função para desvincular secretaria
+  const handleUnlinkSecretaria = async () => {
+    if (!secretaria) return
+
+    setIsLinkingSecretaria(true)
+    setFeedbackMessage(null)
+
+    try {
+      const success = await unlinkSecretaria()
+      
+      if (success) {
+        setFeedbackMessage({ type: 'success', message: 'Secretaria desvinculada com sucesso!' })
+        setTimeout(() => setFeedbackMessage(null), 3000)
+      } else {
+        setFeedbackMessage({ type: 'error', message: 'Erro ao desvincular secretaria. Tente novamente.' })
+        setTimeout(() => setFeedbackMessage(null), 5000)
+      }
+    } catch (error) {
+      console.error('Erro ao desvincular secretaria:', error)
+      setFeedbackMessage({ type: 'error', message: 'Erro ao desvincular secretaria.' })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+    } finally {
+      setIsLinkingSecretaria(false)
+    }
+  }
   return (
     <Layout>
       <div className="space-y-8">
@@ -108,6 +184,127 @@ export default function Configuracoes() {
 
         {/* Settings Sections */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Secretaria Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Users className="w-5 h-5 mr-2" />
+                Secretaria
+              </CardTitle>
+            </CardHeader>
+            <div className="p-6 space-y-4">
+              {secretaria ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-medium text-green-800">{secretaria.nome}</h3>
+                        <div className="flex items-center text-sm text-green-600 mt-1">
+                          <Mail className="w-4 h-4 mr-1" />
+                          {secretaria.email}
+                        </div>
+                        {secretaria.telefone && (
+                          <div className="flex items-center text-sm text-green-600 mt-1">
+                            <Phone className="w-4 h-4 mr-1" />
+                            {secretaria.telefone}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleUnlinkSecretaria}
+                        disabled={isLinkingSecretaria}
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Sua secretaria pode acessar e editar seus procedimentos. 
+                    Você receberá notificações quando ela fizer alterações.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="text-center py-8">
+                    <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma secretaria vinculada</h3>
+                    <p className="text-gray-600 mb-4">
+                      Vincule uma secretaria para que ela possa ajudar com seus procedimentos.
+                    </p>
+                    <Button
+                      onClick={() => setShowSecretariaForm(true)}
+                      className="w-full"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Vincular Secretaria
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {showSecretariaForm && (
+                <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium">Vincular Nova Secretaria</h4>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowSecretariaForm(false)}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  
+                  <Input
+                    label="Email da Secretaria *"
+                    value={secretariaForm.email}
+                    onChange={(e) => setSecretariaForm(prev => ({ ...prev, email: e.target.value }))}
+                    type="email"
+                    placeholder="secretaria@exemplo.com"
+                  />
+                  
+                  <Input
+                    label="Nome (opcional)"
+                    value={secretariaForm.nome}
+                    onChange={(e) => setSecretariaForm(prev => ({ ...prev, nome: e.target.value }))}
+                    placeholder="Nome da secretaria"
+                  />
+                  
+                  <Input
+                    label="Telefone (opcional)"
+                    value={secretariaForm.telefone}
+                    onChange={(e) => setSecretariaForm(prev => ({ ...prev, telefone: e.target.value }))}
+                    placeholder="(11) 99999-9999"
+                  />
+                  
+                  <div className="flex space-x-2">
+                    <Button
+                      onClick={handleLinkSecretaria}
+                      disabled={isLinkingSecretaria || !secretariaForm.email.trim()}
+                      className="flex-1"
+                    >
+                      {isLinkingSecretaria ? 'Vinculando...' : 'Vincular'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowSecretariaForm(false)}
+                      className="flex-1"
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                  
+                  <p className="text-xs text-gray-600">
+                    Se o email já existir no sistema, a secretaria será vinculada automaticamente. 
+                    Caso contrário, uma nova conta será criada.
+                  </p>
+                </div>
+              )}
+            </div>
+          </Card>
           {/* Profile Settings */}
           <Card>
             <CardHeader>

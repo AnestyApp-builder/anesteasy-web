@@ -590,9 +590,9 @@ export default function Dashboard() {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => {
-                        if (percent === 0) return null
-                        return `${name} ${(percent * 100).toFixed(0)}%`
+                      label={(props: any) => {
+                        if (props.percent === 0) return null
+                        return `${props.name} ${(props.percent * 100).toFixed(0)}%`
                       }}
                       outerRadius={60}
                       innerRadius={20}

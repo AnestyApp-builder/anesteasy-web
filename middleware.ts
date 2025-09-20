@@ -1,23 +1,17 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { secretariaMiddleware } from './middleware/secretaria'
 
 export function middleware(request: NextRequest) {
-  // Lista de rotas que requerem autenticação
-  const protectedRoutes = ['/dashboard', '/procedimentos', '/financeiro', '/relatorios', '/configuracoes']
-  
-  // Lista de rotas públicas (apenas para usuários não logados)
-  const publicRoutes = ['/login', '/register', '/forgot-password']
-  
   const { pathname } = request.nextUrl
   
-  // Verificar se é uma rota protegida
-  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+  // Verificar se é uma rota da secretaria
+  if (pathname.startsWith('/secretaria/')) {
+    return secretariaMiddleware(request)
+  }
   
-  // Aqui você pode implementar a lógica de verificação de autenticação
-  // Por enquanto, vamos permitir acesso a todas as rotas
-  // Em produção, você deve verificar o token de autenticação
-  
+  // Para rotas de anestesista, permitir acesso por enquanto
+  // A verificação de autenticação será feita no lado do cliente
   return NextResponse.next()
 }
 

@@ -152,10 +152,10 @@ export default function Procedimentos() {
     // Filtro por busca
     if (searchTerm) {
       filtered = filtered.filter(procedure =>
-        procedure.patient_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        procedure.patient_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         procedure.procedure_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        procedure.patient_phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        procedure.patient_email?.toLowerCase().includes(searchTerm.toLowerCase())
+        procedure.convenio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        procedure.carteirinha?.toLowerCase().includes(searchTerm.toLowerCase())
       )
     }
 

@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/Button'
 import { Logo } from '@/components/ui/Logo'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { NotificationBell } from '@/components/notifications/NotificationBell'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -63,6 +64,7 @@ export function Navigation() {
           {/* User Menu */}
           {isAuthenticated ? (
             <div className="hidden md:flex items-center space-x-4">
+              <NotificationBell />
               <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                 <User className="w-4 h-4 text-primary-600" />
               </div>

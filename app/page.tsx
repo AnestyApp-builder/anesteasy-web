@@ -118,7 +118,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="focus:outline-none">
-              <Logo size="md" />
+              <Logo size="md" showText={false} />
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
               <Link href="/login">
@@ -396,7 +396,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-center mb-8">
             <div className="focus:outline-none">
-              <Logo size="md" className="text-white" />
+              <Logo size="md" showText={false} className="text-white" />
             </div>
           </div>
           <p className="text-center text-gray-400">
