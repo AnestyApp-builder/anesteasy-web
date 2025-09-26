@@ -721,12 +721,33 @@ export default function Procedimentos() {
         {/* Filters */}
         <div className="lg:hidden">
           <p className="text-sm font-medium text-gray-700 mb-3">Filtrar por status:</p>
+          <style dangerouslySetInnerHTML={{
+            __html: `
+              .filter-scroll-container::-webkit-scrollbar {
+                display: none !important;
+              }
+              .filter-scroll-container {
+                -ms-overflow-style: none !important;
+                scrollbar-width: none !important;
+              }
+            `
+          }} />
           <div 
-            className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide filter-carousel"
+            className="flex gap-2 pb-2 filter-scroll-container"
             style={{
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              scrollBehavior: 'smooth',
               WebkitOverflowScrolling: 'touch',
+              touchAction: 'pan-x',
               scrollbarWidth: 'none',
-              msOverflowStyle: 'none'
+              msOverflowStyle: 'none',
+              scrollSnapType: 'x mandatory',
+              overscrollBehaviorX: 'contain'
+            }}
+            onScroll={(e) => {
+              // Adiciona suporte adicional para scroll suave
+              e.currentTarget.style.scrollBehavior = 'smooth';
             }}
           >
             <button

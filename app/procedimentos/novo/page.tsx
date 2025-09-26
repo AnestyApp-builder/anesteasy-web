@@ -579,7 +579,7 @@ export default function NovoProcedimento() {
         procedure_name: formData.tipoProcedimento,
         procedure_value: parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
         procedure_date: new Date().toISOString().split('T')[0],
-        procedure_type: 'manual',
+        procedure_type: formData.tipoProcedimento,
         
         // Campos do paciente
         patient_name: formData.nomePaciente,
