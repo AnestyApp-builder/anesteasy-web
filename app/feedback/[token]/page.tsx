@@ -10,7 +10,6 @@ import { supabase } from '@/lib/supabase'
 
 export default function FeedbackForm() {
   const params = useParams()
-  const router = useRouter()
   const token = params.token as string
   
   const [loading, setLoading] = useState(true)

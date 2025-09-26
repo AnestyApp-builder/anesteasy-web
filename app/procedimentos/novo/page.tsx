@@ -54,6 +54,8 @@ interface FormData {
   nomeCirurgiao: string
   nomeEquipe: string
   hospital: string
+  patientGender: 'M' | 'F' | 'Other' | ''
+  roomNumber: string
   
   // 2. Dados do Procedimento
   // Campos para procedimentos não-obstétricos
@@ -178,6 +180,8 @@ export default function NovoProcedimento() {
     nomeCirurgiao: '',
     nomeEquipe: '',
     hospital: '',
+    patientGender: '',
+    roomNumber: '',
     // Campos para procedimentos não-obstétricos
     sangramento: '',
     nauseaVomito: '',
@@ -583,6 +587,7 @@ export default function NovoProcedimento() {
         data_nascimento: formData.dataNascimento,
         convenio: formData.convenio,
         carteirinha: formData.carteirinha,
+        patient_gender: formData.patientGender,
         
         // Campos da equipe
         anesthesiologist_name: user.name,
@@ -590,6 +595,7 @@ export default function NovoProcedimento() {
         especialidade_cirurgiao: formData.especialidadeCirurgiao,
         nome_equipe: formData.nomeEquipe,
         hospital_clinic: formData.hospital,
+        room_number: formData.roomNumber,
         
         // Campos de anestesia
         tecnica_anestesica: formData.tecnicaAnestesica,
@@ -636,15 +642,15 @@ export default function NovoProcedimento() {
         // Se foi solicitado envio de relatório para o cirurgião, criar link de feedback
         let feedbackUrl = ''
         if (formData.enviarRelatorioCirurgiao === 'Sim' && formData.emailCirurgiao) {
-          const feedbackLink = await feedbackService.createFeedbackLinkOnly(
-            result.id,
-            formData.emailCirurgiao,
-            formData.telefoneCirurgiao
-          )
+          const feedbackLink = await feedbackService.createFeedbackLinkOnly({
+            procedureId: result.id,
+            emailCirurgiao: formData.emailCirurgiao,
+            telefoneCirurgiao: formData.telefoneCirurgiao
+          })
           if (feedbackLink) {
-            feedbackUrl = `${window.location.origin}/feedback/${feedbackLink.token}`
+            feedbackUrl = feedbackLink
           } else {
-            
+            console.error('Erro ao criar link de feedback')
           }
         }
         // Salvar parcelas individuais se existirem
@@ -918,6 +924,35 @@ export default function NovoProcedimento() {
                     icon={<CreditCard className="w-5 h-5" />}
                     value={formData.convenio}
                     onChange={(e) => updateFormData('convenio', e.target.value)}
+              />
+              <Input
+                    label="Carteirinha"
+                    placeholder="Número da carteirinha"
+                    icon={<CreditCard className="w-5 h-5" />}
+                    value={formData.carteirinha}
+                    onChange={(e) => updateFormData('carteirinha', e.target.value)}
+              />
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Sexo do Paciente
+                </label>
+                <select
+                  value={formData.patientGender}
+                  onChange={(e) => updateFormData('patientGender', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-colors"
+                >
+                  <option value="">Selecione...</option>
+                  <option value="M">Masculino</option>
+                  <option value="F">Feminino</option>
+                  <option value="Other">Outro</option>
+                </select>
+              </div>
+              <Input
+                    label="Número da Sala"
+                    placeholder="Ex: Sala 1, Centro Cirúrgico A"
+                    icon={<MapPin className="w-5 h-5" />}
+                    value={formData.roomNumber}
+                    onChange={(e) => updateFormData('roomNumber', e.target.value)}
               />
             </div>
 

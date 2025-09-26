@@ -21,7 +21,8 @@ import {
   MoreVertical,
   Eye,
   Edit,
-  Paperclip
+  Paperclip,
+  MessageSquare
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -184,6 +185,7 @@ export default function Procedimentos() {
   const [activeActionMenu, setActiveActionMenu] = useState<string | null>(null)
   const [showDateFilter, setShowDateFilter] = useState(false)
   const [dateFilter, setDateFilter] = useState<{start: string, end: string} | null>(null)
+  const [feedbackStatuses, setFeedbackStatuses] = useState<Record<string, {linkCriado: boolean, respondido: boolean}>>({})
   const { user } = useAuth()
 
   useEffect(() => {
@@ -258,11 +260,23 @@ export default function Procedimentos() {
       
       // Carregar anexos para todos os procedimentos
       const attachmentsMap: Record<string, ProcedureAttachment[]> = {}
+      // Carregar status de feedback para todos os procedimentos
+      const feedbackStatusesMap: Record<string, {linkCriado: boolean, respondido: boolean}> = {}
+      
       for (const procedure of data) {
         const procedureAttachments = await procedureService.getAttachments(procedure.id)
         attachmentsMap[procedure.id] = procedureAttachments
+        
+        // Verificar status do feedback
+        const feedbackStatus = await feedbackService.getFeedbackStatus(procedure.id)
+        feedbackStatusesMap[procedure.id] = {
+          linkCriado: feedbackStatus.linkCriado,
+          respondido: feedbackStatus.respondido
+        }
       }
+      
       setProcedureAttachments(attachmentsMap)
+      setFeedbackStatuses(feedbackStatusesMap)
     } catch (error) {
       
     } finally {
@@ -280,6 +294,30 @@ export default function Procedimentos() {
     const parcelasRecebidas = (procedure as any).parcelas_recebidas || 0
     
     return `${parcelasRecebidas}/${totalParcelas}`
+  }
+
+  // Função para obter o indicador de feedback
+  const getFeedbackIndicator = (procedureId: string) => {
+    const status = feedbackStatuses[procedureId]
+    if (!status) return null
+
+    if (status.respondido) {
+      return {
+        color: 'text-green-600',
+        bgColor: 'bg-green-100',
+        icon: MessageSquare,
+        tooltip: 'Feedback recebido'
+      }
+    } else if (status.linkCriado) {
+      return {
+        color: 'text-gray-600',
+        bgColor: 'bg-gray-100',
+        icon: MessageSquare,
+        tooltip: 'Feedback solicitado'
+      }
+    }
+
+    return null
   }
 
 
@@ -864,6 +902,14 @@ export default function Procedimentos() {
                               {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
                                 <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
                               )}
+                              {getFeedbackIndicator(procedure.id) && (
+                                <div 
+                                  className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${getFeedbackIndicator(procedure.id)?.bgColor}`}
+                                  title={getFeedbackIndicator(procedure.id)?.tooltip}
+                                >
+                                  <MessageSquare className={`w-3 h-3 ${getFeedbackIndicator(procedure.id)?.color}`} />
+                                </div>
+                              )}
                             </div>
                             <p className="text-sm text-gray-600 truncate font-medium mb-1">{procedure.procedure_type}</p>
                             {getParcelStatus(procedure) && (
@@ -905,6 +951,14 @@ export default function Procedimentos() {
                             <p className="font-semibold text-gray-900 text-lg">{procedure.patient_name}</p>
                             {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
                               <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                            )}
+                            {getFeedbackIndicator(procedure.id) && (
+                              <div 
+                                className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${getFeedbackIndicator(procedure.id)?.bgColor}`}
+                                title={getFeedbackIndicator(procedure.id)?.tooltip}
+                              >
+                                <MessageSquare className={`w-3 h-3 ${getFeedbackIndicator(procedure.id)?.color}`} />
+                              </div>
                             )}
                           </div>
                           <p className="text-sm text-gray-600 font-medium mb-1">{procedure.procedure_type}</p>
@@ -1112,6 +1166,29 @@ export default function Procedimentos() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
+                  <EditField
+                    field="carteirinha"
+                    label="Carteirinha"
+                    value={selectedProcedure.carteirinha || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="patient_gender"
+                    label="Sexo do Paciente"
+                    value={selectedProcedure.patient_gender || ''}
+                    type="select"
+                    options={[
+                      { value: '', label: 'Selecione...' },
+                      { value: 'M', label: 'Masculino' },
+                      { value: 'F', label: 'Feminino' },
+                      { value: 'Other', label: 'Outro' }
+                    ]}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
                 </div>
               </div>
 
@@ -1183,6 +1260,22 @@ export default function Procedimentos() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
+                  <EditField
+                    field="room_number"
+                    label="Número da Sala"
+                    value={selectedProcedure.room_number || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="codigo_tssu"
+                    label="Código TSSU"
+                    value={selectedProcedure.codigo_tssu || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
                 </div>
               </div>
 
@@ -1223,6 +1316,48 @@ export default function Procedimentos() {
                     field="especialidade_cirurgiao"
                     label="Especialidade do Cirurgião"
                     value={selectedProcedure.especialidade_cirurgiao || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                </div>
+              </div>
+
+              {/* Informações de Feedback */}
+              <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-6 shadow-sm">
+                <h3 className="text-xl font-bold text-purple-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
+                    <MessageSquare className="w-5 h-5 text-purple-600" />
+                  </div>
+                  Informações de Feedback
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <EditField
+                    field="feedback_solicitado"
+                    label="Feedback Solicitado"
+                    value={selectedProcedure.feedback_solicitado ? 'Sim' : 'Não'}
+                    type="select"
+                    options={[
+                      { value: '', label: 'Selecione...' },
+                      { value: 'Sim', label: 'Sim' },
+                      { value: 'Não', label: 'Não' }
+                    ]}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="email_cirurgiao"
+                    label="Email do Cirurgião"
+                    value={selectedProcedure.email_cirurgiao || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="telefone_cirurgiao"
+                    label="Telefone do Cirurgião"
+                    value={selectedProcedure.telefone_cirurgiao || ''}
                     isEditingMode={isEditingMode}
                     editFormData={editFormData}
                     updateFormField={updateFormField}
@@ -1448,6 +1583,86 @@ export default function Procedimentos() {
                       updateFormField={updateFormField}
                     />
                   )}
+                </div>
+              </div>
+
+              {/* Informações Financeiras */}
+              <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 rounded-xl p-6 shadow-sm">
+                <h3 className="text-xl font-bold text-yellow-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center mr-3">
+                    <DollarSign className="w-5 h-5 text-yellow-600" />
+                  </div>
+                  Informações Financeiras
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <EditField
+                    field="procedure_value"
+                    label="Valor do Procedimento"
+                    value={selectedProcedure.procedure_value ? selectedProcedure.procedure_value.toString() : ''}
+                    type="number"
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="payment_status"
+                    label="Status do Pagamento"
+                    value={selectedProcedure.payment_status || ''}
+                    type="select"
+                    options={[
+                      { value: '', label: 'Selecione...' },
+                      { value: 'pending', label: 'Pendente' },
+                      { value: 'paid', label: 'Pago' },
+                      { value: 'cancelled', label: 'Aguardando' },
+                      { value: 'refunded', label: 'Não Lançado' }
+                    ]}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="forma_pagamento"
+                    label="Forma de Pagamento"
+                    value={selectedProcedure.forma_pagamento || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="payment_date"
+                    label="Data do Pagamento"
+                    value={selectedProcedure.payment_date ? selectedProcedure.payment_date.split('T')[0] : ''}
+                    type="date"
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="numero_parcelas"
+                    label="Número de Parcelas"
+                    value={selectedProcedure.numero_parcelas ? selectedProcedure.numero_parcelas.toString() : ''}
+                    type="number"
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="parcelas_recebidas"
+                    label="Parcelas Recebidas"
+                    value={selectedProcedure.parcelas_recebidas ? selectedProcedure.parcelas_recebidas.toString() : ''}
+                    type="number"
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="observacoes_financeiras"
+                    label="Observações Financeiras"
+                    value={selectedProcedure.observacoes_financeiras || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
                 </div>
               </div>
 

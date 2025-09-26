@@ -51,7 +51,8 @@ export const feedbackService = {
       if (error) throw error
       
       // Retornar a URL completa do formulário
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                     (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')
       return `${baseUrl}/feedback/${token}`
     } catch (error) {
       

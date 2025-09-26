@@ -93,42 +93,56 @@ export const procedureService = {
 
       // Garantir que o user_id seja o mesmo da sessão
       const procedureData = {
-        // Campos básicos
+        // Campos básicos (obrigatórios)
         procedure_name: procedure.procedure_name,
         procedure_value: procedure.procedure_value || 0,
         procedure_date: procedure.procedure_date,
         procedure_type: procedure.procedure_type,
+        user_id: session.user.id,
         
         // Campos do paciente
         patient_name: procedure.patient_name,
-        patient_age: procedure.patient_age || 0,
+        patient_age: procedure.patient_age || null,
         data_nascimento: procedure.data_nascimento,
-        convenio: procedure.convenio || '',
-        carteirinha: procedure.carteirinha || '',
+        convenio: procedure.convenio || null,
+        carteirinha: procedure.carteirinha || null,
         
         // Campos da equipe
-        anesthesiologist_name: procedure.anesthesiologist_name || '',
-        nome_cirurgiao: procedure.nome_cirurgiao || '',
-        especialidade_cirurgiao: procedure.especialidade_cirurgiao || '',
-        nome_equipe: procedure.nome_equipe || '',
-        hospital_clinic: procedure.hospital_clinic || '',
+        anesthesiologist_name: procedure.anesthesiologist_name || null,
+        nome_cirurgiao: procedure.nome_cirurgiao || null,
+        especialidade_cirurgiao: procedure.especialidade_cirurgiao || null,
+        hospital_clinic: procedure.hospital_clinic || null,
+        nome_equipe: procedure.nome_equipe || null,
         
         // Campos de anestesia
-        tecnica_anestesica: procedure.tecnica_anestesica || '',
-        codigo_tssu: procedure.codigo_tssu || '',
+        tipo_anestesia: procedure.tecnica_anestesica || null,
+        tecnica_anestesica: procedure.tecnica_anestesica || null,
+        codigo_tssu: procedure.codigo_tssu || null,
         
-        // Campos do procedimento (não-obstétrico)
+        // Campos financeiros
+        payment_status: procedure.payment_status || 'pending',
+        payment_date: procedure.payment_date || null,
+        forma_pagamento: procedure.forma_pagamento || null,
+        observacoes_financeiras: procedure.observacoes_financeiras || null,
+        secretaria_id: procedure.secretaria_id || null,
+        numero_parcelas: procedure.numero_parcelas || null,
+        parcelas_recebidas: procedure.parcelas_recebidas || 0,
+        
+        // Campo para observações gerais
+        notes: procedure.observacoes_procedimento || null,
+        observacoes_procedimento: procedure.observacoes_procedimento || null,
+        
+        // Campos específicos de procedimentos (salvos nas colunas corretas)
         sangramento: procedure.sangramento || null,
         nausea_vomito: procedure.nausea_vomito || null,
         dor: procedure.dor || null,
-        observacoes_procedimento: procedure.observacoes_procedimento || '',
         
-        // Campos do procedimento (obstétrico)
+        // Campos de procedimentos obstétricos
         acompanhamento_antes: procedure.acompanhamento_antes || null,
         tipo_parto: procedure.tipo_parto || null,
         tipo_cesariana: procedure.tipo_cesariana || null,
         indicacao_cesariana: procedure.indicacao_cesariana || null,
-        descricao_indicacao_cesariana: procedure.descricao_indicacao_cesariana || '',
+        descricao_indicacao_cesariana: procedure.descricao_indicacao_cesariana || null,
         retencao_placenta: procedure.retencao_placenta || null,
         laceracao_presente: procedure.laceracao_presente || null,
         grau_laceracao: procedure.grau_laceracao || null,
@@ -140,15 +154,8 @@ export const procedureService = {
         email_cirurgiao: procedure.email_cirurgiao || null,
         telefone_cirurgiao: procedure.telefone_cirurgiao || null,
         
-        // Campos financeiros
-        payment_status: procedure.payment_status || 'pending',
-        payment_date: procedure.payment_date || null,
-        forma_pagamento: procedure.forma_pagamento || '',
-        numero_parcelas: procedure.numero_parcelas || null,
-        parcelas_recebidas: procedure.parcelas_recebidas || 0,
-        observacoes_financeiras: procedure.observacoes_financeiras || '',
-        secretaria_id: procedure.secretaria_id || null,
-        user_id: session.user.id
+        // JSON vazio (não usado mais)
+        fichas_anestesicas: {}
       }
 
       
@@ -160,15 +167,14 @@ export const procedureService = {
         .single()
 
       if (error) {
-        
-        
+        console.error('Erro ao criar procedimento:', error)
         return null
       }
 
       
       return data
     } catch (error) {
-      
+      console.error('Erro interno ao criar procedimento:', error)
       return null
     }
   },
@@ -384,13 +390,13 @@ export const procedureService = {
         .select()
 
       if (error) {
-        
+        console.error('Erro ao criar parcelas:', error)
         return []
       }
 
       return data || []
     } catch (error) {
-      
+      console.error('Erro interno ao criar parcelas:', error)
       return []
     }
   },
@@ -465,13 +471,13 @@ export const procedureService = {
         .single()
 
       if (error) {
-        
+        console.error('Erro ao criar anexo:', error)
         return null
       }
 
       return data
     } catch (error) {
-      
+      console.error('Erro interno ao criar anexo:', error)
       return null
     }
   },

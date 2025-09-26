@@ -656,6 +656,91 @@ export type Database = {
         }
         Relationships: []
       }
+      feedback_links: {
+        Row: {
+          id: string
+          procedure_id: string
+          email_cirurgiao: string
+          telefone_cirurgiao: string | null
+          token: string
+          expires_at: string
+          responded_at: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          procedure_id: string
+          email_cirurgiao: string
+          telefone_cirurgiao?: string | null
+          token: string
+          expires_at: string
+          responded_at?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          procedure_id?: string
+          email_cirurgiao?: string
+          telefone_cirurgiao?: string | null
+          token?: string
+          expires_at?: string
+          responded_at?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_links_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      feedback_responses: {
+        Row: {
+          id: string
+          feedback_link_id: string
+          nausea_vomito: boolean
+          cefaleia: boolean
+          dor_lombar: boolean
+          anemia_transfusao: boolean
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          feedback_link_id: string
+          nausea_vomito?: boolean
+          cefaleia?: boolean
+          dor_lombar?: boolean
+          anemia_transfusao?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          feedback_link_id?: string
+          nausea_vomito?: boolean
+          cefaleia?: boolean
+          dor_lombar?: boolean
+          anemia_transfusao?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_responses_feedback_link_id_fkey"
+            columns: ["feedback_link_id"]
+            isOneToOne: false
+            referencedRelation: "feedback_links"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
