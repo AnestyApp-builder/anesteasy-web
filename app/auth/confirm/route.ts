@@ -83,6 +83,8 @@ async function handleSuccessfulConfirmation(user: any, next: string, baseUrl: st
           name: user.user_metadata?.name || 'Usuário',
           specialty: user.user_metadata?.specialty || 'Anestesiologia',
           crm: user.user_metadata?.crm || '',
+          gender: user.user_metadata?.gender || null,
+          phone: user.user_metadata?.phone || null,
           password_hash: '', // Não armazenar senha na tabela users
           subscription_plan: 'premium',
           subscription_status: 'active' // Status ativo após confirmação

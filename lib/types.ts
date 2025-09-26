@@ -1,3 +1,13 @@
+export interface User {
+  id: string
+  email: string
+  name: string
+  specialty: string
+  crm: string
+  gender: string | null
+  phone?: string | null
+}
+
 export interface ProcedureInsert {
   // Campos obrigatórios
   procedure_name: string

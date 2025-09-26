@@ -64,7 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               name: userData.name,
               specialty: userData.specialty,
               crm: userData.crm || '000000',
-              gender: userData.gender || null
+              gender: userData.gender || null,
+              phone: userData.phone || null
             }
             
             // Verificar se o email foi confirmado
@@ -134,7 +135,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               name: session.user.user_metadata?.name || 'Usuário',
               specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
               crm: session.user.user_metadata?.crm || '000000',
-              gender: session.user.user_metadata?.gender || null
+              gender: session.user.user_metadata?.gender || null,
+              phone: session.user.user_metadata?.phone || null
             }
             
             setIsEmailConfirmed(emailConfirmed)

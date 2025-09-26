@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   Settings, 
   User, 
@@ -8,8 +9,6 @@ import {
   Shield, 
   Palette,
   Database,
-  Download,
-  Upload,
   Check,
   AlertCircle,
   Users,
@@ -27,8 +26,9 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useSecretaria } from '@/contexts/SecretariaContext'
 
 export default function Configuracoes() {
-  const { user, updateUser, deleteAccount, isLoading } = useAuth()
+  const { user, updateUser, deleteAccount, isLoading, isAuthenticated } = useAuth()
   const { secretaria, linkSecretaria, unlinkSecretaria, isLoading: secretariaLoading } = useSecretaria()
+  const router = useRouter()
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -49,6 +49,20 @@ export default function Configuracoes() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
+
+  // Verificar autenticação e redirecionar se necessário
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push('/login')
+    }
+  }, [isLoading, isAuthenticated, router])
 
   // Carregar dados do usuário
   useEffect(() => {
@@ -58,11 +72,28 @@ export default function Configuracoes() {
         email: user.email || '',
         crm: user.crm || '',
         specialty: user.specialty || '',
-        phone: '',
+        phone: user.phone || '',
         gender: user.gender || ''
       })
     }
   }, [user])
+
+  // Mostrar loading enquanto verifica autenticação
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verificando autenticação...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Não renderizar se não estiver autenticado (será redirecionado)
+  if (!isAuthenticated) {
+    return null
+  }
 
   // Função para atualizar campo
   const updateField = (field: string, value: string) => {
@@ -157,6 +188,52 @@ export default function Configuracoes() {
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
       setIsLinkingSecretaria(false)
+    }
+  }
+
+  // Função para alterar senha
+  const handleChangePassword = async () => {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      setFeedbackMessage({ type: 'error', message: 'Preencha todos os campos.' })
+      setTimeout(() => setFeedbackMessage(null), 3000)
+      return
+    }
+
+    if (passwordForm.newPassword.length < 6) {
+      setFeedbackMessage({ type: 'error', message: 'A nova senha deve ter pelo menos 6 caracteres.' })
+      setTimeout(() => setFeedbackMessage(null), 3000)
+      return
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setFeedbackMessage({ type: 'error', message: 'As senhas não coincidem.' })
+      setTimeout(() => setFeedbackMessage(null), 3000)
+      return
+    }
+
+    setIsUpdatingPassword(true)
+    setFeedbackMessage(null)
+
+    try {
+      // Importar authService dinamicamente para evitar problemas de SSR
+      const { authService } = await import('@/lib/auth')
+      
+      const result = await authService.updatePassword(passwordForm.newPassword)
+      
+      if (result.success) {
+        setFeedbackMessage({ type: 'success', message: 'Senha alterada com sucesso!' })
+        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+        setShowPasswordModal(false)
+        setTimeout(() => setFeedbackMessage(null), 3000)
+      } else {
+        setFeedbackMessage({ type: 'error', message: result.message || 'Erro ao alterar senha.' })
+        setTimeout(() => setFeedbackMessage(null), 5000)
+      }
+    } catch (error) {
+      setFeedbackMessage({ type: 'error', message: 'Erro interno ao alterar senha.' })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+    } finally {
+      setIsUpdatingPassword(false)
     }
   }
 
@@ -405,8 +482,9 @@ export default function Configuracoes() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                 >
                   <option value="">Selecione seu sexo</option>
-                  <option value="masculino">Masculino</option>
-                  <option value="feminino">Feminino</option>
+                  <option value="M">Masculino</option>
+                  <option value="F">Feminino</option>
+                  <option value="Other">Outro</option>
                 </select>
               </div>
               <Button 
@@ -461,14 +539,12 @@ export default function Configuracoes() {
               </CardTitle>
             </CardHeader>
             <div className="p-6 space-y-4">
-              <Button variant="outline" className="w-full">
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => setShowPasswordModal(true)}
+              >
                 Alterar Senha
-              </Button>
-              <Button variant="outline" className="w-full">
-                Configurar 2FA
-              </Button>
-              <Button variant="outline" className="w-full">
-                Sessões Ativas
               </Button>
             </div>
           </Card>
@@ -482,14 +558,6 @@ export default function Configuracoes() {
               </CardTitle>
             </CardHeader>
             <div className="p-6 space-y-4">
-              <Button variant="outline" className="w-full">
-                <Download className="w-4 h-4 mr-2" />
-                Exportar Dados
-              </Button>
-              <Button variant="outline" className="w-full">
-                <Upload className="w-4 h-4 mr-2" />
-                Importar Dados
-              </Button>
               <Button 
                 variant="destructive" 
                 className="w-full"
@@ -502,6 +570,76 @@ export default function Configuracoes() {
           </Card>
         </div>
       </div>
+
+      {/* Modal de Alteração de Senha */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                Alterar Senha
+              </h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowPasswordModal(false)
+                  setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+                }}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="space-y-4">
+              <Input
+                label="Senha Atual"
+                type="password"
+                value={passwordForm.currentPassword}
+                onChange={(e) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                placeholder="Digite sua senha atual"
+              />
+              
+              <Input
+                label="Nova Senha"
+                type="password"
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                placeholder="Digite sua nova senha (mín. 6 caracteres)"
+              />
+              
+              <Input
+                label="Confirmar Nova Senha"
+                type="password"
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                placeholder="Confirme sua nova senha"
+              />
+            </div>
+
+            <div className="flex space-x-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowPasswordModal(false)
+                  setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+                }}
+                className="flex-1"
+                disabled={isUpdatingPassword}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleChangePassword}
+                disabled={isUpdatingPassword || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+                className="flex-1"
+              >
+                {isUpdatingPassword ? 'Alterando...' : 'Alterar Senha'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && (

@@ -27,7 +27,9 @@ export default function Register() {
     password: '',
     confirmPassword: '',
     specialty: '',
-    crm: ''
+    crm: '',
+    gender: '',
+    phone: ''
   })
   
   // Formulário para secretaria
@@ -80,8 +82,8 @@ export default function Register() {
     
     if (activeTab === 'anestesista') {
       // Validação para anestesista
-      if (!anestesistaForm.name || !anestesistaForm.email || !anestesistaForm.password || !anestesistaForm.specialty || !anestesistaForm.crm) {
-        setError('Por favor, preencha todos os campos')
+      if (!anestesistaForm.name || !anestesistaForm.email || !anestesistaForm.password || !anestesistaForm.specialty || !anestesistaForm.crm || !anestesistaForm.gender || !anestesistaForm.phone) {
+        setError('Por favor, preencha todos os campos obrigatórios')
         setIsRegistering(false)
         return
       }
@@ -101,7 +103,9 @@ export default function Register() {
       const result = await register(anestesistaForm.email, anestesistaForm.password, {
         name: anestesistaForm.name,
         specialty: anestesistaForm.specialty,
-        crm: anestesistaForm.crm
+        crm: anestesistaForm.crm,
+        gender: anestesistaForm.gender,
+        phone: anestesistaForm.phone
       })
 
       if (!result.success) {
@@ -121,7 +125,9 @@ export default function Register() {
           password: '',
           confirmPassword: '',
           specialty: '',
-          crm: ''
+          crm: '',
+          gender: '',
+          phone: ''
         })
       }
     } else {
@@ -274,24 +280,53 @@ export default function Register() {
 
             {/* Campos específicos para anestesista */}
             {activeTab === 'anestesista' && (
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Especialidade"
-                  type="text"
-                  placeholder="Anestesiologia"
-                  value={anestesistaForm.specialty}
-                  onChange={(e) => setAnestesistaForm({ ...anestesistaForm, specialty: e.target.value })}
-                  required
-                />
-                <Input
-                  label="CRM"
-                  type="text"
-                  placeholder="123456"
-                  value={anestesistaForm.crm}
-                  onChange={(e) => setAnestesistaForm({ ...anestesistaForm, crm: e.target.value })}
-                  required
-                />
-              </div>
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Especialidade"
+                    type="text"
+                    placeholder="Anestesiologia"
+                    value={anestesistaForm.specialty}
+                    onChange={(e) => setAnestesistaForm({ ...anestesistaForm, specialty: e.target.value })}
+                    required
+                  />
+                  <Input
+                    label="CRM"
+                    type="text"
+                    placeholder="123456"
+                    value={anestesistaForm.crm}
+                    onChange={(e) => setAnestesistaForm({ ...anestesistaForm, crm: e.target.value })}
+                    required
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Sexo *
+                    </label>
+                    <select
+                      value={anestesistaForm.gender}
+                      onChange={(e) => setAnestesistaForm({ ...anestesistaForm, gender: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                      required
+                    >
+                      <option value="">Selecione o sexo</option>
+                      <option value="M">Masculino</option>
+                      <option value="F">Feminino</option>
+                      <option value="Other">Outro</option>
+                    </select>
+                  </div>
+                  <Input
+                    label="Telefone"
+                    type="tel"
+                    placeholder="(11) 99999-9999"
+                    value={anestesistaForm.phone}
+                    onChange={(e) => setAnestesistaForm({ ...anestesistaForm, phone: e.target.value })}
+                    required
+                  />
+                </div>
+              </>
             )}
 
             {/* Campos específicos para secretaria */}
@@ -368,11 +403,11 @@ export default function Register() {
               <div className="ml-3 text-sm">
                 <label htmlFor="terms" className="text-gray-700">
                   Eu concordo com os{' '}
-                  <Link href="#" className="text-primary-600 hover:text-primary-500">
+                  <Link href="/termos" className="text-primary-600 hover:text-primary-500">
                     Termos de Uso
                   </Link>{' '}
                   e{' '}
-                  <Link href="#" className="text-primary-600 hover:text-primary-500">
+                  <Link href="/politica-privacidade" className="text-primary-600 hover:text-primary-500">
                     Política de Privacidade
                   </Link>
                 </label>

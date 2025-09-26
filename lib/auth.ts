@@ -66,6 +66,8 @@ export const authService = {
     name: string
     specialty: string
     crm: string
+    gender: string
+    phone: string
   }): Promise<{ success: boolean; message: string; user?: User }> {
     try {
       // Verificar se há tentativas recentes para este email
@@ -125,7 +127,9 @@ export const authService = {
           data: {
             name: userData.name,
             specialty: userData.specialty || 'Anestesiologia',
-            crm: userData.crm || ''
+            crm: userData.crm || '',
+            gender: userData.gender || '',
+            phone: userData.phone || ''
           }
         }
       })
@@ -159,7 +163,8 @@ export const authService = {
             email: authData.user.email || email,
             name: userData.name,
             specialty: userData.specialty || 'Anestesiologia',
-            crm: userData.crm || '000000'
+            crm: userData.crm || '000000',
+            gender: userData.gender || null
           }
         }
       }
@@ -292,6 +297,56 @@ export const authService = {
       return { success: true, message: 'Senha atualizada com sucesso!' }
     } catch (error) {
       return { success: false, message: 'Erro interno. Tente novamente.' }
+    }
+  },
+
+  // Atualizar dados do usuário
+  async updateUser(userId: string, userData: { 
+    name?: string; 
+    email?: string; 
+    crm?: string; 
+    specialty?: string; 
+    phone?: string; 
+    gender?: string 
+  }): Promise<User | null> {
+    try {
+      // Atualizar dados na tabela users
+      const { data: updatedUser, error: updateError } = await supabase
+        .from('users')
+        .update({
+          ...(userData.name !== undefined && { name: userData.name }),
+          ...(userData.email !== undefined && { email: userData.email }),
+          ...(userData.crm !== undefined && { crm: userData.crm }),
+          ...(userData.specialty !== undefined && { specialty: userData.specialty }),
+          ...(userData.phone !== undefined && { phone: userData.phone }),
+          ...(userData.gender !== undefined && { gender: userData.gender }),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+        .single()
+
+      if (updateError) {
+        console.error('Erro ao atualizar usuário:', updateError)
+        return null
+      }
+
+      if (updatedUser) {
+        return {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          name: updatedUser.name,
+          specialty: updatedUser.specialty,
+          crm: updatedUser.crm || '000000',
+          gender: updatedUser.gender || null,
+          phone: updatedUser.phone || null
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.error('Erro interno ao atualizar usuário:', error)
+      return null
     }
   },
 

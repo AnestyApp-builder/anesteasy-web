@@ -426,6 +426,20 @@ export default function Home() {
               <Logo size="md" showText={false} className="text-white" />
             </div>
           </div>
+          
+          {/* Links legais */}
+          <div className="flex flex-wrap justify-center gap-6 mb-6">
+            <Link href="/termos" className="text-gray-400 hover:text-white transition-colors text-sm">
+              Termos de Uso
+            </Link>
+            <Link href="/politica-privacidade" className="text-gray-400 hover:text-white transition-colors text-sm">
+              Política de Privacidade
+            </Link>
+            <Link href="/responsabilidade" className="text-gray-400 hover:text-white transition-colors text-sm">
+              Responsabilidade
+            </Link>
+          </div>
+          
           <p className="text-center text-gray-400">
             © 2024 AnestEasy. Todos os direitos reservados.
           </p>
