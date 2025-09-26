@@ -18,6 +18,7 @@ export default function Register() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(false)
   
   // Formulário para anestesista
   const [anestesistaForm, setAnestesistaForm] = useState({
@@ -67,56 +68,79 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Prevenir múltiplos cliques
+    if (isRegistering) {
+      return
+    }
+    
     setError('')
     setSuccess('')
-    setIsLoading(true)
+    setIsRegistering(true)
     
     if (activeTab === 'anestesista') {
       // Validação para anestesista
       if (!anestesistaForm.name || !anestesistaForm.email || !anestesistaForm.password || !anestesistaForm.specialty || !anestesistaForm.crm) {
         setError('Por favor, preencha todos os campos')
-        setIsLoading(false)
+        setIsRegistering(false)
         return
       }
 
       if (anestesistaForm.password.length < 6) {
         setError('A senha deve ter pelo menos 6 caracteres')
-        setIsLoading(false)
+        setIsRegistering(false)
         return
       }
 
       if (anestesistaForm.password !== anestesistaForm.confirmPassword) {
         setError('As senhas não coincidem')
-        setIsLoading(false)
+        setIsRegistering(false)
         return
       }
 
-      const success = await register(anestesistaForm.email, anestesistaForm.password, {
+      const result = await register(anestesistaForm.email, anestesistaForm.password, {
         name: anestesistaForm.name,
         specialty: anestesistaForm.specialty,
         crm: anestesistaForm.crm
       })
 
-      if (!success) {
-        setError('Erro ao criar conta. Tente novamente.')
+      if (!result.success) {
+        setError(result.message)
+        
+        // Se for rate limit, mostrar instruções adicionais
+        if (result.message.includes('Muitas tentativas')) {
+          setTimeout(() => {
+            setError('Muitas tentativas. Aguarde alguns minutos e tente novamente. Dica: O rate limit do Supabase é temporário e geralmente passa em 5-10 minutos.')
+          }, 2000)
+        }
+      } else {
+        // Não exibir mensagem de sucesso, pois será redirecionado para página de confirmação
+        setAnestesistaForm({
+          name: '',
+          email: '',
+          password: '',
+          confirmPassword: '',
+          specialty: '',
+          crm: ''
+        })
       }
     } else {
       // Validação para secretaria
       if (!secretariaForm.name || !secretariaForm.email || !secretariaForm.password) {
         setError('Por favor, preencha todos os campos obrigatórios')
-        setIsLoading(false)
+        setIsRegistering(false)
         return
       }
 
       if (secretariaForm.password.length < 6) {
         setError('A senha deve ter pelo menos 6 caracteres')
-        setIsLoading(false)
+        setIsRegistering(false)
         return
       }
 
       if (secretariaForm.password !== secretariaForm.confirmPassword) {
         setError('As senhas não coincidem')
-        setIsLoading(false)
+        setIsRegistering(false)
         return
       }
 
@@ -141,12 +165,12 @@ export default function Register() {
           setError('Erro ao criar conta da secretaria. Tente novamente.')
         }
       } catch (error) {
-        console.error('Erro ao criar conta da secretaria:', error)
+        
         setError('Erro interno. Tente novamente.')
       }
     }
     
-    setIsLoading(false)
+    setIsRegistering(false)
   }
 
   return (
@@ -338,7 +362,7 @@ export default function Register() {
                   name="terms"
                   type="checkbox"
                   className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  required
+                  defaultChecked
                 />
               </div>
               <div className="ml-3 text-sm">
@@ -355,8 +379,8 @@ export default function Register() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Criando conta...' : `Criar conta de ${activeTab === 'anestesista' ? 'Anestesista' : 'Secretaria'}`}
+            <Button type="submit" className="w-full" disabled={isRegistering}>
+              {isRegistering ? 'Criando conta...' : `Criar conta de ${activeTab === 'anestesista' ? 'Anestesista' : 'Secretaria'}`}
             </Button>
           </form>
 

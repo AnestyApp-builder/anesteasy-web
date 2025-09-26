@@ -9,14 +9,20 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isEmailConfirmed, isLoading, user } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push('/login')
+    if (!isLoading) {
+      if (!isAuthenticated) {
+        // Usuário não autenticado - redirecionar para login
+        router.push('/login')
+      } else if (user && !isEmailConfirmed) {
+        // Usuário autenticado mas email não confirmado - redirecionar para página de espera
+        router.push('/confirm-email?email=' + encodeURIComponent(user.email))
+      }
     }
-  }, [isAuthenticated, isLoading, router])
+  }, [isAuthenticated, isEmailConfirmed, isLoading, router, user])
 
   if (isLoading) {
     return (
@@ -29,7 +35,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     )
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !isEmailConfirmed) {
     return null
   }
 

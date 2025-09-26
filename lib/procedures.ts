@@ -1,8 +1,12 @@
-import { supabase, Database } from './supabase'
+import { supabase } from './supabase'
+import type { ProcedureInsert } from './types'
 
-export type Procedure = Database['public']['Tables']['procedures']['Row']
-export type ProcedureInsert = Database['public']['Tables']['procedures']['Insert']
-export type ProcedureUpdate = Database['public']['Tables']['procedures']['Update']
+export type Procedure = ProcedureInsert & {
+  id: string
+  created_at: string
+  updated_at: string
+}
+export type ProcedureUpdate = Partial<ProcedureInsert>
 
 export interface Parcela {
   id?: string
@@ -45,13 +49,13 @@ export const procedureService = {
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.error('Erro ao buscar procedimentos:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar procedimentos:', error)
+      
       return []
     }
   },
@@ -66,13 +70,13 @@ export const procedureService = {
         .single()
 
       if (error) {
-        console.error('Erro ao buscar procedimento:', error)
+        
         return null
       }
 
       return data
     } catch (error) {
-      console.error('Erro ao buscar procedimento:', error)
+      
       return null
     }
   },
@@ -83,16 +87,71 @@ export const procedureService = {
       // Verificar se há sessão ativa
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) {
-        console.error('Usuário não autenticado')
+        
         return null
       }
 
       // Garantir que o user_id seja o mesmo da sessão
       const procedureData = {
-        ...procedure,
+        // Campos básicos
+        procedure_name: procedure.procedure_name,
+        procedure_value: procedure.procedure_value || 0,
+        procedure_date: procedure.procedure_date,
+        procedure_type: procedure.procedure_type,
+        
+        // Campos do paciente
+        patient_name: procedure.patient_name,
+        patient_age: procedure.patient_age || 0,
+        data_nascimento: procedure.data_nascimento,
+        convenio: procedure.convenio || '',
+        carteirinha: procedure.carteirinha || '',
+        
+        // Campos da equipe
+        anesthesiologist_name: procedure.anesthesiologist_name || '',
+        nome_cirurgiao: procedure.nome_cirurgiao || '',
+        especialidade_cirurgiao: procedure.especialidade_cirurgiao || '',
+        nome_equipe: procedure.nome_equipe || '',
+        hospital_clinic: procedure.hospital_clinic || '',
+        
+        // Campos de anestesia
+        tecnica_anestesica: procedure.tecnica_anestesica || '',
+        codigo_tssu: procedure.codigo_tssu || '',
+        
+        // Campos do procedimento (não-obstétrico)
+        sangramento: procedure.sangramento || null,
+        nausea_vomito: procedure.nausea_vomito || null,
+        dor: procedure.dor || null,
+        observacoes_procedimento: procedure.observacoes_procedimento || '',
+        
+        // Campos do procedimento (obstétrico)
+        acompanhamento_antes: procedure.acompanhamento_antes || null,
+        tipo_parto: procedure.tipo_parto || null,
+        tipo_cesariana: procedure.tipo_cesariana || null,
+        indicacao_cesariana: procedure.indicacao_cesariana || null,
+        descricao_indicacao_cesariana: procedure.descricao_indicacao_cesariana || '',
+        retencao_placenta: procedure.retencao_placenta || null,
+        laceracao_presente: procedure.laceracao_presente || null,
+        grau_laceracao: procedure.grau_laceracao || null,
+        hemorragia_puerperal: procedure.hemorragia_puerperal || null,
+        transfusao_realizada: procedure.transfusao_realizada || null,
+        
+        // Campos de feedback
+        feedback_solicitado: procedure.feedback_solicitado || false,
+        email_cirurgiao: procedure.email_cirurgiao || null,
+        telefone_cirurgiao: procedure.telefone_cirurgiao || null,
+        
+        // Campos financeiros
+        payment_status: procedure.payment_status || 'pending',
+        payment_date: procedure.payment_date || null,
+        forma_pagamento: procedure.forma_pagamento || '',
+        numero_parcelas: procedure.numero_parcelas || null,
+        parcelas_recebidas: procedure.parcelas_recebidas || 0,
+        observacoes_financeiras: procedure.observacoes_financeiras || '',
+        secretaria_id: procedure.secretaria_id || null,
         user_id: session.user.id
       }
 
+      
 
       const { data, error } = await supabase
         .from('procedures')
@@ -101,15 +160,15 @@ export const procedureService = {
         .single()
 
       if (error) {
-        console.error('Erro ao criar procedimento:', error)
-        console.error('Detalhes do erro:', error.message, error.details, error.hint)
+        
+        
         return null
       }
 
-
+      
       return data
     } catch (error) {
-      console.error('Erro ao criar procedimento:', error)
+      
       return null
     }
   },
@@ -125,13 +184,13 @@ export const procedureService = {
         .single()
 
       if (error) {
-        console.error('Erro ao atualizar procedimento:', error)
+        
         return null
       }
 
       return data
     } catch (error) {
-      console.error('Erro ao atualizar procedimento:', error)
+      
       return null
     }
   },
@@ -145,13 +204,13 @@ export const procedureService = {
         .eq('id', id)
 
       if (error) {
-        console.error('Erro ao deletar procedimento:', error)
+        
         return false
       }
 
       return true
     } catch (error) {
-      console.error('Erro ao deletar procedimento:', error)
+      
       return false
     }
   },
@@ -167,13 +226,13 @@ export const procedureService = {
         .order('procedure_date', { ascending: false })
 
       if (error) {
-        console.error('Erro ao buscar procedimentos por status:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar procedimentos por status:', error)
+      
       return []
     }
   },
@@ -190,13 +249,13 @@ export const procedureService = {
         .order('procedure_date', { ascending: false })
 
       if (error) {
-        console.error('Erro ao buscar procedimentos por período:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar procedimentos por período:', error)
+      
       return []
     }
   },
@@ -218,7 +277,7 @@ export const procedureService = {
         .eq('user_id', userId)
 
       if (error) {
-        console.error('Erro ao buscar estatísticas:', error)
+        
         return {
           total: 0,
           completed: 0,
@@ -283,7 +342,7 @@ export const procedureService = {
 
       return stats
     } catch (error) {
-      console.error('Erro ao calcular estatísticas:', error)
+      
       return {
         total: 0,
         completed: 0,
@@ -306,13 +365,13 @@ export const procedureService = {
         .order('numero_parcela', { ascending: true })
 
       if (error) {
-        console.error('Erro ao buscar parcelas:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar parcelas:', error)
+      
       return []
     }
   },
@@ -325,13 +384,13 @@ export const procedureService = {
         .select()
 
       if (error) {
-        console.error('Erro ao criar parcelas:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao criar parcelas:', error)
+      
       return []
     }
   },
@@ -346,13 +405,13 @@ export const procedureService = {
         .single()
 
       if (error) {
-        console.error('Erro ao atualizar parcela:', error)
+        
         return null
       }
 
       return data
     } catch (error) {
-      console.error('Erro ao atualizar parcela:', error)
+      
       return null
     }
   },
@@ -365,13 +424,13 @@ export const procedureService = {
         .eq('procedure_id', procedureId)
 
       if (error) {
-        console.error('Erro ao deletar parcelas:', error)
+        
         return false
       }
 
       return true
     } catch (error) {
-      console.error('Erro ao deletar parcelas:', error)
+      
       return false
     }
   },
@@ -386,13 +445,13 @@ export const procedureService = {
         .order('uploaded_at', { ascending: false })
 
       if (error) {
-        console.error('Erro ao buscar anexos:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar anexos:', error)
+      
       return []
     }
   },
@@ -406,13 +465,13 @@ export const procedureService = {
         .single()
 
       if (error) {
-        console.error('Erro ao criar anexo:', error)
+        
         return null
       }
 
       return data
     } catch (error) {
-      console.error('Erro ao criar anexo:', error)
+      
       return null
     }
   },
@@ -425,13 +484,13 @@ export const procedureService = {
         .eq('id', attachmentId)
 
       if (error) {
-        console.error('Erro ao deletar anexo:', error)
+        
         return false
       }
 
       return true
     } catch (error) {
-      console.error('Erro ao deletar anexo:', error)
+      
       return false
     }
   }

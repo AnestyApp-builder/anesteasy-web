@@ -97,7 +97,7 @@ export default function SecretariaDashboard() {
           .eq('secretaria_id', secretaria.id)
 
         if (anestesistasError) {
-          console.error('Erro ao buscar anestesistas:', anestesistasError)
+          
           setError('Erro ao carregar anestesistas')
           return
         }
@@ -120,7 +120,7 @@ export default function SecretariaDashboard() {
           .order('procedure_date', { ascending: false })
 
         if (proceduresError) {
-          console.error('Erro ao buscar procedimentos:', proceduresError)
+          
           setError('Erro ao carregar procedimentos')
           return
         }
@@ -128,7 +128,7 @@ export default function SecretariaDashboard() {
         setProcedures(proceduresData || [])
         setFilteredProcedures(proceduresData || [])
       } catch (error) {
-        console.error('Erro ao carregar dados:', error)
+        
         setError('Erro interno')
       } finally {
         setIsLoading(false)

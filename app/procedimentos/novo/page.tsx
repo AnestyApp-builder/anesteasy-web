@@ -22,7 +22,9 @@ import {
   FileImage,
   Search,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Users,
+  TestTube
 } from 'lucide-react'
 import Link from 'next/link'
 import { Layout } from '@/components/layout/Layout'
@@ -33,6 +35,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { procedureService } from '@/lib/procedures'
+import { feedbackService } from '@/lib/feedback'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSecretaria } from '@/contexts/SecretariaContext'
 import { formatCurrency } from '@/lib/utils'
@@ -45,16 +48,36 @@ interface FormData {
   convenio: string
   carteirinha: string
   tipoProcedimento: string
+  tecnicaAnestesica: string
+  codigoTSSU: string
   especialidadeCirurgiao: string
   nomeCirurgiao: string
+  nomeEquipe: string
   hospital: string
   
   // 2. Dados do Procedimento
-  dataCirurgia: string
-  horaInicio: string
-  horaTermino: string
-  tipoAnestesia: string[]
-  duracao: string
+  // Campos para procedimentos não-obstétricos
+  sangramento: 'Sim' | 'Não' | ''
+  nauseaVomito: 'Sim' | 'Não' | ''
+  dor: 'Sim' | 'Não' | ''
+  observacoesProcedimento: string
+  
+  // Campos para relatório do cirurgião
+  enviarRelatorioCirurgiao: 'Sim' | 'Não' | ''
+  emailCirurgiao: string
+  telefoneCirurgiao: string
+
+  // Campos para procedimentos obstétricos
+  acompanhamentoAntes: 'Sim' | 'Não' | ''
+  tipoParto: 'Instrumentalizado' | 'Vaginal' | 'Cesariana' | ''
+  tipoCesariana: 'Nova Ráqui' | 'Geral' | 'Complementação pelo Cateter' | ''
+  indicacaoCesariana: 'Sim' | 'Não' | ''
+  descricaoIndicacaoCesariana: string
+  retencaoPlacenta: 'Sim' | 'Não' | ''
+  laceracaoPresente: 'Sim' | 'Não' | ''
+  grauLaceracao: '1' | '2' | '3' | '4' | ''
+  hemorragiaPuerperal: 'Sim' | 'Não' | ''
+  transfusaoRealizada: 'Sim' | 'Não' | ''
   
   // 3. Dados Administrativos
   valor: string
@@ -78,105 +101,6 @@ interface FormData {
   // 5. OCR
 }
 
-// Lista expandida de anestesias com códigos TSSU
-const TIPOS_ANESTESIA_COMPLETOS = [
-  // Anestesia Geral
-  { nome: 'Anestesia Geral - Intubação Orotraqueal', codigo: '31001001', categoria: 'Anestesia Geral' },
-  { nome: 'Anestesia Geral - Máscara Laríngea', codigo: '31001002', categoria: 'Anestesia Geral' },
-  { nome: 'Anestesia Geral - Via Aérea Natural', codigo: '31001003', categoria: 'Anestesia Geral' },
-  { nome: 'Anestesia Geral - TIVA (Total Intravenous Anesthesia)', codigo: '31001004', categoria: 'Anestesia Geral' },
-  { nome: 'Anestesia Geral - Balanceada', codigo: '31001005', categoria: 'Anestesia Geral' },
-  
-  // Anestesia Regional
-  { nome: 'Raquianestesia', codigo: '31002001', categoria: 'Anestesia Regional' },
-  { nome: 'Peridural', codigo: '31002002', categoria: 'Anestesia Regional' },
-  { nome: 'Raqui-Peridural Combinada', codigo: '31002003', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Plexo Braquial', codigo: '31002004', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Plexo Lombossacral', codigo: '31002005', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Femoral', codigo: '31002006', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Ciático', codigo: '31002007', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Isquiático', codigo: '31002008', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Tibial', codigo: '31002009', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Fibular', codigo: '31002010', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Mediano', codigo: '31002011', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Ulnar', codigo: '31002012', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Radial', codigo: '31002013', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio Intercostal', codigo: '31002014', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Occipital', codigo: '31002015', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Trigêmeo', codigo: '31002016', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Facial', codigo: '31002017', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Vago', codigo: '31002018', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Frênico', codigo: '31002019', categoria: 'Anestesia Regional' },
-  { nome: 'Bloqueio do Nervo Pudendo', codigo: '31002020', categoria: 'Anestesia Regional' },
-  
-  // Anestesia Local
-  { nome: 'Anestesia Local Infiltrativa', codigo: '31003001', categoria: 'Anestesia Local' },
-  { nome: 'Anestesia Local por Bloqueio de Campo', codigo: '31003002', categoria: 'Anestesia Local' },
-  { nome: 'Anestesia Local por Bloqueio de Nervo', codigo: '31003003', categoria: 'Anestesia Local' },
-  { nome: 'Anestesia Local Tópica', codigo: '31003004', categoria: 'Anestesia Local' },
-  { nome: 'Anestesia Local por Bloqueio de Plexo', codigo: '31003005', categoria: 'Anestesia Local' },
-  
-  // Sedação
-  { nome: 'Sedação Consciente', codigo: '31004001', categoria: 'Sedação' },
-  { nome: 'Sedação Profunda', codigo: '31004002', categoria: 'Sedação' },
-  { nome: 'Sedação com Propofol', codigo: '31004003', categoria: 'Sedação' },
-  { nome: 'Sedação com Midazolam', codigo: '31004004', categoria: 'Sedação' },
-  { nome: 'Sedação com Dexmedetomidina', codigo: '31004005', categoria: 'Sedação' },
-  { nome: 'Sedação com Ketamina', codigo: '31004006', categoria: 'Sedação' },
-  { nome: 'Sedação com Óxido Nitroso', codigo: '31004007', categoria: 'Sedação' },
-  
-  // Analgesia de Parto
-  { nome: 'Analgesia de Parto - Peridural', codigo: '31005001', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - Raquianestesia', codigo: '31005002', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - Raqui-Peridural', codigo: '31005003', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - PCA (Patient Controlled Analgesia)', codigo: '31005004', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - Remifentanil', codigo: '31005005', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - Sufentanil', codigo: '31005006', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - Fentanil', codigo: '31005007', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - Bupivacaína', codigo: '31005008', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - Ropivacaína', codigo: '31005009', categoria: 'Analgesia de Parto' },
-  { nome: 'Analgesia de Parto - Levobupivacaína', codigo: '31005010', categoria: 'Analgesia de Parto' },
-  
-  // Bloqueios Periféricos Específicos
-  { nome: 'Bloqueio do Nervo Supraescapular', codigo: '31006001', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Axilar', codigo: '31006002', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Musculocutâneo', codigo: '31006003', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Mediano no Punho', codigo: '31006004', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Ulnar no Punho', codigo: '31006005', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Radial no Punho', codigo: '31006006', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Digital', codigo: '31006007', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Plantar', codigo: '31006008', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Sural', codigo: '31006009', categoria: 'Bloqueios Periféricos' },
-  { nome: 'Bloqueio do Nervo Safeno', codigo: '31006010', categoria: 'Bloqueios Periféricos' },
-  
-  // Anestesia para Procedimentos Específicos
-  { nome: 'Anestesia para Endoscopia Digestiva', codigo: '31007001', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Colonoscopia', codigo: '31007002', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Broncoscopia', codigo: '31007003', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cateterismo Cardíaco', codigo: '31007004', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Angioplastia', codigo: '31007005', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia Robótica', codigo: '31007006', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia Laparoscópica', codigo: '31007007', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia Torácica', codigo: '31007008', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia Cardíaca', codigo: '31007009', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia Neurológica', codigo: '31007010', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia Pediátrica', codigo: '31007011', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia Obstétrica', codigo: '31007012', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia de Emergência', codigo: '31007013', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia Ambulatorial', codigo: '31007014', categoria: 'Procedimentos Específicos' },
-  { nome: 'Anestesia para Cirurgia de Trauma', codigo: '31007015', categoria: 'Procedimentos Específicos' }
-]
-
-// Lista simplificada para compatibilidade
-const TIPOS_ANESTESIA = [
-  'Anestesia Geral',
-  'Anestesia Regional',
-  'Anestesia Local',
-  'Sedação',
-  'Bloqueio Periférico',
-  'Raquianestesia',
-  'Peridural'
-]
 
 const FORMAS_PAGAMENTO_PENDENTE = [
   'Aguardando',
@@ -215,6 +139,30 @@ const ESPECIALIDADES = [
   'Outro'
 ]
 
+// Lista de tipos de anestesia com códigos TSSU
+const TIPOS_ANESTESIA = [
+  { codigo: '30701010', nome: 'Anestesia geral' },
+  { codigo: '30701028', nome: 'Anestesia regional (raquianestesia)' },
+  { codigo: '30701036', nome: 'Anestesia regional (peridural)' },
+  { codigo: '30701044', nome: 'Anestesia regional (bloqueio de plexo braquial)' },
+  { codigo: '30701052', nome: 'Anestesia regional (bloqueio do neuroeixo)' },
+  { codigo: '30701060', nome: 'Anestesia local' },
+  { codigo: '30701079', nome: 'Sedação consciente' },
+  { codigo: '30701087', nome: 'Anestesia combinada (geral + regional)' },
+  { codigo: '30701095', nome: 'Duplo bloqueio (raqui + peridural)' },
+  { codigo: '30701109', nome: 'Bloqueio periférico' },
+  { codigo: '30701117', nome: 'Analgesia de parto' },
+  { codigo: '30701125', nome: 'Analgesia pós-operatória' },
+  { codigo: '30701133', nome: 'Bloqueio simpático' },
+  { codigo: '30701141', nome: 'Bloqueio de nervos cranianos' },
+  { codigo: '30701150', nome: 'Anestesia tópica' },
+  { codigo: '30701168', nome: 'Acompanhamento anestésico' },
+  { codigo: '30701176', nome: 'Monitorização anestésica' },
+  { codigo: '30701184', nome: 'Anestesia para procedimento ambulatorial' },
+  { codigo: '30701192', nome: 'Anestesia para emergência' },
+  { codigo: '30701206', nome: 'Raquianestesia contínua' }
+]
+
 export default function NovoProcedimento() {
   const { user } = useAuth()
   const { secretaria } = useSecretaria()
@@ -224,14 +172,32 @@ export default function NovoProcedimento() {
     convenio: '',
     carteirinha: '',
     tipoProcedimento: '',
+    tecnicaAnestesica: '',
+    codigoTSSU: '',
     especialidadeCirurgiao: '',
     nomeCirurgiao: '',
+    nomeEquipe: '',
     hospital: '',
-    dataCirurgia: '',
-    horaInicio: '',
-    horaTermino: '',
-    tipoAnestesia: [],
-    duracao: '',
+    // Campos para procedimentos não-obstétricos
+    sangramento: '',
+    nauseaVomito: '',
+    dor: '',
+    observacoesProcedimento: '',
+    // Campos para relatório do cirurgião
+    enviarRelatorioCirurgiao: '',
+    emailCirurgiao: '',
+    telefoneCirurgiao: '',
+    // Campos para procedimentos obstétricos
+    acompanhamentoAntes: '',
+    tipoParto: '',
+    tipoCesariana: '',
+    indicacaoCesariana: '',
+    descricaoIndicacaoCesariana: '',
+    retencaoPlacenta: '',
+    laceracaoPresente: '',
+    grauLaceracao: '',
+    hemorragiaPuerperal: '',
+    transfusaoRealizada: '',
     valor: '',
     formaPagamento: 'Aguardando',
     numero_parcelas: '',
@@ -249,6 +215,18 @@ export default function NovoProcedimento() {
   const [success, setSuccess] = useState('')
   const [feedbackType, setFeedbackType] = useState<'error' | 'success' | 'info' | null>(null)
   const [currentSection, setCurrentSection] = useState(0) // Começar com OCR (seção 0)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [successData, setSuccessData] = useState<{
+    paciente: string
+    procedimento: string
+    valor: string
+    parcelas: string
+    feedbackUrl?: string
+    emailCirurgiao?: string
+    telefoneCirurgiao?: string
+  } | null>(null)
+  const [anestesiasFiltradas, setAnestesiasFiltradas] = useState(TIPOS_ANESTESIA)
+  const [buscaAnestesia, setBuscaAnestesia] = useState('')
 
   // Definir secretaria automaticamente se houver uma vinculada
   useEffect(() => {
@@ -318,6 +296,98 @@ export default function NovoProcedimento() {
     setFeedbackType(null)
   }
 
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false)
+    setSuccessData(null)
+    router.push('/procedimentos')
+  }
+
+  // Função para filtrar anestesias baseado na busca
+  const filtrarAnestesias = (termo: string) => {
+    setBuscaAnestesia(termo)
+    if (!termo) {
+      setAnestesiasFiltradas(TIPOS_ANESTESIA)
+    } else {
+      const filtradas = TIPOS_ANESTESIA.filter(anestesia =>
+        anestesia.nome.toLowerCase().includes(termo.toLowerCase()) ||
+        anestesia.codigo.includes(termo)
+      )
+      setAnestesiasFiltradas(filtradas)
+    }
+  }
+
+  // Função para selecionar uma anestesia
+  const selecionarAnestesia = (anestesia: { codigo: string; nome: string }) => {
+    updateFormData('tecnicaAnestesica', anestesia.nome)
+    updateFormData('codigoTSSU', anestesia.codigo)
+    setBuscaAnestesia('')
+    setAnestesiasFiltradas(TIPOS_ANESTESIA)
+  }
+
+  // Função para preencher automaticamente todos os campos (botão Teste)
+  const preencherCamposTeste = () => {
+    const dataTeste = {
+      // 1. Identificação do Procedimento
+      nomePaciente: 'Maria Silva Santos',
+      dataNascimento: '1985-03-15',
+      convenio: 'Unimed',
+      carteirinha: '123456789',
+      tipoProcedimento: 'Cesariana',
+      tecnicaAnestesica: 'Raquianestesia',
+      codigoTSSU: '30701028',
+      especialidadeCirurgiao: 'Ginecologia',
+      nomeCirurgiao: 'Dr. João Carlos Oliveira',
+      nomeEquipe: 'Equipe Obstétrica Alpha',
+      hospital: 'Hospital São Lucas',
+      observacoes: 'Paciente com diabetes gestacional controlada. Sem intercorrências pré-operatórias.',
+      
+      // 2. Dados do Procedimento (obstétrico)
+      acompanhamentoAntes: 'Sim',
+      tipoParto: 'Cesariana',
+      tipoCesariana: 'Nova Ráqui',
+      indicacaoCesariana: 'Sim',
+      descricaoIndicacaoCesariana: 'Falha de progressão do trabalho de parto após 12 horas',
+      retencaoPlacenta: 'Não',
+      laceracaoPresente: 'Não',
+      grauLaceracao: '',
+      hemorragiaPuerperal: 'Não',
+      transfusaoRealizada: '',
+      
+      // Campos para procedimentos não-obstétricos (também preenchidos para teste)
+      sangramento: 'Não',
+      nauseaVomito: 'Não',
+      dor: 'Não',
+      observacoesProcedimento: 'Procedimento realizado sem intercorrências.',
+      
+      // Campos para relatório do cirurgião
+      enviarRelatorioCirurgiao: 'Sim',
+      emailCirurgiao: 'felipemakermoney@gmail.com',
+      telefoneCirurgiao: '349923878',
+      
+      // 3. Dados Administrativos
+      valor: '2500,00',
+      formaPagamento: 'À vista',
+      numero_parcelas: '',
+      parcelas_recebidas: '0',
+      parcelas: [],
+      statusPagamento: 'Pago',
+      secretariaId: secretaria?.id || '',
+      dataPagamento: new Date().toISOString().split('T')[0],
+      observacoes: 'Pagamento realizado via PIX. Convênio Unimed aprovado.',
+      
+      // 4. Upload de Fichas (mantém vazio)
+      fichas: []
+    }
+
+    // Aplicar todos os dados de teste
+    Object.entries(dataTeste).forEach(([key, value]) => {
+      updateFormData(key as keyof FormData, value)
+    })
+
+    // Mostrar feedback de sucesso
+    showFeedback('success', '✅ Todos os campos foram preenchidos automaticamente com dados de teste!')
+  }
+
   // Função para formatar valor monetário para exibição
   const formatValueForDisplay = (value: string) => {
     if (!value) return ''
@@ -328,33 +398,7 @@ export default function NovoProcedimento() {
   const [previewFiles, setPreviewFiles] = useState<string[]>([])
   const router = useRouter()
 
-  // Estados para o campo de anestesia com busca
-  const [anestesiaSelecionada, setAnestesiaSelecionada] = useState<{
-    nome: string
-    codigo: string
-    categoria: string
-  } | null>(null)
-  const [buscaAnestesia, setBuscaAnestesia] = useState('')
-  const [mostrarListaAnestesia, setMostrarListaAnestesia] = useState(false)
-  const [anestesiasFiltradas, setAnestesiasFiltradas] = useState(TIPOS_ANESTESIA_COMPLETOS)
 
-  // Calcular duração automaticamente
-  useEffect(() => {
-    if (formData.horaInicio && formData.horaTermino) {
-      const inicio = new Date(`2000-01-01T${formData.horaInicio}`)
-      const termino = new Date(`2000-01-01T${formData.horaTermino}`)
-      
-      if (termino > inicio) {
-        const diff = termino.getTime() - inicio.getTime()
-        const hours = Math.floor(diff / (1000 * 60 * 60))
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-        setFormData(prev => ({
-          ...prev,
-          duracao: `${hours}h ${minutes}min`
-        }))
-      }
-    }
-  }, [formData.horaInicio, formData.horaTermino])
 
   // Validar data de nascimento
   const validateBirthDate = (date: string) => {
@@ -363,13 +407,14 @@ export default function NovoProcedimento() {
     return birthDate <= today
   }
 
-  // Validar hora de término
-  const validateEndTime = (startTime: string, endTime: string) => {
-    if (!startTime || !endTime) return true
-    const start = new Date(`2000-01-01T${startTime}`)
-    const end = new Date(`2000-01-01T${endTime}`)
-    return end > start
+  // Verificar se é procedimento obstétrico
+  const isObstetricProcedure = (procedimento: string) => {
+    const obstetricTerms = ['parto', 'cesariana', 'cesaria', 'cesárea', 'cesarea']
+    return obstetricTerms.some(term => 
+      procedimento.toLowerCase().includes(term.toLowerCase())
+    )
   }
+
 
   // Calcular idade
   const calculateAge = (birthDate: string) => {
@@ -422,72 +467,6 @@ export default function NovoProcedimento() {
     setPreviewFiles(prev => prev.filter((_, i) => i !== index))
   }
 
-  // Handle tipo anestesia
-  const handleTipoAnestesia = (tipo: string) => {
-    setFormData(prev => ({
-      ...prev,
-      tipoAnestesia: prev.tipoAnestesia.includes(tipo)
-        ? prev.tipoAnestesia.filter(t => t !== tipo)
-        : [...prev.tipoAnestesia, tipo]
-    }))
-  }
-
-  // Filtrar anestesias por busca
-  useEffect(() => {
-    if (buscaAnestesia.trim() === '') {
-      setAnestesiasFiltradas(TIPOS_ANESTESIA_COMPLETOS)
-    } else {
-      const filtradas = TIPOS_ANESTESIA_COMPLETOS.filter(anestesia =>
-        anestesia.nome.toLowerCase().includes(buscaAnestesia.toLowerCase()) ||
-        anestesia.codigo.includes(buscaAnestesia) ||
-        anestesia.categoria.toLowerCase().includes(buscaAnestesia.toLowerCase())
-      )
-      setAnestesiasFiltradas(filtradas)
-    }
-  }, [buscaAnestesia])
-
-  // Fechar lista quando clicar fora
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement
-      if (!target.closest('.anestesia-dropdown')) {
-        setMostrarListaAnestesia(false)
-      }
-    }
-
-    if (mostrarListaAnestesia) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [mostrarListaAnestesia])
-
-  // Selecionar anestesia
-  const selecionarAnestesia = (anestesia: { nome: string; codigo: string; categoria: string }) => {
-    setAnestesiaSelecionada(anestesia)
-    setBuscaAnestesia(anestesia.nome)
-    setMostrarListaAnestesia(false)
-    
-    // Adicionar ao formData se não estiver já selecionada
-    if (!formData.tipoAnestesia.includes(anestesia.nome)) {
-      setFormData(prev => ({
-        ...prev,
-        tipoAnestesia: [...prev.tipoAnestesia, anestesia.nome]
-      }))
-    }
-  }
-
-  // Remover anestesia selecionada
-  const removerAnestesia = () => {
-    if (anestesiaSelecionada) {
-      setFormData(prev => ({
-        ...prev,
-        tipoAnestesia: prev.tipoAnestesia.filter(t => t !== anestesiaSelecionada.nome)
-      }))
-    }
-    setAnestesiaSelecionada(null)
-    setBuscaAnestesia('')
-    setMostrarListaAnestesia(false)
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -505,23 +484,87 @@ export default function NovoProcedimento() {
     }
 
     // Validações básicas com mensagens específicas
-    if (!formData.nomePaciente || !formData.dataNascimento || !formData.dataCirurgia || 
-        !formData.horaInicio || !formData.tipoAnestesia.length) {
-      showFeedback('error', '⚠️ Campos obrigatórios não preenchidos. Verifique se todos os campos marcados com * estão preenchidos.')
-      return
+    const camposObrigatorios = {
+      'Nome do Paciente': formData.nomePaciente,
+      'Data de Nascimento': formData.dataNascimento,
+      'Tipo do Procedimento': formData.tipoProcedimento,
+      'Técnica Anestésica': formData.tecnicaAnestesica
     }
 
+    const camposFaltando = Object.entries(camposObrigatorios)
+      .filter(([_, value]) => !value)
+      .map(([key]) => key)
+
+    if (camposFaltando.length > 0) {
+      showFeedback('error', `⚠️ Campos obrigatórios não preenchidos: ${camposFaltando.join(', ')}`)
+      return
+    }
 
     if (!validateBirthDate(formData.dataNascimento)) {
       showFeedback('error', '⚠️ Data de nascimento inválida: A data não pode ser futura.')
       return
     }
 
-    // Validar hora de término apenas se estiver preenchida
-    if (formData.horaTermino && !validateEndTime(formData.horaInicio, formData.horaTermino)) {
-      showFeedback('error', '⚠️ Horário inválido: A hora de término deve ser maior que a hora de início.')
+    // Validar campos específicos do tipo de procedimento
+    if (isObstetricProcedure(formData.tipoProcedimento)) {
+      const camposObstetricia = {
+        'Tipo de Parto': formData.tipoParto
+      }
+
+      const camposObstetriciaPendentes = Object.entries(camposObstetricia)
+        .filter(([_, value]) => !value)
+        .map(([key]) => key)
+
+      if (camposObstetriciaPendentes.length > 0) {
+        showFeedback('error', `⚠️ Campos obrigatórios para procedimento obstétrico não preenchidos: ${camposObstetriciaPendentes.join(', ')}`)
+        return
+      }
+
+      // Validações específicas para cesariana
+      if (formData.tipoParto === 'Cesariana') {
+        if (!formData.tipoCesariana) {
+          showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo (Nova Ráqui, Geral ou Complementação pelo Cateter)')
+          return
+        }
+        if (!formData.indicacaoCesariana) {
+          showFeedback('error', '⚠️ Para cesariana, é necessário informar se há indicação')
+          return
+        }
+        if (formData.indicacaoCesariana === 'Sim' && !formData.descricaoIndicacaoCesariana) {
+          showFeedback('error', '⚠️ É necessário descrever a indicação da cesariana')
+          return
+        }
+      }
+    }
+
+    // Validar campos financeiros
+    if (formData.statusPagamento === 'Pago') {
+      if (!formData.dataPagamento) {
+        showFeedback('error', '⚠️ Para status "Pago", é necessário informar a data do pagamento')
       return
     }
+      if (!formData.valor || parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) <= 0) {
+        showFeedback('error', '⚠️ Para status "Pago", é necessário informar um valor válido')
+      return
+    }
+    }
+
+    // Validar campos de feedback
+    if (formData.enviarRelatorioCirurgiao === 'Sim') {
+      if (!formData.emailCirurgiao) {
+        showFeedback('error', '⚠️ Para enviar relatório ao cirurgião, é necessário informar o email')
+      return
+    }
+      if (!formData.telefoneCirurgiao) {
+        showFeedback('error', '⚠️ Para enviar relatório ao cirurgião, é necessário informar o telefone')
+      return
+    }
+      if (!formData.emailCirurgiao.match(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/)) {
+        showFeedback('error', '⚠️ Email do cirurgião inválido')
+      return
+    }
+    }
+
 
     setLoading(true)
     showFeedback('info', '⏳ Salvando procedimento...')
@@ -530,9 +573,9 @@ export default function NovoProcedimento() {
       const procedureData = {
         // Campos obrigatórios
         procedure_name: formData.tipoProcedimento,
-        procedure_type: formData.tipoAnestesia.join(', '),
-        procedure_date: formData.dataCirurgia,
         procedure_value: parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
+        procedure_date: new Date().toISOString().split('T')[0],
+        procedure_type: 'manual',
         
         // Campos do paciente
         patient_name: formData.nomePaciente,
@@ -541,18 +584,34 @@ export default function NovoProcedimento() {
         convenio: formData.convenio,
         carteirinha: formData.carteirinha,
         
-        // Campos do procedimento
-        data_cirurgia: formData.dataCirurgia,
-        hora_inicio: formData.horaInicio,
-        hora_termino: formData.horaTermino,
-        tipo_anestesia: formData.tipoAnestesia.join(', '),
-        duracao_minutos: parseInt(formData.duracao) || 0,
-        
         // Campos da equipe
         anesthesiologist_name: user.name,
         nome_cirurgiao: formData.nomeCirurgiao,
         especialidade_cirurgiao: formData.especialidadeCirurgiao,
+        nome_equipe: formData.nomeEquipe,
         hospital_clinic: formData.hospital,
+        
+        // Campos de anestesia
+        tecnica_anestesica: formData.tecnicaAnestesica,
+        codigo_tssu: formData.codigoTSSU,
+        
+        // Campos do procedimento (não-obstétrico)
+        sangramento: formData.sangramento,
+        nausea_vomito: formData.nauseaVomito,
+        dor: formData.dor,
+        observacoes_procedimento: formData.observacoesProcedimento,
+
+        // Campos do procedimento (obstétrico)
+        acompanhamento_antes: formData.acompanhamentoAntes,
+        tipo_parto: formData.tipoParto,
+        tipo_cesariana: formData.tipoCesariana,
+        indicacao_cesariana: formData.indicacaoCesariana,
+        descricao_indicacao_cesariana: formData.descricaoIndicacaoCesariana,
+        retencao_placenta: formData.retencaoPlacenta,
+        laceracao_presente: formData.laceracaoPresente,
+        grau_laceracao: formData.grauLaceracao,
+        hemorragia_puerperal: formData.hemorragiaPuerperal,
+        transfusao_realizada: formData.transfusaoRealizada,
         
         // Campos financeiros
         payment_status: STATUS_PAGAMENTO_MAP[formData.statusPagamento] || 'pending',
@@ -562,16 +621,35 @@ export default function NovoProcedimento() {
         parcelas_recebidas: formData.parcelas ? formData.parcelas.filter(p => p.recebida).length : 0,
         observacoes_financeiras: formData.observacoes,
         secretaria_id: formData.secretariaId || null,
-        user_id: user.id
+        user_id: user.id,
+
+        // Campos de feedback
+        feedback_solicitado: formData.enviarRelatorioCirurgiao === 'Sim',
+        email_cirurgiao: formData.enviarRelatorioCirurgiao === 'Sim' ? formData.emailCirurgiao : null,
+        telefone_cirurgiao: formData.enviarRelatorioCirurgiao === 'Sim' ? formData.telefoneCirurgiao : null
       }
 
-      console.log('Dados do procedimento para salvar:', procedureData)
+      
       const result = await procedureService.createProcedure(procedureData)
-      console.log('Resultado do salvamento:', result)
+      
       if (result) {
+        // Se foi solicitado envio de relatório para o cirurgião, criar link de feedback
+        let feedbackUrl = ''
+        if (formData.enviarRelatorioCirurgiao === 'Sim' && formData.emailCirurgiao) {
+          const feedbackLink = await feedbackService.createFeedbackLinkOnly(
+            result.id,
+            formData.emailCirurgiao,
+            formData.telefoneCirurgiao
+          )
+          if (feedbackLink) {
+            feedbackUrl = `${window.location.origin}/feedback/${feedbackLink.token}`
+          } else {
+            
+          }
+        }
         // Salvar parcelas individuais se existirem
         if (formData.parcelas && formData.parcelas.length > 0) {
-          console.log('Salvando parcelas:', formData.parcelas)
+          
           const parcelasData = formData.parcelas.map(parcela => ({
             procedure_id: result.id,
             numero_parcela: parcela.numero,
@@ -579,18 +657,18 @@ export default function NovoProcedimento() {
             recebida: parcela.recebida,
             data_recebimento: parcela.data_recebimento || null
           }))
-          console.log('Dados das parcelas para salvar:', parcelasData)
+          
           
           // Salvar parcelas no banco de dados
           const parcelasResult = await procedureService.createParcelas(parcelasData)
-          console.log('Resultado do salvamento das parcelas:', parcelasResult)
+          
         } else {
-          console.log('Nenhuma parcela para salvar')
+          
         }
 
         // Salvar anexos se existirem
         if (formData.fichas && formData.fichas.length > 0) {
-          console.log('Salvando anexos:', formData.fichas)
+          
           
           // Para cada arquivo, fazer upload para o Supabase Storage
           for (const file of formData.fichas) {
@@ -606,7 +684,7 @@ export default function NovoProcedimento() {
                 .upload(filePath, file)
               
               if (uploadError) {
-                console.error('Erro ao fazer upload do arquivo:', uploadError)
+                
                 continue
               }
               
@@ -625,34 +703,33 @@ export default function NovoProcedimento() {
               }
               
               const attachmentResult = await procedureService.createAttachment(attachmentData)
-              console.log('Resultado do salvamento do anexo:', attachmentResult)
+              
             } catch (error) {
-              console.error('Erro ao processar anexo:', error)
+              
             }
           }
         } else {
-          console.log('Nenhum anexo para salvar')
+          
         }
         
-        showFeedback('success', `✅ Procedimento criado com sucesso! 
+        // Preparar dados para o modal de sucesso
+        setSuccessData({
+          paciente: formData.nomePaciente,
+          procedimento: formData.tipoProcedimento,
+          valor: formData.valor,
+          parcelas: formData.parcelas && formData.parcelas.length > 0 ? `${formData.parcelas.filter(p => p.recebida).length}/${formData.parcelas.length} recebidas` : 'Não parcelado',
+          feedbackUrl: feedbackUrl || undefined,
+          emailCirurgiao: formData.emailCirurgiao || undefined,
+          telefoneCirurgiao: formData.telefoneCirurgiao || undefined
+        })
         
-📋 Detalhes:
-• Paciente: ${formData.nomePaciente}
-• Procedimento: ${formData.tipoProcedimento}
-• Data: ${formData.dataCirurgia}
-• Valor: R$ ${formData.valor}
-• Parcelas: ${formData.parcelas && formData.parcelas.length > 0 ? `${formData.parcelas.filter(p => p.recebida).length}/${formData.parcelas.length} recebidas` : 'Não parcelado'}
-
-Redirecionando para a lista de procedimentos...`)
-        
-        setTimeout(() => {
-          router.push('/procedimentos')
-        }, 3000)
+        // Mostrar modal de sucesso
+        setShowSuccessModal(true)
       } else {
         showFeedback('error', '❌ Falha ao salvar: Não foi possível criar o procedimento. Verifique sua conexão e tente novamente.')
       }
     } catch (error) {
-      console.error('Erro ao criar procedimento:', error)
+      
       
       // Mensagens de erro mais específicas baseadas no tipo de erro
       if (error instanceof Error) {
@@ -691,6 +768,16 @@ Redirecionando para a lista de procedimentos...`)
                   Voltar
                 </Button>
               </Link>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={preencherCamposTeste}
+                className="text-sm bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+              >
+                <TestTube className="w-4 h-4 mr-2" />
+                Teste
+              </Button>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
               Novo Procedimento Anestésico
@@ -799,10 +886,11 @@ Redirecionando para a lista de procedimentos...`)
                 </CardTitle>
           </CardHeader>
               <div className="p-6 space-y-6">
+            {/* Dados da Paciente */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
-                    label="Nome do Paciente *"
-                placeholder="Nome completo do paciente"
+                label="Nome da Paciente *"
+                placeholder="Nome completo da paciente"
                 icon={<User className="w-5 h-5" />}
                     value={formData.nomePaciente}
                     onChange={(e) => updateFormData('nomePaciente', e.target.value)}
@@ -824,9 +912,6 @@ Redirecionando para a lista de procedimentos...`)
                     disabled
                     placeholder="Calculada automaticamente"
               />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
                     label="Convênio / Particular"
                     placeholder="Ex: Unimed, Particular"
@@ -834,41 +919,76 @@ Redirecionando para a lista de procedimentos...`)
                     value={formData.convenio}
                     onChange={(e) => updateFormData('convenio', e.target.value)}
               />
-              <Input
-                    label="Nº da Carteirinha"
-                    placeholder="Número da carteirinha do convênio"
-                    value={formData.carteirinha}
-                    onChange={(e) => updateFormData('carteirinha', e.target.value)}
-              />
             </div>
 
+
+            {/* Procedimento e Equipe */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
-                    label="Tipo de Procedimento Cirúrgico *"
-                    placeholder="Ex: Cirurgia de Apendicite"
+                label="Tipo do Procedimento *"
+                placeholder="Descreva o tipo de procedimento"
                     icon={<FileText className="w-5 h-5" />}
                     value={formData.tipoProcedimento}
                     onChange={(e) => updateFormData('tipoProcedimento', e.target.value)}
                     required
                   />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Especialidade do Cirurgião
-                    </label>
-                    <select
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                      value={formData.especialidadeCirurgiao}
-                      onChange={(e) => updateFormData('especialidadeCirurgiao', e.target.value)}
-                    >
-                      <option value="">Selecione a especialidade</option>
-                      {ESPECIALIDADES.map(esp => (
-                        <option key={esp} value={esp}>{esp}</option>
-                      ))}
-                    </select>
+
+              {/* Campo de Técnica Anestésica com busca */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Técnica Anestésica *
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full px-4 py-3 pl-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    placeholder="Digite para buscar anestesia..."
+                    value={buscaAnestesia || formData.tecnicaAnestesica}
+                    onChange={(e) => filtrarAnestesias(e.target.value)}
+                    onFocus={() => setBuscaAnestesia(formData.tecnicaAnestesica)}
+                    required
+                  />
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-5 w-5 text-gray-400" />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Dropdown de anestesias filtradas */}
+                {buscaAnestesia !== '' && anestesiasFiltradas.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {anestesiasFiltradas.map((anestesia) => (
+                      <button
+                        key={anestesia.codigo}
+                        type="button"
+                        className="w-full px-4 py-3 text-left hover:bg-teal-50 focus:bg-teal-50 focus:outline-none border-b border-gray-100 last:border-b-0"
+                        onClick={() => selecionarAnestesia(anestesia)}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-900 font-medium">{anestesia.nome}</span>
+                          <span className="text-sm text-teal-600 font-mono">{anestesia.codigo}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Mostrar código TSSU selecionado */}
+                {formData.codigoTSSU && (
+                  <div className="mt-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-md">
+                    <span className="text-sm text-teal-700">
+                      <strong>Código TSSU:</strong> {formData.codigoTSSU}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <Input
+                label="Nome da Equipe"
+                placeholder="Nome da equipe médica"
+                icon={<Users className="w-5 h-5" />}
+                value={formData.nomeEquipe}
+                onChange={(e) => updateFormData('nomeEquipe', e.target.value)}
+              />
                   <Input
                     label="Nome do Cirurgião"
                     placeholder="Nome do cirurgião responsável"
@@ -882,6 +1002,20 @@ Redirecionando para a lista de procedimentos...`)
                     icon={<Building className="w-5 h-5" />}
                     value={formData.hospital}
                     onChange={(e) => updateFormData('hospital', e.target.value)}
+                  />
+                </div>
+
+            {/* Observações */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Observações
+              </label>
+              <textarea
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                rows={4}
+                placeholder="Intercorrências iniciais, comorbidades da paciente, observações importantes..."
+                value={formData.observacoes}
+                onChange={(e) => updateFormData('observacoes', e.target.value)}
                   />
                 </div>
               </div>
@@ -898,171 +1032,553 @@ Redirecionando para a lista de procedimentos...`)
                 </CardTitle>
               </CardHeader>
               <div className="p-6 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <Input
-                    label="Data da Cirurgia *"
-                type="date"
-                icon={<Calendar className="w-5 h-5" />}
-                    value={formData.dataCirurgia}
-                    onChange={(e) => updateFormData('dataCirurgia', e.target.value)}
-                    required
-                  />
-                  <Input
-                    label="Hora de Início da Anestesia *"
-                    type="time"
-                    icon={<Clock className="w-5 h-5" />}
-                    value={formData.horaInicio}
-                    onChange={(e) => updateFormData('horaInicio', e.target.value)}
-                required
-              />
-              <Input
-                    label="Hora de Término da Anestesia"
-                type="time"
-                icon={<Clock className="w-5 h-5" />}
-                    value={formData.horaTermino}
-                    onChange={(e) => updateFormData('horaTermino', e.target.value)}
-              />
+                {/* Campos para procedimentos não-obstétricos */}
+                {!isObstetricProcedure(formData.tipoProcedimento) && (
+                  <div className="space-y-6">
+                    {/* Sangramento */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Sangramento?
+                      </label>
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            value="Sim"
+                            checked={formData.sangramento === 'Sim'}
+                            onChange={(e) => updateFormData('sangramento', e.target.value)}
+                            className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                          />
+                          <span className="text-sm text-gray-700">Sim</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            value="Não"
+                            checked={formData.sangramento === 'Não'}
+                            onChange={(e) => updateFormData('sangramento', e.target.value)}
+                            className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                          />
+                          <span className="text-sm text-gray-700">Não</span>
+                        </label>
+                      </div>
             </div>
 
-                {/* Campo de Anestesia com Busca e Código TSSU */}
-                <div className="space-y-4">
+                    {/* Náuseas e Vômitos */}
+                    <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Tipo de Anestesia Utilizada * (com código TSSU)
+                        Náuseas e Vômitos?
                   </label>
-                  
-                  {/* Campo de busca */}
-                  <div className="relative anestesia-dropdown">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center space-x-2">
                         <input
-                        type="text"
-                        placeholder="Buscar por nome, código TSSU ou categoria..."
-                        value={buscaAnestesia}
-                        onChange={(e) => {
-                          setBuscaAnestesia(e.target.value)
-                          setMostrarListaAnestesia(true)
-                        }}
-                        onFocus={() => setMostrarListaAnestesia(true)}
-                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                      />
-                      {anestesiaSelecionada && (
-                        <button
-                          type="button"
-                          onClick={removerAnestesia}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-red-500"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      )}
+                            type="radio"
+                            value="Sim"
+                            checked={formData.nauseaVomito === 'Sim'}
+                            onChange={(e) => updateFormData('nauseaVomito', e.target.value)}
+                            className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                          />
+                          <span className="text-sm text-gray-700">Sim</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            value="Não"
+                            checked={formData.nauseaVomito === 'Não'}
+                            onChange={(e) => updateFormData('nauseaVomito', e.target.value)}
+                            className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                          />
+                          <span className="text-sm text-gray-700">Não</span>
+                        </label>
+                      </div>
                     </div>
 
-                    {/* Lista de anestesias filtradas */}
-                    {mostrarListaAnestesia && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-80 overflow-y-auto">
-                        {anestesiasFiltradas.length > 0 ? (
-                          <div className="py-2">
-                            {anestesiasFiltradas.map((anestesia, index) => (
-                              <button
-                                key={index}
-                                type="button"
-                                onClick={() => selecionarAnestesia(anestesia)}
-                                className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex-1">
-                                    <div className="font-medium text-gray-900 text-sm">
-                                      {anestesia.nome}
+                    {/* Dor */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Dor?
+                      </label>
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            value="Sim"
+                            checked={formData.dor === 'Sim'}
+                            onChange={(e) => updateFormData('dor', e.target.value)}
+                            className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                          />
+                          <span className="text-sm text-gray-700">Sim</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            value="Não"
+                            checked={formData.dor === 'Não'}
+                            onChange={(e) => updateFormData('dor', e.target.value)}
+                            className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                          />
+                          <span className="text-sm text-gray-700">Não</span>
+                        </label>
                                     </div>
-                                    <div className="text-xs text-gray-500 mt-1">
-                                      {anestesia.categoria}
                                     </div>
+
+                    {/* Observações */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Observações
+                      </label>
+                      <textarea
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        rows={4}
+                        placeholder="Observações adicionais sobre o procedimento..."
+                        value={formData.observacoesProcedimento}
+                        onChange={(e) => updateFormData('observacoesProcedimento', e.target.value)}
+                      />
                                   </div>
-                                  <div className="ml-4">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
-                                      TSSU: {anestesia.codigo}
-                                    </span>
+
+                    {/* Relatório para Cirurgião */}
+                    <div className="space-y-4 border-t pt-6">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Enviar relatório para Cirurgião?
+                        </label>
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Sim"
+                              checked={formData.enviarRelatorioCirurgiao === 'Sim'}
+                              onChange={(e) => updateFormData('enviarRelatorioCirurgiao', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Sim</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Não"
+                              checked={formData.enviarRelatorioCirurgiao === 'Não'}
+                              onChange={(e) => updateFormData('enviarRelatorioCirurgiao', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Não</span>
+                          </label>
                                   </div>
                                 </div>
-                              </button>
-                            ))}
+
+                      {/* Campos de contato condicionais */}
+                      {formData.enviarRelatorioCirurgiao === 'Sim' && (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Email do Cirurgião
+                            </label>
+                            <input
+                              type="email"
+                              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                              placeholder="email@exemplo.com"
+                              value={formData.emailCirurgiao}
+                              onChange={(e) => updateFormData('emailCirurgiao', e.target.value)}
+                            />
                           </div>
-                        ) : (
-                          <div className="px-4 py-3 text-gray-500 text-sm">
-                            Nenhuma anestesia encontrada para "{buscaAnestesia}"
+                          <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Telefone do Cirurgião
+                            </label>
+                            <input
+                              type="tel"
+                              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                              placeholder="(11) 99999-9999"
+                              value={formData.telefoneCirurgiao}
+                              onChange={(e) => updateFormData('telefoneCirurgiao', e.target.value)}
+                            />
                           </div>
-                        )}
+                          <p className="text-xs text-gray-500">
+                            Após salvar o procedimento, você receberá um link para enviar ao cirurgião
+                          </p>
                       </div>
                     )}
                   </div>
+                  </div>
+                )}
 
-                  {/* Anestesia selecionada */}
-                  {anestesiaSelecionada && (
-                    <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3">
-                            <CheckCircle className="w-5 h-5 text-teal-600" />
-                            <div>
-                              <div className="font-medium text-teal-900">
-                                {anestesiaSelecionada.nome}
+                {/* Campos Específicos para Procedimentos Obstétricos */}
+                {isObstetricProcedure(formData.tipoProcedimento) && (
+                  <>
+                    <div className="mt-8 space-y-6 border-t pt-6">
+                      <h3 className="text-lg font-medium text-gray-900">
+                        Dados Específicos do Procedimento Obstétrico
+                      </h3>
+                      <div className="space-y-6">
+                      {/* Acompanhamento antes */}
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Acompanhamento antes?
+                        </label>
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Sim"
+                              checked={formData.acompanhamentoAntes === 'Sim'}
+                              onChange={(e) => updateFormData('acompanhamentoAntes', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Sim</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Não"
+                              checked={formData.acompanhamentoAntes === 'Não'}
+                              onChange={(e) => updateFormData('acompanhamentoAntes', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Não</span>
+                          </label>
                               </div>
-                              <div className="text-sm text-teal-700">
-                                {anestesiaSelecionada.categoria}
                               </div>
+
+                      {/* Retenção de Placenta */}
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Retenção de Placenta?
+                        </label>
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Sim"
+                              checked={formData.retencaoPlacenta === 'Sim'}
+                              onChange={(e) => updateFormData('retencaoPlacenta', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Sim</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Não"
+                              checked={formData.retencaoPlacenta === 'Não'}
+                              onChange={(e) => updateFormData('retencaoPlacenta', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Não</span>
+                          </label>
                             </div>
                           </div>
+
+                      {/* Laceração */}
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Laceração?
+                        </label>
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Sim"
+                              checked={formData.laceracaoPresente === 'Sim'}
+                              onChange={(e) => updateFormData('laceracaoPresente', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Sim</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Não"
+                              checked={formData.laceracaoPresente === 'Não'}
+                              onChange={(e) => updateFormData('laceracaoPresente', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Não</span>
+                          </label>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-teal-100 text-teal-800">
-                            TSSU: {anestesiaSelecionada.codigo}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={removerAnestesia}
-                            className="text-teal-600 hover:text-red-500"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
                         </div>
+
+                      {/* Grau de Laceração (condicional) */}
+                      {formData.laceracaoPresente === 'Sim' && (
+                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Grau da Laceração
+                          </label>
+                          <div className="flex items-center space-x-6">
+                            {['1', '2', '3', '4'].map((grau) => (
+                              <label key={grau} className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
+                                  value={grau}
+                                  checked={formData.grauLaceracao === grau}
+                                  onChange={(e) => updateFormData('grauLaceracao', e.target.value)}
+                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                                />
+                                <span className="text-sm text-gray-700">Grau {grau}</span>
+                              </label>
+                            ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Lista de anestesias selecionadas (compatibilidade) */}
-                  {formData.tipoAnestesia.length > 0 && (
+                      {/* Hemorragia Puerperal */}
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-gray-700">
-                        Anestesias Selecionadas:
+                          Hemorragia Puerperal?
                       </label>
-                      <div className="flex flex-wrap gap-2">
-                        {formData.tipoAnestesia.map((tipo, index) => (
-                          <span
-                            key={index}
-                            className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
-                          >
-                            {tipo}
-                            <button
-                              type="button"
-                              onClick={() => handleTipoAnestesia(tipo)}
-                              className="ml-2 text-blue-600 hover:text-red-500"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                    ))}
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Sim"
+                              checked={formData.hemorragiaPuerperal === 'Sim'}
+                              onChange={(e) => updateFormData('hemorragiaPuerperal', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Sim</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Não"
+                              checked={formData.hemorragiaPuerperal === 'Não'}
+                              onChange={(e) => updateFormData('hemorragiaPuerperal', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Não</span>
+                          </label>
+                        </div>
+                        </div>
+
+                      {/* Transfusão (condicional) */}
+                      {formData.hemorragiaPuerperal === 'Sim' && (
+                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Transfusão Realizada?
+                          </label>
+                          <div className="flex items-center space-x-4">
+                            <label className="flex items-center space-x-2">
+                              <input
+                                type="radio"
+                                value="Sim"
+                                checked={formData.transfusaoRealizada === 'Sim'}
+                                onChange={(e) => updateFormData('transfusaoRealizada', e.target.value)}
+                                className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                              />
+                              <span className="text-sm text-gray-700">Sim</span>
+                            </label>
+                            <label className="flex items-center space-x-2">
+                              <input
+                                type="radio"
+                                value="Não"
+                                checked={formData.transfusaoRealizada === 'Não'}
+                                onChange={(e) => updateFormData('transfusaoRealizada', e.target.value)}
+                                className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                              />
+                              <span className="text-sm text-gray-700">Não</span>
+                            </label>
                   </div>
                     </div>
                   )}
+
+                  {/* Relatório para Cirurgião */}
+                  <div className="mt-8 space-y-6 border-t pt-6">
+                    <h3 className="text-lg font-medium text-gray-900">
+                      Relatório para Cirurgião
+                    </h3>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Enviar relatório para Cirurgião?
+                        </label>
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Sim"
+                              checked={formData.enviarRelatorioCirurgiao === 'Sim'}
+                              onChange={(e) => updateFormData('enviarRelatorioCirurgiao', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Sim</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Não"
+                              checked={formData.enviarRelatorioCirurgiao === 'Não'}
+                              onChange={(e) => updateFormData('enviarRelatorioCirurgiao', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Não</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Campos de contato condicionais */}
+                      {formData.enviarRelatorioCirurgiao === 'Sim' && (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Email do Cirurgião
+                            </label>
+                            <input
+                              type="email"
+                              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                              placeholder="email@exemplo.com"
+                              value={formData.emailCirurgiao}
+                              onChange={(e) => updateFormData('emailCirurgiao', e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Telefone do Cirurgião
+                            </label>
+                            <input
+                              type="tel"
+                              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                              placeholder="(11) 99999-9999"
+                              value={formData.telefoneCirurgiao}
+                              onChange={(e) => updateFormData('telefoneCirurgiao', e.target.value)}
+                            />
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            Após salvar o procedimento, você receberá um link para enviar ao cirurgião
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Tipo de Parto */}
+                  <div className="space-y-4">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Parto instrumentalizado, vaginal ou cesariana?
+                        </label>
+                        <div className="flex items-center space-x-6">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Instrumentalizado"
+                              checked={formData.tipoParto === 'Instrumentalizado'}
+                              onChange={(e) => updateFormData('tipoParto', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Instrumentalizado</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Vaginal"
+                              checked={formData.tipoParto === 'Vaginal'}
+                              onChange={(e) => updateFormData('tipoParto', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Vaginal</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Cesariana"
+                              checked={formData.tipoParto === 'Cesariana'}
+                              onChange={(e) => updateFormData('tipoParto', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Cesariana</span>
+                          </label>
+                        </div>
                 </div>
 
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Duração Total (calculada automaticamente)
-                  </label>
-                  <div className="text-lg font-semibold text-gray-900">
-                    {formData.duracao || 'Preencha as horas de início e término'}
+                      {/* Campo condicional para Cesariana */}
+                      {formData.tipoParto === 'Cesariana' && (
+                        <div className="space-y-4 mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                              Tipo de Cesariana
+                      </label>
+                            <div className="flex items-center space-x-6">
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
+                                  value="Nova Ráqui"
+                                  checked={formData.tipoCesariana === 'Nova Ráqui'}
+                                  onChange={(e) => updateFormData('tipoCesariana', e.target.value)}
+                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                                />
+                                <span className="text-sm text-gray-700">Nova Ráqui</span>
+                              </label>
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
+                                  value="Geral"
+                                  checked={formData.tipoCesariana === 'Geral'}
+                                  onChange={(e) => updateFormData('tipoCesariana', e.target.value)}
+                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                                />
+                                <span className="text-sm text-gray-700">Geral</span>
+                              </label>
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
+                                  value="Complementação pelo Cateter"
+                                  checked={formData.tipoCesariana === 'Complementação pelo Cateter'}
+                                  onChange={(e) => updateFormData('tipoCesariana', e.target.value)}
+                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                                />
+                                <span className="text-sm text-gray-700">Complementação pelo Cateter</span>
+                              </label>
                   </div>
+                    </div>
+
+                          {/* Indicação de Cesariana */}
+                          <div className="space-y-2 mt-4">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Indicação de Cesariana?
+                            </label>
+                            <div className="flex items-center space-x-4">
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
+                                  value="Sim"
+                                  checked={formData.indicacaoCesariana === 'Sim'}
+                                  onChange={(e) => updateFormData('indicacaoCesariana', e.target.value)}
+                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                                />
+                                <span className="text-sm text-gray-700">Sim</span>
+                              </label>
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
+                                  value="Não"
+                                  checked={formData.indicacaoCesariana === 'Não'}
+                                  onChange={(e) => updateFormData('indicacaoCesariana', e.target.value)}
+                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                                />
+                                <span className="text-sm text-gray-700">Não</span>
+                              </label>
+                            </div>
                 </div>
+
+                          {/* Campo de texto para descrição da indicação */}
+                          {formData.indicacaoCesariana === 'Sim' && (
+                            <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Descreva a Indicação
+                  </label>
+                              <textarea
+                                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                rows={3}
+                                placeholder="Descreva a indicação da cesariana..."
+                                value={formData.descricaoIndicacaoCesariana}
+                                onChange={(e) => updateFormData('descricaoIndicacaoCesariana', e.target.value)}
+                              />
+                  </div>
+                          )}
+                </div>
+                      )}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </Card>
           )}
@@ -1409,7 +1925,7 @@ Redirecionando para a lista de procedimentos...`)
                           <div className="text-xs text-gray-500">
                             {(file.size / 1024 / 1024).toFixed(2)} MB
                           </div>
-                          {previewFiles[index] && (
+                          {previewFiles[index] && file.type.startsWith('image/') && (
                             <div className="mt-2">
                               <img
                                 src={previewFiles[index]}
@@ -1418,13 +1934,18 @@ Redirecionando para a lista de procedimentos...`)
               />
             </div>
                           )}
-                        </div>
-                      ))}
-                    </div>
+                          {previewFiles[index] && file.type === 'application/pdf' && (
+                            <div className="mt-2 flex items-center justify-center h-20 bg-gray-100 rounded">
+                              <FileText className="w-8 h-8 text-gray-400" />
                   </div>
                 )}
               </div>
-            </Card>
+                      ))}
+                  </div>
+                        </div>
+                      )}
+                            </div>
+                          </Card>
           )}
 
 
@@ -1496,6 +2017,116 @@ Redirecionando para a lista de procedimentos...`)
             </div>
           </form>
       </div>
+
+      {/* Modal de Sucesso */}
+      {showSuccessModal && successData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-8">
+              {/* Header do Modal */}
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-8 h-8 text-green-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                  ✅ Procedimento Criado com Sucesso!
+                </h3>
+                <p className="text-gray-600">
+                  Seu procedimento foi salvo e está disponível na lista.
+                </p>
+              </div>
+
+              {/* Detalhes do Procedimento */}
+              <div className="bg-gray-50 rounded-lg p-6 mb-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">📋 Detalhes do Procedimento</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Paciente:</span>
+                    <p className="text-gray-900 font-medium">{successData.paciente}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Procedimento:</span>
+                    <p className="text-gray-900 font-medium">{successData.procedimento}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Data:</span>
+                    <p className="text-gray-900 font-medium">{new Date().toLocaleDateString()}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Valor:</span>
+                    <p className="text-gray-900 font-medium">R$ {successData.valor}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className="text-sm font-medium text-gray-500">Parcelas:</span>
+                    <p className="text-gray-900 font-medium">{successData.parcelas}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção do Link de Feedback */}
+              {successData.feedbackUrl && (
+                <div className="bg-teal-50 border border-teal-200 rounded-lg p-6 mb-6">
+                  <h4 className="text-lg font-semibold text-teal-900 mb-4">🔗 Link para o Cirurgião</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-teal-700 mb-2">
+                        Link do Formulário:
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          value={successData.feedbackUrl}
+                          readOnly
+                          className="flex-1 px-3 py-2 border border-teal-300 rounded-md bg-white text-sm font-mono"
+                        />
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(successData.feedbackUrl!)
+                            showFeedback('success', 'Link copiado para a área de transferência!')
+                          }}
+                          className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2"
+                        >
+                          Copiar
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-sm font-medium text-teal-700">Email:</span>
+                        <p className="text-teal-900 font-medium">{successData.emailCirurgiao}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-teal-700">Telefone:</span>
+                        <p className="text-teal-900 font-medium">{successData.telefoneCirurgiao}</p>
+                      </div>
+                    </div>
+                    <div className="bg-teal-100 border border-teal-300 rounded-md p-3">
+                      <p className="text-sm text-teal-800">
+                        <strong>📋 Instruções:</strong> Copie o link acima e envie para o cirurgião via WhatsApp, email ou SMS. 
+                        O cirurgião poderá acessar o formulário de feedback através deste link.
+                      </p>
+                      <p className="text-sm text-teal-700 mt-2">
+                        <strong>⏰ Validade:</strong> Este link expira em 48 horas.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Botão de Fechar */}
+              <div className="flex justify-center">
+                <Button
+                  onClick={handleSuccessModalClose}
+                  className="bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 text-lg"
+                >
+                  Ir para Lista de Procedimentos
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   )
 }

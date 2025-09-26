@@ -58,13 +58,13 @@ export const shiftService = {
         .order('start_date', { ascending: true })
 
       if (error) {
-        console.error('Erro ao buscar plantões:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar plantões:', error)
+      
       return []
     }
   },
@@ -81,13 +81,13 @@ export const shiftService = {
         .order('start_date', { ascending: true })
 
       if (error) {
-        console.error('Erro ao buscar plantões por período:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar plantões por período:', error)
+      
       return []
     }
   },
@@ -102,13 +102,13 @@ export const shiftService = {
         .single()
 
       if (error) {
-        console.error('Erro ao buscar plantão:', error)
+        
         return null
       }
 
       return data
     } catch (error) {
-      console.error('Erro ao buscar plantão:', error)
+      
       return null
     }
   },
@@ -123,13 +123,13 @@ export const shiftService = {
         .single()
 
       if (error) {
-        console.error('Erro ao criar plantão:', error)
+        
         throw new Error(error.message)
       }
 
       return data
     } catch (error) {
-      console.error('Erro ao criar plantão:', error)
+      
       throw error
     }
   },
@@ -145,10 +145,10 @@ export const shiftService = {
         .single()
 
       if (error) {
-        console.error('Erro ao atualizar plantão:', error)
+        
         // Se for erro de sobreposição, tentar novamente sem validação
         if (error.message.includes('sobrepõe') || error.code === 'P0001') {
-          console.log('Tentando atualizar sem validação de sobreposição...')
+          
           // Atualizar diretamente sem validações
           const { data: retryData, error: retryError } = await supabase
             .from('shifts')
@@ -167,7 +167,7 @@ export const shiftService = {
 
       return data
     } catch (error) {
-      console.error('Erro ao atualizar plantão:', error)
+      
       throw error
     }
   },
@@ -181,13 +181,13 @@ export const shiftService = {
         .eq('id', id)
 
       if (error) {
-        console.error('Erro ao deletar plantão:', error)
+        
         return false
       }
 
       return true
     } catch (error) {
-      console.error('Erro ao deletar plantão:', error)
+      
       return false
     }
   },
@@ -209,7 +209,7 @@ export const shiftService = {
       const { data, error } = await query
 
       if (error) {
-        console.error('Erro ao verificar sobreposição:', error)
+        
         return false
       }
 
@@ -233,7 +233,7 @@ export const shiftService = {
 
       return true
     } catch (error) {
-      console.error('Erro ao verificar sobreposição:', error)
+      
       return false
     }
   },
@@ -389,7 +389,7 @@ export const shiftService = {
           .order('start_date', { ascending: true })
 
         if (error) {
-          console.error('Erro ao buscar grupo de plantões:', error)
+          
           return [shift]
         }
 
@@ -403,14 +403,14 @@ export const shiftService = {
           .order('start_date', { ascending: true })
 
         if (error) {
-          console.error('Erro ao buscar grupo de plantões:', error)
+          
           return [shift]
         }
 
         return data || [shift]
       }
     } catch (error) {
-      console.error('Erro ao buscar grupo de plantões:', error)
+      
       return []
     }
   },
@@ -439,7 +439,7 @@ export const shiftService = {
         .in('id', groupIds)
 
       if (error) {
-        console.error('Erro ao atualizar grupo de plantões:', error)
+        
         return false
       }
 
@@ -466,7 +466,7 @@ export const shiftService = {
 
       return true
     } catch (error) {
-      console.error('Erro ao atualizar grupo de plantões:', error)
+      
       return false
     }
   },
@@ -491,7 +491,7 @@ export const shiftService = {
         return results.every(result => result === true)
       }
     } catch (error) {
-      console.error('Erro ao deletar grupo de plantões:', error)
+      
       return false
     }
   }

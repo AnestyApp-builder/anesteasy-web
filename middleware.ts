@@ -10,20 +10,47 @@ export function middleware(request: NextRequest) {
     return secretariaMiddleware(request)
   }
   
-  // Para rotas de anestesista, permitir acesso por enquanto
-  // A verificação de autenticação será feita no lado do cliente
+  // Rotas públicas
+  if (
+    pathname.startsWith('/feedback/') ||
+    pathname === '/' ||
+    pathname === '/login' ||
+    pathname === '/register' ||
+    pathname === '/forgot-password' ||
+    pathname === '/confirm-email' ||
+    pathname.startsWith('/auth/') ||
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/api/') ||
+    pathname.includes('reset-password')
+  ) {
+    return NextResponse.next()
+  }
+
+  // Verificar se é uma rota protegida que requer autenticação
+  if (pathname.startsWith('/dashboard') || 
+      pathname.startsWith('/procedimentos') || 
+      pathname.startsWith('/agenda') || 
+      pathname.startsWith('/financeiro') || 
+      pathname.startsWith('/relatorios') || 
+      pathname.startsWith('/configuracoes')) {
+    
+    // Verificar se há usuário no localStorage (lado cliente)
+    // O middleware não tem acesso ao localStorage, então a verificação real
+    // será feita no ProtectedRoute component
+    
+  }
+
   return NextResponse.next()
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
-  ],
+    '/dashboard/:path*',
+    '/procedimentos/:path*',
+    '/configuracoes/:path*',
+    '/agenda/:path*',
+    '/financeiro/:path*',
+    '/relatorios/:path*',
+    '/secretaria/:path*'
+  ]
 }

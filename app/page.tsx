@@ -23,16 +23,12 @@ import { Logo } from '@/components/ui/Logo'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function Home() {
-  const { user, isAuthenticated, isLoading } = useAuth()
+  const { user, isAuthenticated, isEmailConfirmed, isLoading, logout } = useAuth()
   const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
 
-  // Redirecionar se já estiver logado
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      router.push('/dashboard')
-    }
-  }, [isAuthenticated, user, router])
+  // Removido redirecionamento automático para evitar loops
+  // O usuário pode escolher ficar na página inicial ou ir para o dashboard
 
   // Controlar o vídeo de fundo
   useEffect(() => {
@@ -56,10 +52,7 @@ export default function Home() {
     )
   }
 
-  // Não renderizar se já estiver logado (será redirecionado)
-  if (isAuthenticated && user) {
-    return null
-  }
+  // Removido bloqueio de renderização - usuário pode ver a página inicial mesmo logado
   const features = [
     {
       icon: BarChart3,
@@ -121,18 +114,52 @@ export default function Home() {
               <Logo size="md" showText={false} />
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
-              <Link href="/login">
-                <Button variant="ghost" className="text-white hover:text-emerald-300 hover:bg-white/20 border border-white/40 min-h-[44px] px-3 sm:px-4 font-medium">
-                  <span className="hidden sm:inline">Entrar</span>
-                  <span className="sm:hidden">Login</span>
-                </Button>
-              </Link>
-              <Link href="/register">
-                <Button size="sm" className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-xl shadow-emerald-600/30 min-h-[44px] font-semibold">
-                  <span className="hidden sm:inline">Começar Grátis</span>
-                  <span className="sm:hidden">Começar</span>
-                </Button>
-              </Link>
+              {isAuthenticated && user ? (
+                // Usuário logado
+                <div className="flex items-center space-x-2 sm:space-x-4">
+                  {isEmailConfirmed ? (
+                    // Email confirmado - mostrar botão para dashboard
+                    <Link href="/dashboard">
+                      <Button size="sm" className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-xl shadow-emerald-600/30 min-h-[44px] font-semibold">
+                        <span className="hidden sm:inline">Dashboard</span>
+                        <span className="sm:hidden">Dashboard</span>
+                      </Button>
+                    </Link>
+                  ) : (
+                    // Email não confirmado - mostrar botão para confirmação
+                    <Link href={`/confirm-email?email=${encodeURIComponent(user.email)}`}>
+                      <Button size="sm" className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3 bg-yellow-600 hover:bg-yellow-700 text-white border-0 shadow-xl shadow-yellow-600/30 min-h-[44px] font-semibold">
+                        <span className="hidden sm:inline">Confirmar Email</span>
+                        <span className="sm:hidden">Confirmar</span>
+                      </Button>
+                    </Link>
+                  )}
+                  <Button 
+                    variant="ghost" 
+                    className="text-white hover:text-emerald-300 hover:bg-white/20 border border-white/40 min-h-[44px] px-3 sm:px-4 font-medium"
+                    onClick={logout}
+                  >
+                    <span className="hidden sm:inline">Sair</span>
+                    <span className="sm:hidden">Sair</span>
+                  </Button>
+                </div>
+              ) : (
+                // Usuário não logado
+                <>
+                  <Link href="/login">
+                    <Button variant="ghost" className="text-white hover:text-emerald-300 hover:bg-white/20 border border-white/40 min-h-[44px] px-3 sm:px-4 font-medium">
+                      <span className="hidden sm:inline">Entrar</span>
+                      <span className="sm:hidden">Login</span>
+                    </Button>
+                  </Link>
+                  <Link href="/register">
+                    <Button size="sm" className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-xl shadow-emerald-600/30 min-h-[44px] font-semibold">
+                      <span className="hidden sm:inline">Começar Grátis</span>
+                      <span className="sm:hidden">Começar</span>
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>

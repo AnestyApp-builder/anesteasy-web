@@ -47,7 +47,7 @@ export const secretariaService = {
         const accountCreated = await authService.createSecretariaAccount(email, tempPassword, nome, telefone)
         
         if (!accountCreated) {
-          console.error('Erro ao criar conta da secretaria')
+          
           return null
         }
 
@@ -59,14 +59,14 @@ export const secretariaService = {
           .single()
 
         if (fetchError || !newSecretaria) {
-          console.error('Erro ao buscar secretaria criada:', fetchError)
+          
           return null
         }
 
         secretaria = newSecretaria
         isNew = true
       } else if (searchError) {
-        console.error('Erro ao buscar secretaria:', searchError)
+        
         return null
       } else {
         // Secretaria já existe
@@ -91,17 +91,17 @@ export const secretariaService = {
           })
 
         if (insertLinkError) {
-          console.error('Erro ao vincular secretaria:', insertLinkError)
+          
           return null
         }
       } else if (linkError) {
-        console.error('Erro ao verificar vinculação:', linkError)
+        
         return null
       }
 
       return { secretaria, isNew }
     } catch (error) {
-      console.error('Erro no serviço de secretaria:', error)
+      
       return null
     }
   },
@@ -109,6 +109,8 @@ export const secretariaService = {
   // Obter secretaria vinculada ao anestesista
   async getSecretariaByAnestesista(anestesistaId: string): Promise<Secretaria | null> {
     try {
+      
+      
       const { data, error } = await supabase
         .from('anestesista_secretaria')
         .select(`
@@ -124,19 +126,21 @@ export const secretariaService = {
           )
         `)
         .eq('anestesista_id', anestesistaId)
-        .single()
+        .maybeSingle()
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          return null // Nenhuma secretaria vinculada
-        }
-        console.error('Erro ao buscar secretaria:', error)
+        return null // Nenhuma secretaria vinculada
+      }
+
+      if (!data) {
+        
         return null
       }
 
-      return data.secretarias[0] || null
+      
+      return data.secretarias || null
     } catch (error) {
-      console.error('Erro ao buscar secretaria:', error)
+      
       return null
     }
   },
@@ -151,13 +155,13 @@ export const secretariaService = {
         .eq('secretaria_id', secretariaId)
 
       if (error) {
-        console.error('Erro ao desvincular secretaria:', error)
+        
         return false
       }
 
       return true
     } catch (error) {
-      console.error('Erro ao desvincular secretaria:', error)
+      
       return false
     }
   },
@@ -179,13 +183,13 @@ export const secretariaService = {
         .order('procedure_date', { ascending: false })
 
       if (error) {
-        console.error('Erro ao buscar procedimentos:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar procedimentos:', error)
+      
       return []
     }
   },
@@ -205,7 +209,7 @@ export const secretariaService = {
         .single()
 
       if (fetchError) {
-        console.error('Erro ao buscar procedimento:', fetchError)
+        
         return false
       }
 
@@ -219,7 +223,7 @@ export const secretariaService = {
         .eq('id', procedureId)
 
       if (updateError) {
-        console.error('Erro ao atualizar procedimento:', updateError)
+        
         return false
       }
 
@@ -246,7 +250,7 @@ export const secretariaService = {
           .insert(logs)
 
         if (logError) {
-          console.error('Erro ao criar logs:', logError)
+          
         }
 
         // Criar notificação se foi alterado por secretaria
@@ -261,7 +265,7 @@ export const secretariaService = {
 
       return true
     } catch (error) {
-      console.error('Erro ao atualizar procedimento:', error)
+      
       return false
     }
   },
@@ -284,13 +288,13 @@ export const secretariaService = {
         })
 
       if (error) {
-        console.error('Erro ao criar notificação:', error)
+        
         return false
       }
 
       return true
     } catch (error) {
-      console.error('Erro ao criar notificação:', error)
+      
       return false
     }
   },
@@ -311,13 +315,13 @@ export const secretariaService = {
       const { data, error } = await query
 
       if (error) {
-        console.error('Erro ao buscar notificações:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar notificações:', error)
+      
       return []
     }
   },
@@ -331,13 +335,13 @@ export const secretariaService = {
         .eq('id', notificationId)
 
       if (error) {
-        console.error('Erro ao marcar notificação como lida:', error)
+        
         return false
       }
 
       return true
     } catch (error) {
-      console.error('Erro ao marcar notificação como lida:', error)
+      
       return false
     }
   },
@@ -352,13 +356,13 @@ export const secretariaService = {
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.error('Erro ao buscar logs:', error)
+        
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Erro ao buscar logs:', error)
+      
       return []
     }
   }

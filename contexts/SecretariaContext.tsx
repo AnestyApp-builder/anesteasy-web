@@ -36,10 +36,12 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      
       const secretariaData = await secretariaService.getSecretariaByAnestesista(user.id)
       setSecretaria(secretariaData)
+      
     } catch (error) {
-      console.error('Erro ao carregar secretaria:', error)
+      setSecretaria(null)
     } finally {
       setIsLoading(false)
     }
@@ -50,10 +52,12 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
     if (!user) return
 
     try {
+      
       const notificationsData = await secretariaService.getNotifications(user.id)
       setNotifications(notificationsData)
+      
     } catch (error) {
-      console.error('Erro ao carregar notificações:', error)
+      setNotifications([])
     }
   }
 
@@ -72,7 +76,7 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
       
       return false
     } catch (error) {
-      console.error('Erro ao vincular secretaria:', error)
+      
       return false
     } finally {
       setIsLoading(false)
@@ -94,7 +98,7 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
       
       return false
     } catch (error) {
-      console.error('Erro ao desvincular secretaria:', error)
+      
       return false
     } finally {
       setIsLoading(false)
@@ -121,7 +125,7 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
         )
       }
     } catch (error) {
-      console.error('Erro ao marcar notificação como lida:', error)
+      
     }
   }
 
@@ -132,7 +136,7 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
       await Promise.all(unreadIds.map(id => secretariaService.markNotificationAsRead(id)))
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
     } catch (error) {
-      console.error('Erro ao marcar todas as notificações como lidas:', error)
+      
     }
   }
 

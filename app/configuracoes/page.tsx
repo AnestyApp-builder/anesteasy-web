@@ -16,7 +16,8 @@ import {
   Plus,
   X,
   Mail,
-  Phone
+  Phone,
+  Trash2
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -26,7 +27,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useSecretaria } from '@/contexts/SecretariaContext'
 
 export default function Configuracoes() {
-  const { user, updateUser, isLoading } = useAuth()
+  const { user, updateUser, deleteAccount, isLoading } = useAuth()
   const { secretaria, linkSecretaria, unlinkSecretaria, isLoading: secretariaLoading } = useSecretaria()
   const [formData, setFormData] = useState({
     name: '',
@@ -45,6 +46,9 @@ export default function Configuracoes() {
   const [isLinkingSecretaria, setIsLinkingSecretaria] = useState(false)
   const [showSecretariaForm, setShowSecretariaForm] = useState(false)
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
 
   // Carregar dados do usuário
   useEffect(() => {
@@ -86,7 +90,7 @@ export default function Configuracoes() {
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('Erro ao salvar perfil:', error)
+      
       setFeedbackMessage({ type: 'error', message: 'Erro ao salvar alterações.' })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
@@ -122,7 +126,7 @@ export default function Configuracoes() {
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('Erro ao vincular secretaria:', error)
+      
       setFeedbackMessage({ type: 'error', message: 'Erro ao vincular secretaria.' })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
@@ -148,11 +152,59 @@ export default function Configuracoes() {
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('Erro ao desvincular secretaria:', error)
+      
       setFeedbackMessage({ type: 'error', message: 'Erro ao desvincular secretaria.' })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
       setIsLinkingSecretaria(false)
+    }
+  }
+
+  // Função para excluir conta
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmation !== 'EXCLUIR') {
+      setFeedbackMessage({ type: 'error', message: 'Digite "EXCLUIR" para confirmar a exclusão.' })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+      return
+    }
+
+    setIsDeleting(true)
+    setFeedbackMessage(null)
+
+    try {
+      
+      const success = await deleteAccount()
+      
+      if (success) {
+        
+        setFeedbackMessage({ 
+          type: 'success', 
+          message: 'Conta excluída com sucesso! Todos os dados foram removidos.' 
+        })
+        setShowDeleteModal(false)
+        setDeleteConfirmation('')
+        
+        // Aguardar um pouco antes de redirecionar para mostrar a mensagem
+        setTimeout(() => {
+          // O redirecionamento será feito automaticamente pelo contexto
+        }, 2000)
+      } else {
+        
+        setFeedbackMessage({ 
+          type: 'error', 
+          message: 'Erro ao excluir conta. Verifique o console para mais detalhes.' 
+        })
+        setTimeout(() => setFeedbackMessage(null), 8000)
+      }
+    } catch (error) {
+      
+      setFeedbackMessage({ 
+        type: 'error', 
+        message: 'Erro interno ao excluir conta. Verifique o console para mais detalhes.' 
+      })
+      setTimeout(() => setFeedbackMessage(null), 8000)
+    } finally {
+      setIsDeleting(false)
     }
   }
   return (
@@ -438,13 +490,83 @@ export default function Configuracoes() {
                 <Upload className="w-4 h-4 mr-2" />
                 Importar Dados
               </Button>
-              <Button variant="destructive" className="w-full">
+              <Button 
+                variant="destructive" 
+                className="w-full"
+                onClick={() => setShowDeleteModal(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
                 Excluir Conta
               </Button>
             </div>
           </Card>
         </div>
       </div>
+
+      {/* Modal de Confirmação de Exclusão */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center mb-4">
+              <div className="flex-shrink-0 w-10 h-10 mx-auto flex items-center justify-center rounded-full bg-red-100">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+            </div>
+            
+            <div className="text-center mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Excluir Conta
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Esta ação é <strong>irreversível</strong>. Todos os seus dados serão permanentemente excluídos, incluindo:
+              </p>
+              <ul className="text-sm text-gray-600 text-left mb-4 space-y-1">
+                <li>• Todos os procedimentos cadastrados</li>
+                <li>• Dados financeiros e pagamentos</li>
+                <li>• Relatórios e estatísticas</li>
+                <li>• Configurações e preferências</li>
+                <li>• Vínculos com secretarias</li>
+                <li>• Feedback de cirurgiões</li>
+              </ul>
+              <p className="text-sm text-gray-600 mb-4">
+                Digite <strong>"EXCLUIR"</strong> para confirmar:
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <Input
+                label="Confirmação"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder="Digite EXCLUIR"
+                className="text-center font-mono"
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDeleteModal(false)
+                  setDeleteConfirmation('')
+                }}
+                className="flex-1"
+                disabled={isDeleting}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteAccount}
+                disabled={isDeleting || deleteConfirmation !== 'EXCLUIR'}
+                className="flex-1"
+              >
+                {isDeleting ? 'Excluindo...' : 'Excluir Conta'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   )
 }

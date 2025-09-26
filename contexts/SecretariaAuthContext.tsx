@@ -93,7 +93,7 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
       }
       return false
     } catch (error) {
-      console.error('Erro no login da secretaria:', error)
+      
       return false
     } finally {
       setIsLoading(false)
@@ -107,7 +107,7 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
       setSecretaria(null)
       router.push('/login')
     } catch (error) {
-      console.error('Erro no logout da secretaria:', error)
+      
     } finally {
       setIsLoading(false)
     }

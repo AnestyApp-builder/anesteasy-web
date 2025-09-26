@@ -182,7 +182,7 @@ export default function Procedimentos() {
       const data = await procedureService.getProcedures(user.id)
       setProcedures(data)
     } catch (error) {
-      console.error('Erro ao carregar procedimentos:', error)
+      
     } finally {
       setLoading(false)
     }
@@ -217,7 +217,7 @@ export default function Procedimentos() {
         alert('Erro ao excluir procedimento. Tente novamente.')
       }
     } catch (error) {
-      console.error('Erro ao excluir procedimento:', error)
+      
       alert('Erro ao excluir procedimento. Verifique sua conexão.')
     } finally {
       setIsDeleting(false)
@@ -292,7 +292,7 @@ export default function Procedimentos() {
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('Erro ao salvar:', error)
+      
       setFeedbackMessage({ type: 'error', message: 'Erro ao salvar alterações.' })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {

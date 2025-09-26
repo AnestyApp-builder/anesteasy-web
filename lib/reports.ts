@@ -38,7 +38,7 @@ export const reportService = {
         }
       }
     } catch (error) {
-      console.error('Erro ao gerar dados do relatório:', error)
+      
       throw error
     }
   },

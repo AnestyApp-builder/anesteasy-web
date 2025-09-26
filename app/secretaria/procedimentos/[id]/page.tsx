@@ -119,7 +119,6 @@ export default function EditarProcedimento({ params }: { params: { id: string } 
           observacoes_financeiras: procedureData.observacoes_financeiras || ''
         })
       } catch (error) {
-        console.error('Erro ao carregar procedimento:', error)
         setError('Erro interno')
       } finally {
         setIsLoading(false)
@@ -182,7 +181,6 @@ export default function EditarProcedimento({ params }: { params: { id: string } 
         setError('Erro ao atualizar procedimento')
       }
     } catch (error) {
-      console.error('Erro ao salvar:', error)
       setError('Erro interno')
     } finally {
       setIsSaving(false)

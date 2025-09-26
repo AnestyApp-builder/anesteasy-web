@@ -1,99 +1,171 @@
 import { supabase } from './supabase'
-
-export interface User {
-  id: string
-  name: string
-  email: string
-  specialty: string
-  crm: string
-  gender?: string
-}
+import { User } from './types'
 
 export interface AuthState {
   user: User | null
-  isAuthenticated: boolean
   isLoading: boolean
 }
 
+// Cache para prevenir múltiplas tentativas de registro
+const registrationAttempts = new Map<string, number>()
+
 export const authService = {
-  // Login com Supabase Auth
+  // Login usando Supabase Auth com validação dupla
   async login(email: string, password: string): Promise<User | null> {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      })
-
-      if (error) {
-        console.error('Erro no login:', error.message)
-        return null
-      }
-
-      if (data.user) {
-        // Usar dados da sessão do Supabase Auth
-        const userData = {
-          id: data.user.id,
-          email: data.user.email || email,
-          name: data.user.user_metadata?.name || 'Usuário',
-          specialty: data.user.user_metadata?.specialty || 'Anestesiologia',
-          crm: data.user.user_metadata?.crm || '000000',
-          gender: data.user.user_metadata?.gender || null
-        }
-
-        return userData
-      }
-
-      return null
-    } catch (error) {
-      console.error('Erro no login:', error)
-      return null
-    }
-  },
-
-  // Registro com Supabase Auth
-  async register(email: string, password: string, userData: {
-    name: string
-    specialty: string
-    crm: string
-  }): Promise<User | null> {
-    try {
-      // Criar usuário no Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // Fazer login com Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password
       })
 
       if (authError) {
-        console.error('Erro no registro:', authError.message)
         return null
       }
 
       if (authData.user) {
-        // Criar registro na tabela users
-        const { data: userDataResult, error: userError } = await supabase
-          .from('users')
-          .insert({
-            id: authData.user.id,
-            email,
-            name: userData.name,
-            specialty: userData.specialty,
-            crm: userData.crm
-          })
-          .select()
-          .single()
-
-        if (userError) {
-          console.error('Erro ao criar perfil do usuário:', userError.message)
+        // Verificar se email foi confirmado no Supabase Auth
+        if (!authData.user.email_confirmed_at) {
           return null
         }
 
-        return userDataResult
+        // Buscar dados do usuário na tabela users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authData.user.id)
+          .maybeSingle()
+
+        if (userError || !userData) {
+          return null
+        }
+
+        if (userData.subscription_status !== 'active') {
+          return null
+        }
+
+        return {
+          id: userData.id,
+          email: userData.email,
+          name: userData.name,
+          specialty: userData.specialty,
+          crm: userData.crm || '000000',
+          gender: userData.gender || null
+        }
       }
 
       return null
+
     } catch (error) {
-      console.error('Erro no registro:', error)
       return null
+    }
+  },
+
+  // Registro com confirmação de email usando Supabase Auth
+  async register(email: string, password: string, userData: {
+    name: string
+    specialty: string
+    crm: string
+  }): Promise<{ success: boolean; message: string; user?: User }> {
+    try {
+      // Verificar se há tentativas recentes para este email
+      const now = Date.now()
+      const lastAttempt = registrationAttempts.get(email) || 0
+      const timeDiff = now - lastAttempt
+      
+      // Bloquear se a última tentativa foi há menos de 30 segundos
+      if (timeDiff < 30000) {
+        const remainingTime = Math.ceil((30000 - timeDiff) / 1000)
+        return { 
+          success: false, 
+          message: `Aguarde ${remainingTime} segundos antes de tentar novamente para evitar rate limit.` 
+        }
+      }
+      
+      // Registrar tentativa atual
+      registrationAttempts.set(email, now)
+      
+      // Limpar tentativas antigas (mais de 5 minutos)
+      for (const [key, timestamp] of registrationAttempts.entries()) {
+        if (now - timestamp > 300000) {
+          registrationAttempts.delete(key)
+        }
+      }
+
+      // Verificar se o email já existe na tabela users
+      const { data: existingUserByEmail } = await supabase
+        .from('users')
+        .select('email')
+        .eq('email', email)
+        .maybeSingle()
+
+      if (existingUserByEmail) {
+        return { success: false, message: 'Email já cadastrado' }
+      }
+
+      // Verificar se o CRM já existe
+      if (userData.crm) {
+        const { data: existingUserByCrm } = await supabase
+          .from('users')
+          .select('crm')
+          .eq('crm', userData.crm)
+          .maybeSingle()
+
+        if (existingUserByCrm) {
+          return { success: false, message: 'CRM já cadastrado' }
+        }
+      }
+
+      // FLUXO CORRETO: Criar no Supabase Auth primeiro, depois confirmar email
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: 'https://anesteasy.com.br/auth/confirm?next=/login&type=signup',
+          data: {
+            name: userData.name,
+            specialty: userData.specialty || 'Anestesiologia',
+            crm: userData.crm || ''
+          }
+        }
+      })
+
+      if (authError) {
+        
+        // Tratar erros específicos
+        if (authError.message.includes('User already registered')) {
+          return { success: false, message: 'Email já cadastrado' }
+        } else if (authError.message.includes('Password')) {
+          return { success: false, message: 'Senha deve ter pelo menos 6 caracteres' }
+        } else if (authError.message.includes('Email')) {
+          return { success: false, message: 'Email inválido' }
+        } else if (authError.message.includes('rate limit') || authError.message.includes('Error sending confirmation email')) {
+          return { success: false, message: 'Muitas tentativas. Aguarde alguns minutos e tente novamente. Configure o SMTP personalizado no Supabase para resolver definitivamente.' }
+        }
+        
+        return { success: false, message: 'Erro ao criar conta. Tente novamente.' }
+      }
+
+      if (authData.user) {
+
+        // NÃO criar na tabela users ainda - será criado apenas após confirmação de email
+        // O usuário será criado na tabela users quando clicar no link de confirmação
+
+        return {
+          success: true,
+          message: 'Conta criada com sucesso! Verifique seu email para confirmar a conta.',
+          user: {
+            id: authData.user.id,
+            email: authData.user.email || email,
+            name: userData.name,
+            specialty: userData.specialty || 'Anestesiologia',
+            crm: userData.crm || '000000'
+          }
+        }
+      }
+      return { success: false, message: 'Erro ao criar conta. Tente novamente.' }
+    } catch (error) {
+      return { success: false, message: 'Erro interno. Tente novamente.' }
     }
   },
 
@@ -101,198 +173,179 @@ export const authService = {
   async logout(): Promise<void> {
     try {
       await supabase.auth.signOut()
-      console.log('Logout realizado')
+      
     } catch (error) {
-      console.error('Erro no logout:', error)
+      
+    }
+  },
+
+  // Verificar se email foi confirmado (validação dupla)
+  async isEmailConfirmed(userId: string): Promise<boolean> {
+    try {
+      // Buscar dados do usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+
+      if (authError || !authData.user) {
+        return false
+      }
+
+      // Verificar se o email foi confirmado no Supabase Auth
+      const supabaseConfirmed = !!authData.user.email_confirmed_at
+      if (!supabaseConfirmed) {
+        return false
+      }
+
+      // Verificar se status é 'active' na tabela users
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('subscription_status')
+        .eq('id', userId)
+        .maybeSingle()
+
+      if (userError || !userData) {
+        return false
+      }
+
+      const tableActive = userData.subscription_status === 'active'
+      
+      return supabaseConfirmed && tableActive
+    } catch (error) {
+      
+      return false
     }
   },
 
   // Obter usuário atual
   async getCurrentUser(): Promise<User | null> {
     try {
-      // Verificar se há sessão ativa no Supabase
-      const { data: { session } } = await supabase.auth.getSession()
-      
-      if (session?.user) {
-        // Usar apenas dados da sessão do Supabase Auth
-        return {
-          id: session.user.id,
-          email: session.user.email || '',
-          name: session.user.user_metadata?.name || 'Usuário',
-          specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
-          crm: session.user.user_metadata?.crm || '000000',
-          gender: session.user.user_metadata?.gender || null
-        }
+
+      // Verificar sessão atual no Supabase Auth
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError || !session?.user) {
+        return null
       }
-      return null
-    } catch (error) {
-      console.error('Erro ao obter usuário atual:', error)
-      return null
-    }
-  },
 
-  // Verificar se está autenticado
-  async isAuthenticated(): Promise<boolean> {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      return !!session?.user
-    } catch (error) {
-      console.error('Erro ao verificar autenticação:', error)
-      return false
-    }
-  },
+      // Verificar se o email foi confirmado no Supabase Auth
+      if (!session.user.email_confirmed_at) {
+        return null
+      }
 
-  // Atualizar dados do usuário
-  async updateUser(userId: string, userData: {
-    name?: string
-    email?: string
-    crm?: string
-    specialty?: string
-    phone?: string
-    gender?: string
-  }): Promise<User | null> {
-    try {
-      console.log('Atualizando usuário:', userId, userData)
-      
-      // Atualizar na tabela users
-      const { data, error } = await supabase
+      // Buscar dados do usuário na tabela users
+      const { data: userData, error: userError } = await supabase
         .from('users')
-        .update({
-          ...userData,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId)
-        .select()
-        .single()
+        .select('*')
+        .eq('id', session.user.id)
+        .maybeSingle()
 
-      if (error) {
-        console.error('Erro ao atualizar usuário:', error.message)
+      if (userError || !userData) {
         return null
       }
 
-      // Atualizar user_metadata no Supabase Auth
-      const { error: authError } = await supabase.auth.updateUser({
-        data: {
-          name: userData.name,
-          specialty: userData.specialty,
-          crm: userData.crm,
-          gender: userData.gender
-        }
-      })
-
-      if (authError) {
-        console.error('Erro ao atualizar metadata do usuário:', authError.message)
+      // Verificar se status é 'active' na tabela users
+      if (userData.subscription_status !== 'active') {
+        return null
       }
 
-      console.log('Usuário atualizado com sucesso:', data)
       return {
-        id: data.id,
-        email: data.email,
-        name: data.name,
-        specialty: data.specialty,
-        crm: data.crm,
-        gender: data.gender
+        id: userData.id,
+        email: userData.email,
+        name: userData.name,
+        specialty: userData.specialty,
+        crm: userData.crm || '000000',
+        gender: userData.gender || null
       }
     } catch (error) {
-      console.error('Erro ao atualizar usuário:', error)
+      
       return null
     }
   },
 
-  // Escutar mudanças de autenticação
-  onAuthStateChange(callback: (user: User | null) => void) {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        // Usar dados da sessão do Supabase Auth
-        callback({
-          id: session.user.id,
-          email: session.user.email || '',
-          name: session.user.user_metadata?.name || 'Usuário',
-          specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
-          crm: session.user.user_metadata?.crm || '000000',
-          gender: session.user.user_metadata?.gender || null
-        })
-      } else {
-        callback(null)
-      }
-    })
-
-    return { data: { subscription } }
-  },
-
-  // Funções específicas para secretarias
-  async createSecretariaAccount(email: string, password: string, nome: string, telefone?: string): Promise<boolean> {
+  // Reset de senha
+  async resetPassword(email: string): Promise<{ success: boolean; message: string }> {
     try {
-      // Criar usuário no Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password
-      })
-
-      if (authError) {
-        console.error('Erro ao criar conta da secretaria:', authError.message)
-        return false
-      }
-
-      if (authData.user) {
-        // Criar registro na tabela secretarias
-        const { error: secretariaError } = await supabase
-          .from('secretarias')
-          .insert({
-            id: authData.user.id,
-            nome,
-            email,
-            telefone,
-            status: 'ativo'
-          })
-
-        if (secretariaError) {
-          console.error('Erro ao criar perfil da secretaria:', secretariaError.message)
-          return false
-        }
-
-        return true
-      }
-
-      return false
-    } catch (error) {
-      console.error('Erro ao criar conta da secretaria:', error)
-      return false
-    }
-  },
-
-  async loginSecretaria(email: string, password: string): Promise<any | null> {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'https://www.anesteasy.com.br/reset-password'
       })
 
       if (error) {
-        console.error('Erro no login da secretaria:', error.message)
-        return null
+        return { success: false, message: 'Erro ao enviar email de recuperação. Tente novamente.' }
       }
 
-      if (data.user) {
-        // Buscar dados da secretaria
-        const { data: secretariaData, error: secretariaError } = await supabase
-          .from('secretarias')
-          .select('*')
-          .eq('email', email)
-          .single()
-
-        if (secretariaError) {
-          console.error('Erro ao buscar dados da secretaria:', secretariaError.message)
-          return null
-        }
-
-        return secretariaData
-      }
-
-      return null
+      return { success: true, message: 'Email de recuperação enviado! Verifique sua caixa de entrada.' }
     } catch (error) {
-      console.error('Erro no login da secretaria:', error)
-      return null
+      return { success: false, message: 'Erro interno. Tente novamente.' }
+    }
+  },
+
+  // Atualizar senha
+  async updatePassword(newPassword: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      })
+
+      if (error) {
+        return { success: false, message: 'Erro ao atualizar senha. Tente novamente.' }
+      }
+
+      return { success: true, message: 'Senha atualizada com sucesso!' }
+    } catch (error) {
+      return { success: false, message: 'Erro interno. Tente novamente.' }
+    }
+  },
+
+  // Excluir conta do usuário
+  async deleteAccount(userId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // 1. Excluir dados relacionados do usuário
+      const tablesToClean = [
+        'procedures',
+        'goals', 
+        'shifts',
+        'feedback',
+        'secretaria_links'
+      ]
+
+      for (const table of tablesToClean) {
+        await supabase
+          .from(table)
+          .delete()
+          .eq('user_id', userId)
+      }
+
+      // 2. Excluir o usuário da tabela users
+      const { error: userError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId)
+
+      if (userError) {
+        return { success: false, message: 'Erro ao excluir dados do usuário.' }
+      }
+
+      // 3. Excluir do Supabase Auth via API
+      try {
+        const response = await fetch('/api/delete-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId }),
+        })
+
+        const result = await response.json()
+
+        if (!response.ok) {
+          return { success: false, message: 'Erro ao excluir conta de autenticação.' }
+        }
+      } catch (apiError) {
+        return { success: false, message: 'Erro ao excluir conta de autenticação.' }
+      }
+
+      return { success: true, message: 'Conta excluída com sucesso!' }
+    } catch (error) {
+      return { success: false, message: 'Erro interno. Tente novamente.' }
     }
   }
 }

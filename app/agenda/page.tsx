@@ -65,11 +65,7 @@ export default function Agenda() {
 
   // Debug para monitorar estado do modal
   useEffect(() => {
-    console.log('Estado do modal de confirmação:', {
-      showConfirmation,
-      confirmationData: confirmationData ? 'existe' : 'null'
-    })
-  }, [showConfirmation, confirmationData])
+    }, [showConfirmation, confirmationData])
 
   // Funções auxiliares para modais
   const showNotificationModal = (message: string) => {
@@ -78,19 +74,14 @@ export default function Agenda() {
   }
 
   const showConfirmationModal = (message: string, onConfirm: () => void, onCancel?: () => void) => {
-    console.log('=== showConfirmationModal CHAMADO ===')
-    console.log('Mensagem:', message)
-    console.log('onConfirm:', onConfirm)
-    console.log('onCancel:', onCancel)
-    
+
     setConfirmationData({
       message,
       onConfirm,
       onCancel
     })
     setShowConfirmation(true)
-    
-    console.log('Modal de confirmação ativado')
+
   }
 
   const handleNotificationClose = () => {
@@ -99,29 +90,25 @@ export default function Agenda() {
   }
 
   const handleConfirmationConfirm = () => {
-    console.log('=== CONFIRMAÇÃO CLICADA ===')
-    console.log('confirmationData:', confirmationData)
-    
+
     if (confirmationData?.onConfirm) {
-      console.log('Executando onConfirm...')
+      
       confirmationData.onConfirm()
     }
     setShowConfirmation(false)
     setConfirmationData(null)
-    console.log('Modal de confirmação fechado')
+    
   }
 
   const handleConfirmationCancel = () => {
-    console.log('=== CANCELAR CLICADO ===')
-    console.log('confirmationData:', confirmationData)
-    
+
     if (confirmationData?.onCancel) {
-      console.log('Executando onCancel...')
+      
       confirmationData.onCancel()
     }
     setShowConfirmation(false)
     setConfirmationData(null)
-    console.log('Modal de confirmação fechado')
+    
   }
 
   const loadShifts = async () => {
@@ -132,7 +119,7 @@ export default function Agenda() {
       const shiftsData = await shiftService.getShifts(user.id)
       setShifts(shiftsData)
     } catch (error) {
-      console.error('Erro ao carregar plantões:', error)
+      
     } finally {
       setLoading(false)
     }
@@ -212,16 +199,16 @@ export default function Agenda() {
         'Deseja excluir apenas este plantão ou toda a série?',
         () => {
           // Usuário escolheu excluir toda a série
-          console.log('Usuário escolheu excluir toda a série')
+          
           setDeleteShiftData(prev => prev ? { ...prev, step: 'confirm-series' } : null)
           
           // Aguardar um pouco para o primeiro modal fechar
           setTimeout(() => {
-            console.log('Abrindo segundo modal para confirmar exclusão da série')
+            
             showConfirmationModal(
               'Tem certeza que deseja excluir toda a série de plantões?',
               async () => {
-                console.log('Segunda confirmação: Excluir toda a série')
+                
                 await executeDelete(shift, false)
               }
             )
@@ -229,16 +216,16 @@ export default function Agenda() {
         },
         () => {
           // Usuário escolheu excluir apenas este plantão
-          console.log('Usuário escolheu excluir apenas este plantão')
+          
           setDeleteShiftData(prev => prev ? { ...prev, step: 'confirm-single' } : null)
           
           // Aguardar um pouco para o primeiro modal fechar
           setTimeout(() => {
-            console.log('Abrindo segundo modal para confirmar exclusão individual')
+            
             showConfirmationModal(
               'Tem certeza que deseja excluir apenas este plantão?',
               async () => {
-                console.log('Segunda confirmação: Excluir apenas este plantão')
+                
                 await executeDelete(shift, true)
               }
             )
@@ -258,39 +245,34 @@ export default function Agenda() {
 
   const executeDelete = async (shift: Shift, deleteOnlyThis: boolean) => {
     try {
-      console.log('=== INICIANDO EXCLUSÃO ===')
-      console.log('Shift:', shift)
-      console.log('DeleteOnlyThis:', deleteOnlyThis)
-      
+
       let success = false
       if (deleteOnlyThis) {
-        console.log('Excluindo apenas este plantão...')
+        
         success = await shiftService.deleteShift(shift.id)
-        console.log('Resultado deleteShift:', success)
+        
       } else {
-        console.log('Excluindo grupo completo...')
+        
         success = await shiftService.deleteShiftGroup(shift.id, false)
-        console.log('Resultado deleteShiftGroup:', success)
+        
       }
-      
-      console.log('Resultado final da exclusão:', success)
-      
+
       if (success) {
-        console.log('Exclusão bem-sucedida, recarregando plantões...')
+        
         await loadShifts()
-        console.log('Plantões recarregados')
+        
         showNotificationModal(deleteOnlyThis ? 'Plantão excluído com sucesso!' : 'Série de plantões excluída com sucesso!')
       } else {
-        console.log('Exclusão falhou')
+        
         showNotificationModal('Erro ao excluir plantão.')
       }
     } catch (error) {
-      console.error('ERRO na exclusão:', error)
+      
       showNotificationModal('Erro ao excluir plantão.')
     } finally {
-      console.log('Limpando estado deleteShiftData')
+      
       setDeleteShiftData(null)
-      console.log('=== FIM DA EXCLUSÃO ===')
+      
     }
   }
 
@@ -384,7 +366,7 @@ export default function Agenda() {
         }
       }
     } catch (error: any) {
-      console.error('Erro ao salvar plantão:', error)
+      
       showNotificationModal('Erro ao salvar plantão: ' + (error.message || 'Erro desconhecido'))
     }
   }
@@ -466,8 +448,6 @@ export default function Agenda() {
       return startsToday || endsToday
     })
   }
-
-
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {

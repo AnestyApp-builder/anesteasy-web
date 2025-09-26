@@ -28,6 +28,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { procedureService, Procedure, Parcela, ProcedureAttachment } from '@/lib/procedures'
+import { feedbackService } from '@/lib/feedback'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, handleButtonPress, handleCardPress } from '@/lib/utils'
 import { Loading } from '@/components/ui/Loading'
@@ -56,35 +57,35 @@ const EditField = memo(({
     const currentValue = editFormData[field] ?? ''
 
     if (type === 'select' && options) {
-      return (
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-gray-600">{label}</label>
-          <select
-            value={currentValue}
-            onChange={(e) => updateFormField(field, e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-          >
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )
+    return (
+      <div className="space-y-2 h-[90px]">
+        <label className="text-sm font-medium text-gray-700 block h-5 truncate" title={label}>{label}</label>
+        <select
+          value={currentValue}
+          onChange={(e) => updateFormField(field, e.target.value)}
+          className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    )
     }
 
     return (
-      <div className="space-y-1">
-        <label className="text-sm font-medium text-gray-600">{label}</label>
+      <div className="space-y-2 h-[90px]">
+        <label className="text-sm font-medium text-gray-700 block h-5 truncate" title={label}>{label}</label>
         {field === 'procedure_value' ? (
-          <div className="relative">
+          <div className="relative h-[52px]">
             <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">R$</span>
             <input
               type={type}
               value={currentValue}
               onChange={(e) => updateFormField(field, e.target.value)}
-              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              className="w-full h-full pl-10 pr-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
             />
           </div>
         ) : (
@@ -92,7 +93,7 @@ const EditField = memo(({
             type={type}
             value={currentValue}
             onChange={(e) => updateFormField(field, e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
           />
         )}
       </div>
@@ -114,13 +115,47 @@ const EditField = memo(({
         default: return val ?? 'Não informado'
       }
     }
+    
+    // Campos de Sim/Não
+    const simNaoFields = [
+      'sangramento', 'nausea_vomito', 'dor', 'acompanhamento_antes',
+      'indicacao_cesariana', 'retencao_placenta', 'laceracao_presente',
+      'hemorragia_puerperal', 'transfusao_realizada', 'feedback_solicitado'
+    ]
+    
+    if (simNaoFields.includes(field)) {
+      if (val === 'Sim' || val === 'sim' || val === true || val === 'true') {
+        return '✅ Sim'
+      } else if (val === 'Não' || val === 'não' || val === 'Nao' || val === 'nao' || val === false || val === 'false') {
+        return '❌ Não'
+      } else if (!val || val === '' || val === null || val === undefined) {
+        return '⚪ Não informado'
+      }
+    }
+    
+    // Campos especiais
+    if (field === 'tipo_parto' && val) {
+      const icons = {
+        'Instrumentalizado': '🔧',
+        'Vaginal': '👶',
+        'Cesariana': '⚕️'
+      }
+      return `${icons[val] || '📋'} ${val}`
+    }
+    
+    if (field === 'grau_laceracao' && val) {
+      return `Grau ${val}`
+    }
+    
     return val ?? 'Não informado'
   }
 
   return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium text-gray-600">{label}</label>
-      <p className="text-gray-900 font-medium">{formatValue(editFormData[field] ?? value)}</p>
+    <div className="space-y-2 h-[90px]">
+      <label className="text-sm font-medium text-gray-700 block h-5 truncate" title={label}>{label}</label>
+      <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[52px] flex items-center">
+        <p className="text-gray-900 font-medium truncate">{formatValue(editFormData[field] ?? value)}</p>
+      </div>
     </div>
   )
 })
@@ -229,7 +264,7 @@ export default function Procedimentos() {
       }
       setProcedureAttachments(attachmentsMap)
     } catch (error) {
-      console.error('Erro ao carregar procedimentos:', error)
+      
     } finally {
       setLoading(false)
     }
@@ -276,7 +311,7 @@ export default function Procedimentos() {
         alert('Erro ao excluir procedimento. Tente novamente.')
       }
     } catch (error) {
-      console.error('Erro ao excluir procedimento:', error)
+      
       alert('Erro ao excluir procedimento. Verifique sua conexão.')
     } finally {
       setIsDeleting(false)
@@ -421,7 +456,7 @@ export default function Procedimentos() {
         }
       }
     } catch (error) {
-      console.error('Erro ao atualizar parcela:', error)
+      
     }
   }
 
@@ -508,7 +543,7 @@ export default function Procedimentos() {
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('Erro ao salvar:', error)
+      
       setFeedbackMessage({ type: 'error', message: 'Erro ao salvar alterações.' })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
@@ -1031,14 +1066,16 @@ export default function Procedimentos() {
               </div>
             )}
             
-            <div className="p-6 space-y-8 overflow-y-auto max-h-[calc(90vh-200px)]" style={{ scrollbarWidth: 'thin', scrollbarColor: '#14b8a6 #f1f5f9' }}>
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-200px)]" style={{ scrollbarWidth: 'thin', scrollbarColor: '#14b8a6 #f1f5f9' }}>
               {/* Informações do Paciente */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-teal-600 mb-4 flex items-center">
-                  <Users className="w-5 h-5 mr-2" />
+              <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-6 shadow-sm">
+                <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center mr-3">
+                    <Users className="w-5 h-5 text-teal-600" />
+                  </div>
                   Informações do Paciente
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <EditField
                     field="patient_name"
                     label="Nome"
@@ -1079,12 +1116,14 @@ export default function Procedimentos() {
               </div>
 
               {/* Informações do Procedimento */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-teal-600 mb-4 flex items-center">
-                  <FileText className="w-5 h-5 mr-2" />
+              <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-6 shadow-sm">
+                <h3 className="text-xl font-bold text-blue-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                  </div>
                   Informações do Procedimento
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <EditField
                     field="procedure_name"
                     label="Tipo de Procedimento"
@@ -1094,9 +1133,17 @@ export default function Procedimentos() {
                     updateFormField={updateFormField}
                   />
                   <EditField
-                    field="procedure_type"
-                    label="Tipo de Anestesia"
-                    value={selectedProcedure.procedure_type || ''}
+                    field="tecnica_anestesica"
+                    label="Técnica Anestésica"
+                    value={selectedProcedure.tecnica_anestesica || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="codigo_tssu"
+                    label="Código TSSU"
+                    value={selectedProcedure.codigo_tssu || ''}
                     isEditingMode={isEditingMode}
                     editFormData={editFormData}
                     updateFormField={updateFormField}
@@ -1140,12 +1187,14 @@ export default function Procedimentos() {
               </div>
 
               {/* Informações da Equipe */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-teal-600 mb-4 flex items-center">
-                  <Activity className="w-5 h-5 mr-2" />
+              <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-xl p-6 shadow-sm">
+                <h3 className="text-xl font-bold text-green-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+                    <Activity className="w-5 h-5 text-green-600" />
+                  </div>
                   Equipe Médica
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <EditField
                     field="anesthesiologist_name"
                     label="Anestesiologista"
@@ -1162,13 +1211,329 @@ export default function Procedimentos() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
+                  <EditField
+                    field="nome_equipe"
+                    label="Nome da Equipe"
+                    value={selectedProcedure.nome_equipe || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="especialidade_cirurgiao"
+                    label="Especialidade do Cirurgião"
+                    value={selectedProcedure.especialidade_cirurgiao || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                </div>
+              </div>
+
+              {/* Dados Específicos do Procedimento */}
+              <div className="bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-xl p-6 shadow-sm border border-indigo-200">
+                <h3 className="text-xl font-bold text-indigo-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center mr-3">
+                    <FileText className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  Dados Específicos do Procedimento
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Campos para procedimentos não-obstétricos */}
+                  {selectedProcedure.sangramento && (
+                    <EditField
+                      field="sangramento"
+                      label="Sangramento"
+                      value={selectedProcedure.sangramento}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.nausea_vomito && (
+                    <EditField
+                      field="nausea_vomito"
+                      label="Náuseas e Vômitos"
+                      value={selectedProcedure.nausea_vomito}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.dor && (
+                    <EditField
+                      field="dor"
+                      label="Dor"
+                      value={selectedProcedure.dor}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.observacoes_procedimento && (
+                    <EditField
+                      field="observacoes_procedimento"
+                      label="Observações do Procedimento"
+                      value={selectedProcedure.observacoes_procedimento}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  
+                  {/* Campos específicos para procedimentos obstétricos */}
+                  {selectedProcedure.acompanhamento_antes && (
+                    <EditField
+                      field="acompanhamento_antes"
+                      label="Acompanhamento Antes"
+                      value={selectedProcedure.acompanhamento_antes}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.tipo_parto && (
+                    <EditField
+                      field="tipo_parto"
+                      label="Tipo de Parto"
+                      value={selectedProcedure.tipo_parto}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Instrumentalizado', label: 'Instrumentalizado' },
+                        { value: 'Vaginal', label: 'Vaginal' },
+                        { value: 'Cesariana', label: 'Cesariana' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.tipo_cesariana && (
+                    <EditField
+                      field="tipo_cesariana"
+                      label="Tipo de Cesariana"
+                      value={selectedProcedure.tipo_cesariana}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Nova Ráqui', label: 'Nova Ráqui' },
+                        { value: 'Geral', label: 'Geral' },
+                        { value: 'Complementação pelo Cateter', label: 'Complementação pelo Cateter' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.indicacao_cesariana && (
+                    <EditField
+                      field="indicacao_cesariana"
+                      label="Indicação de Cesariana"
+                      value={selectedProcedure.indicacao_cesariana}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.retencao_placenta && (
+                    <EditField
+                      field="retencao_placenta"
+                      label="Retenção de Placenta"
+                      value={selectedProcedure.retencao_placenta}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.laceracao_presente && (
+                    <EditField
+                      field="laceracao_presente"
+                      label="Laceração Presente"
+                      value={selectedProcedure.laceracao_presente}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.grau_laceracao && (
+                    <EditField
+                      field="grau_laceracao"
+                      label="Grau da Laceração"
+                      value={selectedProcedure.grau_laceracao}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: '1', label: 'Grau 1' },
+                        { value: '2', label: 'Grau 2' },
+                        { value: '3', label: 'Grau 3' },
+                        { value: '4', label: 'Grau 4' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.hemorragia_puerperal && (
+                    <EditField
+                      field="hemorragia_puerperal"
+                      label="Hemorragia Puerperal"
+                      value={selectedProcedure.hemorragia_puerperal}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.transfusao_realizada && (
+                    <EditField
+                      field="transfusao_realizada"
+                      label="Transfusão Realizada"
+                      value={selectedProcedure.transfusao_realizada}
+                      type="select"
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        { value: 'Sim', label: 'Sim' },
+                        { value: 'Não', label: 'Não' }
+                      ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Informações de Feedback */}
+              <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-6 shadow-sm border border-purple-200">
+                <h3 className="text-xl font-bold text-purple-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
+                    <User className="w-5 h-5 text-purple-600" />
+                  </div>
+                  Feedback do Cirurgião
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <EditField
+                    field="feedback_solicitado"
+                    label="Feedback Solicitado"
+                    value={selectedProcedure.feedback_solicitado ? 'Sim' : 'Não'}
+                    isEditingMode={false}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  {selectedProcedure.feedback_solicitado && (
+                    <>
+                      <EditField
+                        field="email_cirurgiao"
+                        label="Email do Cirurgião"
+                        value={selectedProcedure.email_cirurgiao || ''}
+                        isEditingMode={isEditingMode}
+                        editFormData={editFormData}
+                        updateFormField={updateFormField}
+                      />
+                      <EditField
+                        field="telefone_cirurgiao"
+                        label="Telefone do Cirurgião"
+                        value={selectedProcedure.telefone_cirurgiao || ''}
+                        isEditingMode={isEditingMode}
+                        editFormData={editFormData}
+                        updateFormField={updateFormField}
+                      />
+                      <div className="col-span-2">
+                        <Button
+                          onClick={async () => {
+                            try {
+                              const link = await feedbackService.createFeedbackLinkOnly({
+                                procedureId: selectedProcedure.id,
+                                emailCirurgiao: selectedProcedure.email_cirurgiao,
+                                telefoneCirurgiao: selectedProcedure.telefone_cirurgiao
+                              });
+                              
+                              // Copiar o link para a área de transferência
+                              await navigator.clipboard.writeText(link);
+                              
+                              // Mostrar mensagem de sucesso
+                              setFeedbackMessage({
+                                type: 'success',
+                                message: 'Novo link gerado e copiado para a área de transferência!'
+                              });
+                              
+                              setTimeout(() => setFeedbackMessage(null), 3000);
+                            } catch (error) {
+                              
+                              setFeedbackMessage({
+                                type: 'error',
+                                message: 'Erro ao gerar novo link. Tente novamente.'
+                              });
+                              setTimeout(() => setFeedbackMessage(null), 3000);
+                            }
+                          }}
+                          className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                        >
+                          Gerar Novo Link de Feedback
+                        </Button>
+                        <p className="text-xs text-gray-500 mt-2 text-center">
+                          O link gerado terá validade de 48 horas e será copiado automaticamente
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
               {/* Informações Financeiras */}
-              <div className="bg-teal-50 rounded-lg p-4 border border-teal-200">
-                <h3 className="text-lg font-semibold text-teal-600 mb-4 flex items-center">
-                  <DollarSign className="w-5 h-5 mr-2" />
+              <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl p-6 shadow-sm border border-emerald-200">
+                <h3 className="text-xl font-bold text-emerald-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                    <DollarSign className="w-5 h-5 text-emerald-600" />
+                  </div>
                   Informações Financeiras
                 </h3>
                 <div className="space-y-4">
@@ -1187,7 +1552,7 @@ export default function Procedimentos() {
                   {/* Campos condicionais baseados no status */}
                   {(editFormData.payment_status === 'pending' || (!isEditingMode && selectedProcedure.payment_status === 'pending')) && (
                     <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <EditField
                     field="procedure_value"
                     label="Valor do Procedimento"
@@ -1293,7 +1658,7 @@ export default function Procedimentos() {
 
                   {(editFormData.payment_status === 'paid' || (!isEditingMode && selectedProcedure.payment_status === 'paid')) && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <EditField
                           field="procedure_value"
                           label="Valor do Procedimento"
@@ -1314,7 +1679,7 @@ export default function Procedimentos() {
                   />
                 </div>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <EditField
                           field="payment_method"
                           label="Forma de Pagamento"

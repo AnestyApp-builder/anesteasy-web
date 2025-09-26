@@ -91,7 +91,7 @@ export default function Dashboard() {
       const monthlyData = await calculateMonthlyRevenue(proceduresData)
       setMonthlyRevenue(monthlyData)
     } catch (error) {
-      console.error('Erro ao carregar dados do dashboard:', error)
+      
     } finally {
       setLoading(false)
     }
@@ -123,7 +123,7 @@ export default function Dashboard() {
         }
       }
     } catch (error) {
-      console.error('Erro ao carregar meta mensal:', error)
+      
     }
   }
 
@@ -145,10 +145,10 @@ export default function Dashboard() {
         setMonthlyGoal(goal)
         setShowGoalModal(false)
       } else {
-        console.error('Erro ao salvar meta no banco de dados')
+        
       }
     } catch (error) {
-      console.error('Erro ao salvar meta mensal:', error)
+      
     }
   }
 

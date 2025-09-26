@@ -129,7 +129,6 @@ export default function AnestesistaProcedimentos({ params }: { params: { id: str
         setProcedures(proceduresData || [])
         setFilteredProcedures(proceduresData || [])
       } catch (error) {
-        console.error('Erro ao carregar dados:', error)
         setError('Erro interno')
       } finally {
         setIsLoading(false)

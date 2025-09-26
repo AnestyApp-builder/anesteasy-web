@@ -81,7 +81,7 @@ export default function Financeiro() {
       calculateProcedureChartData(procedures)
       calculateMonthlyRevenueData(procedures)
     } catch (error) {
-      console.error('Erro ao carregar dados financeiros:', error)
+      
     } finally {
       setLoading(false)
     }
@@ -184,7 +184,7 @@ export default function Financeiro() {
         calculateProgress(goalData)
       }
     } catch (error) {
-      console.error('Erro ao carregar meta mensal:', error)
+      
     }
   }
 
@@ -246,12 +246,12 @@ export default function Financeiro() {
         setMonthlyGoal(goal)
         calculateProgress(goal)
         setShowGoalModal(false)
-        console.log('Meta salva com sucesso no banco de dados')
+        
       } else {
-        console.error('Erro ao salvar meta no banco de dados')
+        
       }
     } catch (error) {
-      console.error('Erro ao salvar meta mensal:', error)
+      
     }
   }
 
@@ -306,7 +306,7 @@ export default function Financeiro() {
             <Button 
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={() => {
-                console.log('Botão Registrar Pagamento clicado!');
+                
                 // Redireciona para procedimentos com filtros ativados
                 router.push('/procedimentos?status=pending,not_launched');
               }}

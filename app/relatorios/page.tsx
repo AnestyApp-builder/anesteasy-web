@@ -39,7 +39,7 @@ export default function Relatorios() {
       )
       reportService.exportToCSV(reportData)
     } catch (error) {
-      console.error('Erro ao exportar CSV:', error)
+      
       alert('Erro ao exportar relatório. Tente novamente.')
     } finally {
       setLoading(false)
@@ -58,7 +58,7 @@ export default function Relatorios() {
       )
       reportService.exportToPDF(reportData)
     } catch (error) {
-      console.error('Erro ao exportar PDF:', error)
+      
       alert('Erro ao exportar relatório. Tente novamente.')
     } finally {
       setLoading(false)
@@ -78,7 +78,7 @@ export default function Relatorios() {
       )
       reportService.exportToPDF(reportData)
     } catch (error) {
-      console.error('Erro ao gerar relatório mensal:', error)
+      
       alert('Erro ao gerar relatório mensal. Tente novamente.')
     } finally {
       setLoading(false)

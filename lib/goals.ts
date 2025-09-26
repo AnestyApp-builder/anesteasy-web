@@ -38,13 +38,13 @@ export const goalService = {
           // Nenhuma meta encontrada - retornar null
           return null
         }
-        console.error('Erro ao buscar meta:', error)
+        
         return null
       }
 
       return data
     } catch (error) {
-      console.error('Erro ao buscar meta:', error)
+      
       return null
     }
   },
@@ -69,7 +69,7 @@ export const goalService = {
           .single()
 
         if (error) {
-          console.error('Erro ao atualizar meta:', error)
+          
           return null
         }
 
@@ -83,14 +83,14 @@ export const goalService = {
           .single()
 
         if (error) {
-          console.error('Erro ao criar meta:', error)
+          
           return null
         }
 
         return data
       }
     } catch (error) {
-      console.error('Erro ao salvar meta:', error)
+      
       return null
     }
   },
@@ -104,13 +104,13 @@ export const goalService = {
         .eq('user_id', userId)
 
       if (error) {
-        console.error('Erro ao deletar meta:', error)
+        
         return false
       }
 
       return true
     } catch (error) {
-      console.error('Erro ao deletar meta:', error)
+      
       return false
     }
   },
@@ -138,7 +138,7 @@ export const goalService = {
         if (savedGoalInDb) {
           // Remover do localStorage após migração bem-sucedida
           localStorage.removeItem(`monthlyGoal_${userId}`)
-          console.log('Meta migrada do localStorage para o banco de dados')
+          
         }
 
         return savedGoalInDb
@@ -146,7 +146,7 @@ export const goalService = {
 
       return null
     } catch (error) {
-      console.error('Erro ao migrar meta do localStorage:', error)
+      
       return null
     }
   }

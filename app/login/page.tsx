@@ -27,20 +27,31 @@ export default function Login() {
       // Verificar se é uma secretaria logada
       const checkIfSecretaria = async () => {
         try {
-          const { data: secretaria } = await supabase
+          
+          
+          const { data: secretaria, error: secretariaError } = await supabase
             .from('secretarias')
             .select('*')
             .eq('email', user.email)
-            .single()
+            .maybeSingle()
+
+          if (secretariaError) {
+            // É anestesista, redirecionar para dashboard normal
+            router.push('/dashboard')
+            return
+          }
 
           if (secretaria) {
+            
             // É secretaria, redirecionar para dashboard da secretaria
             router.push('/secretaria/dashboard')
           } else {
+            
             // É anestesista, redirecionar para dashboard normal
             router.push('/dashboard')
           }
         } catch (error) {
+          
           // Em caso de erro, redirecionar para dashboard normal
           router.push('/dashboard')
         }
@@ -82,52 +93,53 @@ export default function Login() {
     }
 
     try {
-      // Primeiro, verificar se é uma secretaria (antes de fazer login no Supabase)
-      const { data: secretaria, error: secretariaError } = await supabase
-        .from('secretarias')
-        .select('*')
-        .eq('email', formData.email)
-        .single()
+      // Tentar login direto usando o contexto de auth
+      const success = await login(formData.email, formData.password)
+      
+      if (success) {
+        // Verificar se é secretaria após login bem-sucedido
+        try {
+          
+          
+          const { data: secretaria, error: secretariaError } = await supabase
+            .from('secretarias')
+            .select('*')
+            .eq('email', formData.email)
+            .maybeSingle()
 
-      if (secretaria && !secretariaError) {
-        // É uma secretaria - fazer login e redirecionar
-        const { data, error: authError } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password
-        })
+          if (secretariaError) {
+            // É anestesista, redirecionar para dashboard normal
+            router.push('/dashboard')
+            return
+          }
 
-        if (authError) {
-          setError('Email ou senha incorretos')
-          return
+          if (secretaria) {
+            
+            router.push('/secretaria/dashboard')
+          } else {
+            
+            router.push('/dashboard')
+          }
+        } catch (error) {
+          
+          // Em caso de erro, redirecionar para dashboard normal
+          router.push('/dashboard')
         }
-
-        if (data.user) {
-          // Redirecionar para dashboard da secretaria
-          router.push('/secretaria/dashboard')
-          return
+      } else {
+        // Verificar se o erro é relacionado a email não confirmado
+        try {
+          const { data: userData } = await supabase.auth.getUser()
+          if (userData?.user && !userData.user.email_confirmed_at) {
+            setError('Email não confirmado. Verifique sua caixa de entrada e confirme seu email antes de fazer login.')
+          } else {
+            setError('Email ou senha incorretos')
+          }
+        } catch {
+          setError('Email ou senha incorretos')
         }
       }
-
-      // Se não é secretaria, verificar se é anestesista
-      const { data: anestesista, error: anestesistaError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', formData.email)
-        .single()
-
-      if (anestesista && !anestesistaError) {
-        // É um anestesista - usar o contexto de autenticação normal
-        const success = await login(formData.email, formData.password)
-        if (!success) {
-          setError('Email ou senha incorretos')
-        }
-        return
-      }
-
-      // Se chegou aqui, o usuário não existe em nenhuma das tabelas
-      setError('Usuário não encontrado no sistema')
     } catch (error) {
-      console.error('Erro no login:', error)
+      
       setError('Erro interno. Tente novamente.')
     }
   }
