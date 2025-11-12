@@ -128,7 +128,7 @@ export const goalService = {
         const goalData: GoalInsert = {
           user_id: userId,
           target_value: goal.targetValue || 0,
-          reset_day: goal.resetDay || 1,
+          reset_day: goal.resetDay || 30, // Padrão: último dia do mês
           is_enabled: goal.isEnabled || false
         }
 

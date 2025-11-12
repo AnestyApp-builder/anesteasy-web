@@ -41,7 +41,7 @@ export default function Financeiro() {
   const [monthlyRevenueData, setMonthlyRevenueData] = useState<any[]>([])
   const [monthlyGoal, setMonthlyGoal] = useState({
     targetValue: 0,
-    resetDay: 1,
+    resetDay: 30, // Padrão: último dia do mês
     isEnabled: false
   })
   const [currentProgress, setCurrentProgress] = useState({
@@ -63,10 +63,12 @@ export default function Financeiro() {
   }, [user])
 
   useEffect(() => {
-    if (monthlyGoal.isEnabled) {
+    if (monthlyGoal.isEnabled && user?.id) {
+      // Verificar se precisa resetar a meta e recalcular progresso
+      checkAndResetGoal(monthlyGoal)
       calculateProgress(monthlyGoal)
     }
-  }, [stats.completedValue, monthlyGoal])
+  }, [stats.completedValue, monthlyGoal, user])
 
   const loadFinancialData = async () => {
     if (!user?.id) return
@@ -177,40 +179,138 @@ export default function Financeiro() {
         // Converter formato do banco para formato do componente
         const goalData = {
           targetValue: goal.target_value,
-          resetDay: goal.reset_day,
+          resetDay: goal.reset_day || 30, // Padrão: último dia do mês se não definido
           isEnabled: goal.is_enabled
         }
         setMonthlyGoal(goalData)
         calculateProgress(goalData)
+      } else {
+        // Se não há meta, usar padrão: último dia do mês (30)
+        const defaultGoal = {
+          targetValue: 0,
+          resetDay: 30,
+          isEnabled: false
+        }
+        setMonthlyGoal(defaultGoal)
       }
     } catch (error) {
       
     }
   }
 
-  const calculateProgress = (goal: any) => {
+  // Função para verificar e resetar a meta automaticamente
+  const checkAndResetGoal = async (goal: any) => {
+    if (!goal.isEnabled || !user?.id) return
+
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    const currentDay = now.getDate()
+    
+    // Calcular o dia de reset (último dia do mês se resetDay for 30)
+    const resetDay = goal.resetDay === 30 ? new Date(currentYear, currentMonth + 1, 0).getDate() : goal.resetDay
+    
+    // Verificar se chegou o dia de reset
+    const lastResetKey = `lastReset_${user.id}`
+    const lastResetStr = localStorage.getItem(lastResetKey)
+    let lastReset: Date | null = null
+    
+    if (lastResetStr) {
+      try {
+        lastReset = new Date(lastResetStr)
+      } catch (e) {
+        lastReset = null
+      }
+    }
+    
+    // Verificar se precisa resetar (se passou o dia de reset desde o último reset)
+    const today = new Date(currentYear, currentMonth, currentDay)
+    const shouldReset = !lastReset || (today >= new Date(currentYear, currentMonth, resetDay) && 
+      (lastReset.getMonth() !== currentMonth || lastReset.getFullYear() !== currentYear || lastReset.getDate() < resetDay))
+    
+    // Se chegou o dia de reset e ainda não foi resetado neste período
+    if (currentDay >= resetDay && shouldReset) {
+      console.log(`🔄 Resetando meta no dia ${resetDay} do mês ${currentMonth + 1}/${currentYear}`)
+      localStorage.setItem(lastResetKey, today.toISOString())
+      // Recarregar dados financeiros para recalcular com novo período
+      await loadFinancialData()
+    }
+  }
+
+  const calculateProgress = async (goal: any) => {
     if (!goal.isEnabled || goal.targetValue === 0) return
 
     const now = new Date()
     const currentMonth = now.getMonth()
     const currentYear = now.getFullYear()
     
-    // Calcular data de início do período atual
+    // Calcular data de início do período atual baseado no resetDay
+    // Se o resetDay é 30, considerar como último dia do mês
     let startDate = new Date(currentYear, currentMonth, goal.resetDay)
-    if (startDate > now) {
-      // Se a data de reset ainda não chegou este mês, usar o mês anterior
-      startDate = new Date(currentYear, currentMonth - 1, goal.resetDay)
+    
+    // Ajustar para último dia do mês se resetDay for 30
+    if (goal.resetDay === 30) {
+      // Último dia do mês atual
+      const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
+      startDate = new Date(currentYear, currentMonth, lastDayOfMonth)
     }
     
-    // Calcular data de fim do período
+    // Se a data de reset ainda não chegou este mês, usar o mês anterior
+    if (startDate > now) {
+      if (goal.resetDay === 30) {
+        // Último dia do mês anterior
+        const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate()
+        startDate = new Date(currentYear, currentMonth - 1, lastDayOfPrevMonth)
+      } else {
+        startDate = new Date(currentYear, currentMonth - 1, goal.resetDay)
+      }
+    }
+    
+    // Calcular data de fim do período (próximo reset)
     const endDate = new Date(startDate)
-    endDate.setMonth(endDate.getMonth() + 1)
+    if (goal.resetDay === 30) {
+      // Próximo último dia do mês
+      const nextMonth = endDate.getMonth() + 1
+      const nextYear = endDate.getFullYear()
+      const lastDayOfNextMonth = new Date(nextYear, nextMonth + 1, 0).getDate()
+      endDate.setMonth(nextMonth)
+      endDate.setDate(lastDayOfNextMonth)
+    } else {
+      endDate.setMonth(endDate.getMonth() + 1)
+      endDate.setDate(goal.resetDay)
+    }
     
     // Calcular dias restantes
     const daysRemaining = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
     
-    // Calcular valor atual (usar completedValue como base)
-    const currentValue = stats.completedValue
+    // Calcular valor atual do período (apenas procedimentos pagos no período atual)
+    // Buscar procedimentos do período atual
+    let currentValue = 0
+    try {
+      const procedures = await procedureService.getProcedures(user.id)
+      const startDateStr = startDate.toISOString().split('T')[0]
+      const endDateStr = endDate.toISOString().split('T')[0]
+      
+      // Filtrar procedimentos pagos no período atual
+      const periodProcedures = procedures.filter((proc: any) => {
+        if (proc.payment_status !== 'paid' || !proc.payment_date) return false
+        
+        const paymentDate = new Date(proc.payment_date)
+        return paymentDate >= startDate && paymentDate < endDate
+      })
+      
+      // Somar valores dos procedimentos do período
+      currentValue = periodProcedures.reduce((sum: number, proc: any) => {
+        return sum + (proc.procedure_value || 0)
+      }, 0)
+      
+      console.log(`📊 Meta: Valor atual do período: R$ ${currentValue.toFixed(2)} (${periodProcedures.length} procedimentos)`)
+    } catch (error) {
+      console.error('Erro ao calcular valor do período:', error)
+      // Fallback: usar valor total se houver erro
+      currentValue = stats.completedValue
+    }
+    
     const percentage = Math.min(100, (currentValue / goal.targetValue) * 100)
     const isCompleted = currentValue >= goal.targetValue
 
@@ -684,12 +784,15 @@ export default function Financeiro() {
                     onChange={(e) => setMonthlyGoal(prev => ({ ...prev, resetDay: parseInt(e.target.value) }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   >
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                    {Array.from({ length: 30 }, (_, i) => i + 1).map(day => (
                       <option key={day} value={day}>
-                        Dia {day}
+                        Dia {day.toString().padStart(2, '0')}
                       </option>
                     ))}
                   </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Por padrão: último dia do mês (30). A meta será resetada automaticamente no dia selecionado.
+                  </p>
                 </div>
                 
                 <div className="flex items-center">

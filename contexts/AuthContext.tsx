@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useRouter } from 'next/navigation'
 import { authService, User } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { isSecretaria } from '@/lib/user-utils'
 
 interface AuthContextType {
   user: User | null
@@ -28,6 +29,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true
 
+    // Listener para mudanças de autenticação e erros de refresh token
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return
+
+      // Tratar erro de refresh token inválido
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        console.error('Erro: Refresh token inválido. Fazendo logout...')
+        // Limpar dados e redirecionar para login
+        setUser(null)
+        setIsEmailConfirmed(false)
+        localStorage.removeItem('currentUser')
+        localStorage.removeItem('isEmailConfirmed')
+        localStorage.removeItem('supabase.auth.token')
+        localStorage.removeItem('sb-auth-token')
+        // Limpar todos os dados do Supabase do localStorage
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) {
+            localStorage.removeItem(key)
+          }
+        })
+        router.push('/login?error=session_expired')
+        return
+      }
+
+      // Atualizar sessão quando houver mudanças
+      if (session?.user) {
+        checkUser()
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null)
+        setIsEmailConfirmed(false)
+        localStorage.removeItem('currentUser')
+        localStorage.removeItem('isEmailConfirmed')
+      }
+    })
+
     const checkUser = async () => {
       try {
         
@@ -36,7 +72,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
         if (sessionError) {
-          
+          // Se o erro for relacionado a refresh token inválido, limpar dados
+          if (sessionError.message?.includes('Refresh Token') || sessionError.message?.includes('refresh_token')) {
+            console.error('Erro de refresh token:', sessionError)
+            setUser(null)
+            setIsEmailConfirmed(false)
+            localStorage.removeItem('currentUser')
+            localStorage.removeItem('isEmailConfirmed')
+            localStorage.removeItem('supabase.auth.token')
+            localStorage.removeItem('sb-auth-token')
+            // Limpar todos os dados do Supabase do localStorage
+            Object.keys(localStorage).forEach(key => {
+              if (key.startsWith('sb-') || key.includes('supabase')) {
+                localStorage.removeItem(key)
+              }
+            })
+            if (mounted) {
+              router.push('/login?error=session_expired')
+            }
+            return
+          }
         }
         
         
@@ -56,7 +111,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           if (userData && mounted) {
-            
+            // Verificar se é secretária - secretárias NÃO devem usar o AuthContext de anestesistas
+            const secretaria = await isSecretaria(session.user.id)
+            if (secretaria) {
+              // É secretária, limpar dados e redirecionar
+              setUser(null)
+              setIsEmailConfirmed(false)
+              localStorage.removeItem('currentUser')
+              localStorage.removeItem('isEmailConfirmed')
+              if (mounted) {
+                router.push('/secretaria/dashboard')
+              }
+              return
+            }
             
             const currentUser = {
               id: userData.id,
@@ -173,8 +240,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false
+      subscription.unsubscribe()
     }
-  }, [])
+  }, [router])
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true)

@@ -94,7 +94,7 @@ export const authService = {
         }
       }
 
-      // Verificar se o email já existe na tabela users
+      // REGRA: Verificar se o email já existe como anestesista (users)
       const { data: existingUserByEmail } = await supabase
         .from('users')
         .select('email')
@@ -103,6 +103,17 @@ export const authService = {
 
       if (existingUserByEmail) {
         return { success: false, message: 'Email já cadastrado' }
+      }
+
+      // REGRA: Verificar se o email já existe como secretária (secretarias)
+      const { data: existingSecretaria } = await supabase
+        .from('secretarias')
+        .select('email')
+        .eq('email', email)
+        .maybeSingle()
+
+      if (existingSecretaria) {
+        return { success: false, message: 'Este email já está cadastrado como secretária. Um email de secretária não pode ser usado como anestesista.' }
       }
 
       // Verificar se o CRM já existe
@@ -266,19 +277,37 @@ export const authService = {
     }
   },
 
-  // Reset de senha
+  // Reset de senha (funciona para anestesistas e secretarias)
   async resetPassword(email: string): Promise<{ success: boolean; message: string }> {
     try {
+      // Verificar se é uma secretaria para usar redirect correto
+      const { data: secretaria } = await supabase
+        .from('secretarias')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle()
+
+      // Usar redirect diferente para secretarias
+      const redirectTo = secretaria 
+        ? 'https://www.anesteasy.com.br/reset-password?type=secretaria'
+        : 'https://www.anesteasy.com.br/reset-password'
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'https://www.anesteasy.com.br/reset-password'
+        redirectTo: redirectTo
       })
 
       if (error) {
-        return { success: false, message: 'Erro ao enviar email de recuperação. Tente novamente.' }
+        console.error('Erro ao enviar email de recuperação:', error)
+        // Verificar se o erro é porque o email não existe
+        if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+          return { success: false, message: 'Email não encontrado. Verifique se o email está correto.' }
+        }
+        return { success: false, message: 'Erro ao enviar email de recuperação. Verifique se o SMTP está configurado no Supabase.' }
       }
 
       return { success: true, message: 'Email de recuperação enviado! Verifique sua caixa de entrada.' }
     } catch (error) {
+      console.error('Erro interno ao resetar senha:', error)
       return { success: false, message: 'Erro interno. Tente novamente.' }
     }
   },
@@ -347,6 +376,113 @@ export const authService = {
     } catch (error) {
       console.error('Erro interno ao atualizar usuário:', error)
       return null
+    }
+  },
+
+  // Criar conta de secretaria (usado quando anestesista vincula uma secretaria)
+  async createSecretariaAccount(
+    email: string,
+    password: string,
+    nome: string,
+    telefone?: string
+  ): Promise<{ success: boolean; tempPassword?: string }> {
+    try {
+      // REGRA: Verificar se o email já existe como anestesista (users)
+      const { data: existingAnestesista } = await supabase
+        .from('users')
+        .select('email')
+        .eq('email', email)
+        .maybeSingle()
+
+      if (existingAnestesista) {
+        console.error('Email já cadastrado como anestesista. Um email de anestesista não pode ser usado como secretária.')
+        return { success: false }
+      }
+
+      // Verificar se o email já existe na tabela secretarias
+      const { data: existingSecretaria } = await supabase
+        .from('secretarias')
+        .select('email')
+        .eq('email', email)
+        .maybeSingle()
+
+      if (existingSecretaria) {
+        console.error('Email já cadastrado como secretaria')
+        return { success: false }
+      }
+
+      // Criar conta no Supabase Auth
+      // Marcar nos metadados que precisa trocar senha no primeiro login
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: 'https://anesteasy.com.br/auth/confirm?next=/secretaria/change-password&type=signup',
+          data: {
+            name: nome,
+            phone: telefone || '',
+            role: 'secretaria',
+            mustChangePassword: true, // Marcar que precisa trocar senha
+            tempPassword: password // Salvar senha temporária nos metadados (será removida após troca)
+          }
+        }
+      })
+
+      if (authError) {
+        console.error('Erro ao criar conta de autenticação:', authError)
+        return { success: false }
+      }
+
+      if (!authData.user) {
+        console.error('Usuário não criado no Supabase Auth')
+        return { success: false }
+      }
+
+      // Criar registro na tabela secretarias
+      // Adicionar campo para marcar que precisa trocar senha
+      const { error: secretariaError } = await supabase
+        .from('secretarias')
+        .insert({
+          id: authData.user.id,
+          email: email,
+          nome: nome,
+          telefone: telefone || null,
+          data_cadastro: new Date().toISOString()
+        })
+
+      if (secretariaError) {
+        console.error('Erro ao criar registro na tabela secretarias:', secretariaError)
+        
+        // Se o erro for de constraint de status, tentar valores alternativos
+        if (secretariaError.code === '23514' && secretariaError.message?.includes('status')) {
+          // Tentar com valores alternativos comuns
+          const statusValues = ['ativo', 'Ativo', 'ATIVO', 'pendente', 'Pendente']
+          
+          for (const statusValue of statusValues) {
+            const { error: retryError } = await supabase
+              .from('secretarias')
+              .insert({
+                id: authData.user.id,
+                email: email,
+                nome: nome,
+                telefone: telefone || null,
+                status: statusValue,
+                data_cadastro: new Date().toISOString()
+              })
+            
+            if (!retryError) {
+              return { success: true, tempPassword: password }
+            }
+          }
+        }
+        
+        return { success: false }
+      }
+
+      return { success: true, tempPassword: password }
+    } catch (error) {
+      console.error('Erro interno ao criar conta de secretaria:', error)
+      return { success: false }
     }
   },
 

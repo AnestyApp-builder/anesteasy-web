@@ -1,141 +1,103 @@
-# BACKUP VERSÃO 0.57 - CORREÇÃO CRÍTICA DE MAPEAMENTO
+# BACKUP V0.57 - Seleção de Secretária em Novo Procedimento
 
-**Data:** 2024-12-19  
-**Versão:** 0.57  
-**Status:** ✅ DEPLOYED - Produção  
-**URL Produção:** https://anesteasy-5g206c8fd-felipe-sousas-projects-8c850f92.vercel.app
+## 📅 Data: $(date)
 
-## 🚨 CORREÇÃO CRÍTICA IMPLEMENTADA
+## 🎯 Objetivo
+Implementar funcionalidade de seleção de secretária na seção "Dados Administrativos" do formulário de novo procedimento.
 
-### **PROBLEMA IDENTIFICADO:**
-Durante auditoria completa do sistema, foi identificado um **caso grave** onde:
-- Campos do formulário não existiam na tabela do banco
-- Campos estavam sendo salvos incorretamente no JSON
-- Campos não apareciam no modal de detalhes
-- Dados eram perdidos ou duplicados
+## 🔧 Funcionalidades Implementadas
 
-### **SOLUÇÕES IMPLEMENTADAS:**
+### ✅ Correções Anteriores
+- **Slide dos Filtros**: Corrigido problema de slide em produção
+- **Tipo de Procedimento**: Corrigido exibição de "manual" para tipo real
+- **Dados do Banco**: Atualizados procedimentos existentes
 
-#### **1️⃣ Correção do Mapeamento na Função createProcedure**
-- **Arquivo:** `lib/procedures.ts`
-- **Problema:** Campos salvos no JSON `fichas_anestesicas` em vez das colunas
-- **Solução:** Mapeamento correto para colunas da tabela `procedures`
-- **Resultado:** Dados organizados e consultas eficientes
+### 🚀 Nova Funcionalidade - Seleção de Secretária
 
-#### **2️⃣ Adição de Campos Faltantes no Formulário**
-- **Arquivo:** `app/procedimentos/novo/page.tsx`
-- **Campos Adicionados:**
-  - `patientGender` (Sexo do Paciente)
-  - `roomNumber` (Número da Sala)
-  - `carteirinha` (Carteirinha do Convênio)
-- **Interface:** Atualizada com novos campos
-- **Estado:** Inicializado corretamente
+#### **Requisitos:**
+1. **Campo "Adicionar Secretária"** na seção Dados Administrativos
+2. **Opções disponíveis:**
+   - Secretária existente (mostrar nome)
+   - Nenhum
+   - Vincular nova secretária (modal)
+3. **Preservar dados** preenchidos durante navegação
+4. **Integração** com sistema existente de vinculação
 
-#### **3️⃣ Adição de Campos no Modal de Detalhes**
-- **Arquivo:** `app/procedimentos/page.tsx`
-- **Seções Adicionadas:**
-  - **Paciente:** `carteirinha`, `patient_gender`
-  - **Procedimento:** `room_number`, `codigo_tssu`
-  - **Financeira:** `procedure_value`, `payment_status`, `forma_pagamento`, `payment_date`, `numero_parcelas`, `parcelas_recebidas`, `observacoes_financeiras`
-  - **Feedback:** `feedback_solicitado`, `email_cirurgiao`, `telefone_cirurgiao`
+#### **Estrutura Proposta:**
+```
+Dados Administrativos:
+├── Adicionar Secretária *
+│   ├── [Dropdown]
+│   │   ├── Dr. João Silva (Secretária)
+│   │   ├── Nenhum
+│   │   └── + Vincular Nova Secretária
+│   └── [Modal de Cadastro]
+├── Valor do Procedimento
+├── Forma de Pagamento
+└── [Outros campos...]
+```
 
-#### **4️⃣ Remoção de Campos Duplicados**
-- **Problema:** Campos salvos no JSON E nas colunas
-- **Solução:** JSON `fichas_anestesicas` agora vazio `{}`
-- **Resultado:** Estrutura limpa e consistente
+## 🏗️ Arquitetura
 
-#### **5️⃣ Testes e Validação**
-- **Linting:** ✅ Sem erros
-- **Servidor:** ✅ Funcionando
-- **Formulário:** ✅ Todos os campos disponíveis
-- **Modal:** ✅ Exibe todos os campos
-- **Banco:** ✅ Dados salvos corretamente
+### **Componentes:**
+- `app/procedimentos/novo/page.tsx` - Formulário principal
+- `components/SecretariaSelector.tsx` - Campo de seleção
+- `components/SecretariaModal.tsx` - Modal de cadastro
+- `contexts/SecretariaContext.tsx` - Gerenciamento de estado
 
-## 📊 IMPACTO DAS CORREÇÕES
+### **Serviços:**
+- `lib/secretarias.ts` - Serviços de secretária
+- `anestesista_secretaria` table - Vinculação
 
-### **ANTES (Problemas):**
-- ❌ Dados perdidos no salvamento
-- ❌ Campos duplicados (JSON + colunas)
-- ❌ Modal incompleto
-- ❌ Consultas ineficientes
-- ❌ Inconsistência de dados
+## 📊 Status do Projeto
 
-### **DEPOIS (Soluções):**
-- ✅ Todos os campos salvos corretamente
-- ✅ Estrutura limpa sem duplicação
-- ✅ Modal completo com todas as informações
-- ✅ Consultas otimizadas
-- ✅ Dados consistentes e organizados
+### **Tabelas do Banco:**
+- ✅ `users` - Anestesistas
+- ✅ `secretarias` - Secretárias
+- ✅ `anestesista_secretaria` - Vinculação
+- ✅ `procedures` - Procedimentos
+- ✅ `goals` - Metas mensais
+- ✅ `notifications` - Notificações
+- ❌ `anestesistas` - Removida (redundante)
 
-## 🔧 ARQUIVOS MODIFICADOS
+### **Funcionalidades:**
+- ✅ Sistema de autenticação
+- ✅ Gestão de procedimentos
+- ✅ Dashboard financeiro
+- ✅ Sistema de metas
+- ✅ Notificações
+- ✅ Gestão de secretárias
+- 🔄 Seleção de secretária em procedimentos
 
-1. **`lib/procedures.ts`**
-   - Função `createProcedure` corrigida
-   - Mapeamento para colunas corretas
-   - JSON `fichas_anestesicas` limpo
+## 🎯 Próximos Passos
 
-2. **`app/procedimentos/novo/page.tsx`**
-   - Interface `FormData` atualizada
-   - Novos campos no estado inicial
-   - Campos visuais adicionados
-   - Mapeamento de salvamento corrigido
+1. **Análise** do formulário atual
+2. **Implementação** do campo de seleção
+3. **Criação** do modal de cadastro
+4. **Integração** com sistema existente
+5. **Testes** locais
+6. **Deploy** em produção
 
-3. **`app/procedimentos/page.tsx`**
-   - Modal de detalhes expandido
-   - Novas seções: Financeira e Feedback
-   - Todos os campos exibidos
-   - Formatação adequada
+## 🔍 Arquivos Modificados
 
-## 🚀 DEPLOY E VERSIONAMENTO
+### **Novos:**
+- `components/SecretariaSelector.tsx`
+- `components/SecretariaModal.tsx`
 
-### **Git:**
-- **Commit:** `89e193d` - v0.57: Correção crítica de mapeamento
-- **Tag:** `v0.57` - Versão 0.57 - Correção crítica de mapeamento
-- **Branch:** `main`
+### **Modificados:**
+- `app/procedimentos/novo/page.tsx`
+- `contexts/SecretariaContext.tsx` (se necessário)
 
-### **Vercel:**
-- **Status:** ✅ Deployed
-- **URL:** https://anesteasy-5g206c8fd-felipe-sousas-projects-8c850f92.vercel.app
-- **Build:** Sucesso
-- **Tempo:** 4 segundos
+## 📝 Notas de Desenvolvimento
 
-## 🧪 TESTES REALIZADOS
-
-1. **✅ Linting:** Sem erros de código
-2. **✅ Servidor:** Rodando sem problemas
-3. **✅ Formulário:** Todos os campos funcionais
-4. **✅ Salvamento:** Dados persistidos corretamente
-5. **✅ Modal:** Exibição completa de informações
-6. **✅ Navegação:** Fluxo completo funcionando
-
-## 📋 CHECKLIST DE VALIDAÇÃO
-
-- [x] Campos do formulário existem na tabela
-- [x] Campos são salvos nas colunas corretas
-- [x] Modal exibe todos os campos preenchidos
-- [x] Não há duplicação de dados
-- [x] Performance otimizada
-- [x] Código limpo e organizado
-- [x] Deploy realizado com sucesso
-- [x] Backup documentado
-
-## 🎯 PRÓXIMOS PASSOS
-
-1. **Monitoramento:** Acompanhar uso em produção
-2. **Feedback:** Coletar retorno dos usuários
-3. **Otimizações:** Melhorias baseadas no uso real
-4. **Novas Features:** Desenvolvimento de funcionalidades adicionais
-
-## 📞 SUPORTE
-
-Em caso de problemas:
-1. Verificar logs do Vercel
-2. Consultar este backup
-3. Revisar commits da versão 0.57
-4. Testar localmente se necessário
+- Manter compatibilidade com sistema existente
+- Preservar dados do formulário durante navegação
+- Usar componentes reutilizáveis
+- Seguir padrões de UX do sistema
+- Testar em ambiente local antes do deploy
 
 ---
 
-**✅ VERSÃO 0.57 DEPLOYADA COM SUCESSO!**
-
-**Sistema agora funciona perfeitamente com todos os campos mapeados corretamente.**
+**Status**: 🚀 Em desenvolvimento
+**Versão**: 0.57
+**Próxima**: Implementação da seleção de secretária

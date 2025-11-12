@@ -88,7 +88,18 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
         }
 
         setSecretaria(secretariaData)
-        router.push('/secretaria/dashboard')
+        
+        // Verificar se precisa trocar senha (primeiro login)
+        const mustChangePassword = data.user.user_metadata?.mustChangePassword === true
+        
+        if (mustChangePassword) {
+          // Redirecionar para página de troca de senha
+          router.push('/secretaria/change-password')
+        } else {
+          // Redirecionar para dashboard
+          router.push('/secretaria/dashboard')
+        }
+        
         return true
       }
       return false
@@ -101,16 +112,21 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
-    setIsLoading(true)
+    // Limpar estado imediatamente para feedback visual rápido
+    setSecretaria(null)
+    
+    // Fazer signOut primeiro (rápido)
     try {
-      await supabase.auth.signOut()
-      setSecretaria(null)
-      router.push('/login')
+      // Não esperar o signOut completar, fazer em paralelo
+      supabase.auth.signOut().catch(() => {
+        // Ignorar erros, o redirect já foi feito
+      })
     } catch (error) {
-      
-    } finally {
-      setIsLoading(false)
+      // Ignorar erros
     }
+    
+    // Redirecionar imediatamente usando window.location para garantir
+    window.location.href = '/login'
   }
 
   const value = {

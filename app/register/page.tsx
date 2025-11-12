@@ -151,15 +151,15 @@ export default function Register() {
       }
 
       try {
-        const success = await authService.createSecretariaAccount(
+        const result = await authService.createSecretariaAccount(
           secretariaForm.email,
           secretariaForm.password,
           secretariaForm.name,
           secretariaForm.phone || undefined
         )
 
-        if (success) {
-          setSuccess('Conta da secretaria criada com sucesso! Você pode fazer login agora.')
+        if (result.success) {
+          setSuccess('Conta da secretaria criada com sucesso! Um email com as instruções foi enviado.')
           setSecretariaForm({
             name: '',
             email: '',
@@ -171,7 +171,7 @@ export default function Register() {
           setError('Erro ao criar conta da secretaria. Tente novamente.')
         }
       } catch (error) {
-        
+        console.error('Erro ao criar conta de secretaria:', error)
         setError('Erro interno. Tente novamente.')
       }
     }

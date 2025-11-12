@@ -21,37 +21,28 @@ export default function Login() {
   const { login, isLoading, user, isAuthenticated } = useAuth()
   const router = useRouter()
 
-  // Redirecionar se já estiver logado (apenas para anestesistas)
+  // Redirecionar se já estiver logado
   useEffect(() => {
     if (isAuthenticated && user) {
       // Verificar se é uma secretaria logada
       const checkIfSecretaria = async () => {
         try {
-          
-          
           const { data: secretaria, error: secretariaError } = await supabase
             .from('secretarias')
-            .select('*')
-            .eq('email', user.email)
+            .select('id')
+            .eq('id', user.id)
             .maybeSingle()
 
-          if (secretariaError) {
-            // É anestesista, redirecionar para dashboard normal
-            router.push('/dashboard')
+          if (secretaria && !secretariaError) {
+            // É secretaria, redirecionar para dashboard da secretaria
+            router.push('/secretaria/dashboard')
             return
           }
 
-          if (secretaria) {
-            
-            // É secretaria, redirecionar para dashboard da secretaria
-            router.push('/secretaria/dashboard')
-          } else {
-            
-            // É anestesista, redirecionar para dashboard normal
-            router.push('/dashboard')
-          }
+          // É anestesista, redirecionar para dashboard normal
+          router.push('/dashboard')
         } catch (error) {
-          
+          console.error('Erro ao verificar tipo de usuário:', error)
           // Em caso de erro, redirecionar para dashboard normal
           router.push('/dashboard')
         }
@@ -97,31 +88,38 @@ export default function Login() {
       const success = await login(formData.email, formData.password)
       
       if (success) {
+        // Buscar usuário do Supabase Auth após login bem-sucedido
+        const { data: { user: authUser }, error: authUserError } = await supabase.auth.getUser()
+        
+        if (authUserError || !authUser) {
+          setError('Erro ao obter dados do usuário')
+          return
+        }
+
         // Verificar se é secretaria após login bem-sucedido
         try {
-          
-          
           const { data: secretaria, error: secretariaError } = await supabase
             .from('secretarias')
-            .select('*')
-            .eq('email', formData.email)
+            .select('id')
+            .eq('id', authUser.id)
             .maybeSingle()
 
-          if (secretariaError) {
-            // É anestesista, redirecionar para dashboard normal
-            router.push('/dashboard')
+          if (secretaria && !secretariaError) {
+            // Verificar se precisa trocar senha
+            const mustChangePassword = authUser.user_metadata?.mustChangePassword === true
+            
+            if (mustChangePassword) {
+              router.push('/secretaria/change-password')
+            } else {
+              router.push('/secretaria/dashboard')
+            }
             return
           }
 
-          if (secretaria) {
-            
-            router.push('/secretaria/dashboard')
-          } else {
-            
-            router.push('/dashboard')
-          }
+          // É anestesista, redirecionar para dashboard normal
+          router.push('/dashboard')
         } catch (error) {
-          
+          console.error('Erro ao verificar tipo de usuário após login:', error)
           // Em caso de erro, redirecionar para dashboard normal
           router.push('/dashboard')
         }

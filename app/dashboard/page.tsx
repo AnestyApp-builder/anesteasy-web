@@ -26,6 +26,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, getFullGreeting, handleButtonPress, handleCardPress } from '@/lib/utils'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { Loading } from '@/components/ui/Loading'
+import { useRouter } from 'next/navigation'
+import { isSecretaria } from '@/lib/user-utils'
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -44,18 +46,29 @@ export default function Dashboard() {
   const [currentStatIndex, setCurrentStatIndex] = useState(0)
   const [monthlyGoal, setMonthlyGoal] = useState({
     targetValue: 0,
-    resetDay: 1,
+    resetDay: 30, // Padrão: último dia do mês
     isEnabled: false
   })
   const [showGoalModal, setShowGoalModal] = useState(false)
   const { user } = useAuth()
+  const router = useRouter()
 
+  // Verificar se é secretária e redirecionar
   useEffect(() => {
-    if (user?.id) {
-      loadDashboardData()
-      loadMonthlyGoal()
+    const checkIfSecretaria = async () => {
+      if (user?.id) {
+        const secretaria = await isSecretaria(user.id)
+        if (secretaria) {
+          router.push('/secretaria/dashboard')
+          return
+        }
+        // Só carregar dados se não for secretária
+        loadDashboardData()
+        loadMonthlyGoal()
+      }
     }
-  }, [user])
+    checkIfSecretaria()
+  }, [user, router])
 
   // Função para atualizar o índice atual baseado no scroll
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -108,7 +121,7 @@ export default function Dashboard() {
         // Converter formato do banco para formato do estado
         setMonthlyGoal({
           targetValue: goal.target_value,
-          resetDay: goal.reset_day,
+          resetDay: goal.reset_day || 30, // Padrão: último dia do mês se não definido
           isEnabled: goal.is_enabled
         })
       } else {
@@ -117,8 +130,15 @@ export default function Dashboard() {
         if (migratedGoal) {
           setMonthlyGoal({
             targetValue: migratedGoal.target_value,
-            resetDay: migratedGoal.reset_day,
+            resetDay: migratedGoal.reset_day || 30, // Padrão: último dia do mês
             isEnabled: migratedGoal.is_enabled
+          })
+        } else {
+          // Se não há meta, usar padrão: último dia do mês (30)
+          setMonthlyGoal({
+            targetValue: 0,
+            resetDay: 30,
+            isEnabled: false
           })
         }
       }
@@ -850,12 +870,15 @@ export default function Dashboard() {
                   onChange={(e) => setMonthlyGoal(prev => ({ ...prev, resetDay: parseInt(e.target.value) }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                 >
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                  {Array.from({ length: 30 }, (_, i) => i + 1).map(day => (
                     <option key={day} value={day}>
-                      Dia {day}
+                      Dia {day.toString().padStart(2, '0')}
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  Por padrão: último dia do mês (30). A meta será resetada automaticamente no dia selecionado.
+                </p>
               </div>
               
               <div className="flex items-center">

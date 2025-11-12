@@ -22,7 +22,9 @@ import {
   Eye,
   Edit,
   Paperclip,
-  MessageSquare
+  MessageSquare,
+  Image as ImageIcon,
+  Download
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -33,6 +35,7 @@ import { feedbackService } from '@/lib/feedback'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, handleButtonPress, handleCardPress } from '@/lib/utils'
 import { Loading } from '@/components/ui/Loading'
+import { isImageFile } from '@/lib/mime-utils'
 
 // Componente de campo editável - Memoizado para evitar re-renders
 const EditField = memo(({ 
@@ -184,8 +187,11 @@ export default function Procedimentos() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [activeActionMenu, setActiveActionMenu] = useState<string | null>(null)
   const [showDateFilter, setShowDateFilter] = useState(false)
+  const [showImageModal, setShowImageModal] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<ProcedureAttachment | null>(null)
   const [dateFilter, setDateFilter] = useState<{start: string, end: string} | null>(null)
   const [feedbackStatuses, setFeedbackStatuses] = useState<Record<string, {linkCriado: boolean, respondido: boolean}>>({})
+  const [selectedProcedureFeedback, setSelectedProcedureFeedback] = useState<any>(null)
   const { user } = useAuth()
 
   useEffect(() => {
@@ -356,6 +362,16 @@ export default function Procedimentos() {
     }
   }
 
+  const handleOpenImageModal = (attachment: ProcedureAttachment) => {
+    setSelectedImage(attachment)
+    setShowImageModal(true)
+  }
+
+  const handleCloseImageModal = () => {
+    setShowImageModal(false)
+    setSelectedImage(null)
+  }
+
   const cancelDelete = () => {
     setShowDeleteModal(false)
     setProcedureToDelete(null)
@@ -376,6 +392,19 @@ export default function Procedimentos() {
     // Carregar anexos do procedimento
     const attachmentsData = await procedureService.getAttachments(procedure.id)
     setAttachments(attachmentsData)
+
+    // Carregar dados do feedback se o procedimento tiver feedback solicitado
+    if (procedure.feedback_solicitado) {
+      try {
+        const feedbackData = await feedbackService.getFeedbackByProcedureId(procedure.id)
+        setSelectedProcedureFeedback(feedbackData)
+      } catch (error) {
+        console.error('Erro ao carregar feedback:', error)
+        setSelectedProcedureFeedback(null)
+      }
+    } else {
+      setSelectedProcedureFeedback(null)
+    }
   }
 
   const closeDetailsModal = () => {
@@ -384,6 +413,7 @@ export default function Procedimentos() {
     setIsEditingMode(false)
     setEditFormData({})
     setFeedbackMessage(null)
+    setSelectedProcedureFeedback(null)
   }
 
 
@@ -1384,6 +1414,68 @@ export default function Procedimentos() {
                     updateFormField={updateFormField}
                   />
                 </div>
+
+                {/* Seção de Respostas do Feedback */}
+                {selectedProcedure.feedback_solicitado && (
+                  <div className="mt-6 pt-6 border-t border-purple-200">
+                    <h4 className="text-lg font-semibold text-purple-800 mb-4 flex items-center">
+                      <div className="w-6 h-6 bg-purple-100 rounded-lg flex items-center justify-center mr-2">
+                        <MessageSquare className="w-4 h-4 text-purple-600" />
+                      </div>
+                      Respostas do Cirurgião
+                    </h4>
+                    
+                    {selectedProcedureFeedback ? (
+                      <div className="bg-white rounded-lg p-4 border border-purple-200">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-gray-700">Náuseas ou Vômitos?</p>
+                            <p className={`text-sm font-semibold ${selectedProcedureFeedback.nauseaVomito === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
+                              {selectedProcedureFeedback.nauseaVomito}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-gray-700">Cefaleia?</p>
+                            <p className={`text-sm font-semibold ${selectedProcedureFeedback.cefaleia === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
+                              {selectedProcedureFeedback.cefaleia}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-gray-700">Dor Lombar?</p>
+                            <p className={`text-sm font-semibold ${selectedProcedureFeedback.dorLombar === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
+                              {selectedProcedureFeedback.dorLombar}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-gray-700">Anemia/Transfusão?</p>
+                            <p className={`text-sm font-semibold ${selectedProcedureFeedback.anemiaTransfusao === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
+                              {selectedProcedureFeedback.anemiaTransfusao}
+                            </p>
+                          </div>
+                        </div>
+                        {selectedProcedureFeedback.respondidoEm && (
+                          <div className="mt-4 pt-4 border-t border-gray-200">
+                            <p className="text-xs text-gray-500">
+                              Respondido em: {new Date(selectedProcedureFeedback.respondidoEm).toLocaleDateString('pt-BR')} às {new Date(selectedProcedureFeedback.respondidoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                        <div className="flex items-center">
+                          <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center mr-3">
+                            <MessageSquare className="w-4 h-4 text-amber-600" />
+                          </div>
+                          <div>
+                            <p className="text-amber-800 font-medium">Formulário ainda não respondido</p>
+                            <p className="text-amber-600 text-sm">O cirurgião ainda não preencheu o formulário de feedback</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Dados Específicos do Procedimento */}
@@ -2027,54 +2119,142 @@ export default function Procedimentos() {
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
                   <div className="flex items-center space-x-3 mb-4">
                     <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <FileText className="w-4 h-4 text-blue-600" />
+                      <Paperclip className="w-4 h-4 text-blue-600" />
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900">Anexos</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Anexos ({attachments.length})</h3>
                   </div>
                   
-                  <div className="space-y-3">
-                    {attachments.map((attachment) => (
-                      <div key={attachment.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-gray-50">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                            <FileText className="w-4 h-4 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{attachment.file_name}</p>
-                            <p className="text-xs text-gray-500">
-                              {(attachment.file_size / 1024).toFixed(1)} KB • {attachment.file_type}
-                            </p>
-                          </div>
+                  <div className="space-y-4">
+                    {attachments.map((attachment) => {
+                      const isImage = isImageFile(attachment.file_name) || attachment.file_type.startsWith('image/')
+                      
+                      return (
+                        <div key={attachment.id} className="border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
+                          {isImage ? (
+                            // Exibição para imagens
+                            <div className="p-4">
+                              <div className="flex items-start space-x-4">
+                                {/* Preview da imagem */}
+                                <div className="flex-shrink-0">
+                                  <div 
+                                    className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={() => handleOpenImageModal(attachment)}
+                                  >
+                                    <img
+                                      src={attachment.file_url}
+                                      alt={attachment.file_name}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        // Fallback se a imagem não carregar
+                                        const target = e.target as HTMLImageElement
+                                        target.style.display = 'none'
+                                        const parent = target.parentElement
+                                        if (parent) {
+                                          parent.innerHTML = '<div class="w-full h-full flex items-center justify-center"><ImageIcon class="w-8 h-8 text-gray-400" /></div>'
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                                
+                                {/* Informações do arquivo */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center space-x-2 mb-1">
+                                    <ImageIcon className="w-4 h-4 text-green-600" />
+                                    <p className="text-sm font-medium text-gray-900 truncate">{attachment.file_name}</p>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mb-3">
+                                    {(attachment.file_size / 1024).toFixed(1)} KB • {attachment.file_type}
+                                  </p>
+                                  
+                                  {/* Botões de ação */}
+                                  <div className="flex items-center space-x-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleOpenImageModal(attachment)}
+                                      className="text-green-600 border-green-200 hover:bg-green-50"
+                                    >
+                                      <Eye className="w-4 h-4 mr-1" />
+                                      Visualizar
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        // Abrir imagem em nova aba
+                                        window.open(attachment.file_url, '_blank')
+                                      }}
+                                    >
+                                      <ImageIcon className="w-4 h-4 mr-1" />
+                                      Abrir
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        // Fazer download da imagem
+                                        const link = document.createElement('a')
+                                        link.href = attachment.file_url
+                                        link.download = attachment.file_name
+                                        link.click()
+                                      }}
+                                    >
+                                      <Download className="w-4 h-4 mr-1" />
+                                      Download
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            // Exibição para outros arquivos
+                            <div className="p-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                    <FileText className="w-4 h-4 text-blue-600" />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-900">{attachment.file_name}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {(attachment.file_size / 1024).toFixed(1)} KB • {attachment.file_type}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      // Abrir arquivo em nova aba
+                                      window.open(attachment.file_url, '_blank')
+                                    }}
+                                  >
+                                    <Eye className="w-4 h-4 mr-1" />
+                                    Ver
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      // Fazer download do arquivo
+                                      const link = document.createElement('a')
+                                      link.href = attachment.file_url
+                                      link.download = attachment.file_name
+                                      link.click()
+                                    }}
+                                  >
+                                    <Download className="w-4 h-4 mr-1" />
+                                    Download
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              // Abrir arquivo em nova aba
-                              window.open(attachment.file_url, '_blank')
-                            }}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Ver
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              // Fazer download do arquivo
-                              const link = document.createElement('a')
-                              link.href = attachment.file_url
-                              link.download = attachment.file_name
-                              link.click()
-                            }}
-                          >
-                            <FileText className="w-4 h-4 mr-1" />
-                            Download
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -2270,6 +2450,89 @@ export default function Procedimentos() {
                   >
                     Aplicar Filtro
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Visualização de Imagem */}
+      {showImageModal && selectedImage && (
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center p-4 z-[10001]">
+          <div className="relative max-w-4xl max-h-[90vh] w-full">
+            {/* Botão de fechar */}
+            <button
+              onClick={handleCloseImageModal}
+              className="absolute top-4 right-4 z-10 w-10 h-10 bg-black bg-opacity-50 text-white rounded-full flex items-center justify-center hover:bg-opacity-70 transition-all"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            {/* Imagem */}
+            <div className="bg-white rounded-lg overflow-hidden shadow-2xl">
+              <div className="p-4 border-b border-gray-200">
+                <div className="flex items-center space-x-3">
+                  <ImageIcon className="w-5 h-5 text-green-600" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">{selectedImage.file_name}</h3>
+                    <p className="text-sm text-gray-500">
+                      {(selectedImage.file_size / 1024).toFixed(1)} KB • {selectedImage.file_type}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-4">
+                <div className="flex justify-center">
+                  <img
+                    src={selectedImage.file_url}
+                    alt={selectedImage.file_name}
+                    className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-lg"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement
+                      target.style.display = 'none'
+                      const parent = target.parentElement
+                      if (parent) {
+                        parent.innerHTML = `
+                          <div class="w-full h-64 flex flex-col items-center justify-center text-gray-500 bg-gray-100 rounded-lg">
+                            <ImageIcon class="w-16 h-16 mb-4" />
+                            <p class="text-lg font-medium">Erro ao carregar imagem</p>
+                            <p class="text-sm">A imagem não pôde ser exibida</p>
+                          </div>
+                        `
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Botões de ação */}
+              <div className="p-4 border-t border-gray-200 bg-gray-50">
+                <div className="flex justify-center space-x-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      window.open(selectedImage.file_url, '_blank')
+                    }}
+                    className="flex items-center space-x-2"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    <span>Abrir em Nova Aba</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const link = document.createElement('a')
+                      link.href = selectedImage.file_url
+                      link.download = selectedImage.file_name
+                      link.click()
+                    }}
+                    className="flex items-center space-x-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download</span>
+                  </Button>
                 </div>
               </div>
             </div>

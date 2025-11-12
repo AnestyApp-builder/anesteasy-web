@@ -73,8 +73,64 @@ async function handleSuccessfulConfirmation(user: any, next: string, baseUrl: st
   }
   
   // Se for confirmação de email (signup), criar usuário na tabela users
+  // IMPORTANTE: NÃO criar registro na tabela users se for secretária
   if (type === 'signup') {
     try {
+      // Verificar se é secretária ANTES de qualquer coisa
+      const isSecretaria = user.user_metadata?.role === 'secretaria'
+      
+      // Se for secretária, verificar se já existe na tabela secretarias
+      if (isSecretaria) {
+        const { data: secretaria } = await supabase
+          .from('secretarias')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle()
+        
+        if (!secretaria) {
+          console.warn('⚠️ [CONFIRM] Secretária confirmou email mas não existe na tabela secretarias. ID:', user.id)
+        } else {
+          console.log('✅ [CONFIRM] Secretária confirmada. ID:', user.id, 'Email:', user.email)
+        }
+        
+        // CRÍTICO: Verificar se existe registro incorreto na tabela users e remover
+        const { data: existingUser, error: checkError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle()
+        
+        if (existingUser) {
+          console.error('❌ [CONFIRM] ERRO CRÍTICO: Secretária existe na tabela users! Removendo...')
+          const { error: deleteError } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', user.id)
+          
+          if (deleteError) {
+            console.error('❌ [CONFIRM] Erro ao remover registro incorreto da tabela users:', deleteError)
+          } else {
+            console.log('✅ [CONFIRM] Registro incorreto removido da tabela users')
+          }
+        }
+        
+        // NÃO criar registro na tabela users para secretárias
+        return NextResponse.redirect(new URL(next, baseUrl))
+      }
+      
+      // Se NÃO for secretária, criar registro na tabela users
+      // Verificar se já existe para evitar duplicação
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle()
+      
+      if (existingUser) {
+        console.log('ℹ️ [CONFIRM] Usuário já existe na tabela users. Pulando criação.')
+        return NextResponse.redirect(new URL(next, baseUrl))
+      }
+      
       const { data: insertData, error: insertError } = await supabase
         .from('users')
         .insert({
@@ -92,10 +148,12 @@ async function handleSuccessfulConfirmation(user: any, next: string, baseUrl: st
         .select()
 
       if (insertError) {
-        // Erro silencioso - usuário pode tentar novamente
+        console.error('❌ [CONFIRM] Erro ao criar registro na tabela users:', insertError)
+      } else {
+        console.log('✅ [CONFIRM] Registro criado na tabela users para anestesista')
       }
     } catch (insertError) {
-      // Erro silencioso - usuário pode tentar novamente
+      console.error('❌ [CONFIRM] Erro ao processar confirmação de email:', insertError)
     }
   }
 

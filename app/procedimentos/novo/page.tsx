@@ -167,7 +167,7 @@ const TIPOS_ANESTESIA = [
 
 export default function NovoProcedimento() {
   const { user } = useAuth()
-  const { secretaria } = useSecretaria()
+  const { secretaria, linkSecretaria } = useSecretaria()
   const [formData, setFormData] = useState<FormData>({
     nomePaciente: '',
     dataNascimento: '',
@@ -231,6 +231,7 @@ export default function NovoProcedimento() {
   } | null>(null)
   const [anestesiasFiltradas, setAnestesiasFiltradas] = useState(TIPOS_ANESTESIA)
   const [buscaAnestesia, setBuscaAnestesia] = useState('')
+  const [showSecretariaModal, setShowSecretariaModal] = useState(false)
 
   // Definir secretaria automaticamente se houver uma vinculada
   useEffect(() => {
@@ -343,7 +344,6 @@ export default function NovoProcedimento() {
       nomeCirurgiao: 'Dr. João Carlos Oliveira',
       nomeEquipe: 'Equipe Obstétrica Alpha',
       hospital: 'Hospital São Lucas',
-      observacoes: 'Paciente com diabetes gestacional controlada. Sem intercorrências pré-operatórias.',
       
       // 2. Dados do Procedimento (obstétrico)
       acompanhamentoAntes: 'Sim',
@@ -476,13 +476,19 @@ export default function NovoProcedimento() {
     e.preventDefault()
     clearFeedback()
     
+    console.log('🚀 Iniciando salvamento do procedimento...')
+    console.log('📋 Dados do usuário:', { userId: user?.id, userName: user?.name })
+    
     if (!user?.id) {
+      console.error('❌ Erro: Usuário não está logado')
       showFeedback('error', '❌ Erro de autenticação: Usuário não está logado. Faça login novamente.')
       return
     }
 
     // Só salvar o procedimento se estivermos na etapa final (Upload)
+    console.log('📍 Seção atual:', currentSection)
     if (currentSection !== 3) {
+      console.warn('⚠️ Tentativa de salvar fora da seção final')
       showFeedback('error', '⚠️ Complete todas as etapas antes de finalizar.')
       return
     }
@@ -573,6 +579,15 @@ export default function NovoProcedimento() {
     setLoading(true)
     showFeedback('info', '⏳ Salvando procedimento...')
     
+    console.log('📝 Preparando dados do procedimento...')
+    console.log('📊 FormData:', {
+      nomePaciente: formData.nomePaciente,
+      tipoProcedimento: formData.tipoProcedimento,
+      valor: formData.valor,
+      statusPagamento: formData.statusPagamento,
+      numeroArquivos: formData.fichas?.length || 0
+    })
+    
     try {
       const procedureData = {
         // Campos obrigatórios
@@ -602,46 +617,59 @@ export default function NovoProcedimento() {
         codigo_tssu: formData.codigoTSSU,
         
         // Campos do procedimento (não-obstétrico)
-        sangramento: formData.sangramento,
-        nausea_vomito: formData.nauseaVomito,
-        dor: formData.dor,
+        sangramento: formData.sangramento || undefined,
+        nausea_vomito: formData.nauseaVomito || undefined,
+        dor: formData.dor || undefined,
         observacoes_procedimento: formData.observacoesProcedimento,
 
         // Campos do procedimento (obstétrico)
-        acompanhamento_antes: formData.acompanhamentoAntes,
-        tipo_parto: formData.tipoParto,
-        tipo_cesariana: formData.tipoCesariana,
-        indicacao_cesariana: formData.indicacaoCesariana,
-        descricao_indicacao_cesariana: formData.descricaoIndicacaoCesariana,
-        retencao_placenta: formData.retencaoPlacenta,
-        laceracao_presente: formData.laceracaoPresente,
-        grau_laceracao: formData.grauLaceracao,
-        hemorragia_puerperal: formData.hemorragiaPuerperal,
-        transfusao_realizada: formData.transfusaoRealizada,
+        acompanhamento_antes: formData.acompanhamentoAntes || undefined,
+        tipo_parto: formData.tipoParto || undefined,
+        tipo_cesariana: formData.tipoCesariana || undefined,
+        indicacao_cesariana: formData.indicacaoCesariana || undefined,
+        descricao_indicacao_cesariana: formData.descricaoIndicacaoCesariana || undefined,
+        retencao_placenta: formData.retencaoPlacenta || undefined,
+        laceracao_presente: formData.laceracaoPresente || undefined,
+        grau_laceracao: formData.grauLaceracao || undefined,
+        hemorragia_puerperal: formData.hemorragiaPuerperal || undefined,
+        transfusao_realizada: formData.transfusaoRealizada || undefined,
         
         // Campos financeiros
-        payment_status: STATUS_PAGAMENTO_MAP[formData.statusPagamento] || 'pending',
-        payment_date: formData.statusPagamento === 'Pago' && formData.dataPagamento ? formData.dataPagamento : null,
+        payment_status: (STATUS_PAGAMENTO_MAP[formData.statusPagamento] || 'pending') as 'pending' | 'paid' | 'cancelled',
+        payment_date: formData.statusPagamento === 'Pago' && formData.dataPagamento ? formData.dataPagamento : undefined,
         forma_pagamento: formData.formaPagamento,
-        numero_parcelas: formData.numero_parcelas ? parseInt(formData.numero_parcelas) : null,
+        numero_parcelas: formData.numero_parcelas ? parseInt(formData.numero_parcelas) : undefined,
         parcelas_recebidas: formData.parcelas ? formData.parcelas.filter(p => p.recebida).length : 0,
         observacoes_financeiras: formData.observacoes,
-        secretaria_id: formData.secretariaId || null,
+        secretaria_id: formData.secretariaId || undefined,
         user_id: user.id,
 
         // Campos de feedback
         feedback_solicitado: formData.enviarRelatorioCirurgiao === 'Sim',
-        email_cirurgiao: formData.enviarRelatorioCirurgiao === 'Sim' ? formData.emailCirurgiao : null,
-        telefone_cirurgiao: formData.enviarRelatorioCirurgiao === 'Sim' ? formData.telefoneCirurgiao : null
+        email_cirurgiao: formData.enviarRelatorioCirurgiao === 'Sim' ? formData.emailCirurgiao : undefined,
+        telefone_cirurgiao: formData.enviarRelatorioCirurgiao === 'Sim' ? formData.telefoneCirurgiao : undefined
       }
 
+      console.log('💾 Chamando procedureService.createProcedure...')
+      console.log('📦 Dados enviados:', procedureData)
       
       const result = await procedureService.createProcedure(procedureData)
       
-      if (result) {
-        // Se foi solicitado envio de relatório para o cirurgião, criar link de feedback
-        let feedbackUrl = ''
-        if (formData.enviarRelatorioCirurgiao === 'Sim' && formData.emailCirurgiao) {
+      console.log('✅ Resultado do createProcedure:', result)
+      
+      if (!result) {
+        console.error('❌ Erro: procedureService.createProcedure retornou null ou undefined')
+        showFeedback('error', '❌ Falha ao salvar: Não foi possível criar o procedimento. Verifique sua conexão e tente novamente.')
+        setLoading(false)
+        return
+      }
+      
+      console.log('✅ Procedimento criado com sucesso! ID:', result.id)
+      
+      // Se foi solicitado envio de relatório para o cirurgião, criar link de feedback
+      let feedbackUrl = ''
+      if (formData.enviarRelatorioCirurgiao === 'Sim' && formData.emailCirurgiao) {
+        try {
           const feedbackLink = await feedbackService.createFeedbackLinkOnly({
             procedureId: result.id,
             emailCirurgiao: formData.emailCirurgiao,
@@ -652,7 +680,11 @@ export default function NovoProcedimento() {
           } else {
             console.error('Erro ao criar link de feedback')
           }
+        } catch (feedbackError) {
+          console.error('Erro ao criar link de feedback:', feedbackError)
+          // Não bloquear o salvamento do procedimento se o link de feedback falhar
         }
+      }
         // Salvar parcelas individuais se existirem
         if (formData.parcelas && formData.parcelas.length > 0) {
           
@@ -672,70 +704,141 @@ export default function NovoProcedimento() {
           
         }
 
-        // Salvar anexos se existirem
-        if (formData.fichas && formData.fichas.length > 0) {
-          
-          
-          // Para cada arquivo, fazer upload para o Supabase Storage
-          for (const file of formData.fichas) {
-            try {
-              // Gerar nome único para o arquivo
-              const fileExt = file.name.split('.').pop()
-              const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-              const filePath = `${user.id}/${result.id}/${fileName}`
-              
-              // Fazer upload do arquivo para o Supabase Storage
-              const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('procedure-attachments')
-                .upload(filePath, file)
-              
-              if (uploadError) {
-                
-                continue
-              }
-              
-              // Obter URL pública do arquivo
-              const { data: urlData } = supabase.storage
-                .from('procedure-attachments')
-                .getPublicUrl(filePath)
-              
-              // Criar registro no banco de dados
-              const attachmentData = {
-                procedure_id: result.id,
-                file_name: file.name,
-                file_size: file.size,
-                file_type: file.type,
-                file_url: urlData.publicUrl
-              }
-              
-              const attachmentResult = await procedureService.createAttachment(attachmentData)
-              
-            } catch (error) {
-              
+      // Salvar anexos se existirem
+      console.log('📎 Verificando anexos...', { totalArquivos: formData.fichas?.length || 0 })
+      if (formData.fichas && formData.fichas.length > 0) {
+        console.log('📤 Iniciando upload de', formData.fichas.length, 'arquivo(s)...')
+        
+        // Para cada arquivo, fazer upload para o Supabase Storage
+        for (const file of formData.fichas) {
+          console.log('📄 Processando arquivo:', file.name, 'Tamanho:', file.size, 'bytes')
+          try {
+            // Gerar nome único para o arquivo
+            const fileExt = file.name.split('.').pop()
+            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+            const filePath = `${user.id}/${result.id}/${fileName}`
+            
+            // Importar função utilitária para tipo MIME
+            const { getCorrectMimeType, createFileWithCorrectMimeType } = await import('@/lib/mime-utils')
+            
+            // Obter tipo MIME correto
+            const correctMimeType = getCorrectMimeType(file.name)
+            
+            // Validar que o arquivo original não está vazio
+            if (file.size === 0) {
+              console.error(`❌ Erro: Arquivo ${file.name} está vazio`)
+              showFeedback('error', `Erro: O arquivo ${file.name} está vazio e não pode ser enviado`)
+              continue
             }
+            
+            // CRÍTICO: Converter o arquivo para ArrayBuffer para evitar corrupção
+            // O Supabase Storage precisa receber apenas o conteúdo binário puro,
+            // não o File object que pode incluir headers multipart/form-data
+            console.log(`📤 Convertendo arquivo para ArrayBuffer antes do upload:`, {
+              nome: file.name,
+              tamanho: file.size,
+              tipoOriginal: file.type,
+              tipoMIMECorreto: correctMimeType,
+              caminho: filePath
+            })
+            
+            // Converter o arquivo para ArrayBuffer para preservar o conteúdo binário puro
+            const arrayBuffer = await file.arrayBuffer()
+            
+            // Validar que o ArrayBuffer não está vazio
+            if (arrayBuffer.byteLength === 0) {
+              console.error(`❌ Erro: ArrayBuffer do arquivo ${file.name} está vazio`)
+              showFeedback('error', `Erro: O arquivo ${file.name} está vazio após conversão`)
+              continue
+            }
+            
+            // Validar que o tamanho foi preservado
+            if (arrayBuffer.byteLength !== file.size) {
+              console.error(`❌ Erro: Tamanho do ArrayBuffer (${arrayBuffer.byteLength}) não corresponde ao tamanho do arquivo (${file.size})`)
+              showFeedback('error', `Erro: O arquivo ${file.name} foi corrompido durante a conversão`)
+              continue
+            }
+            
+            console.log(`✅ ArrayBuffer criado com sucesso: ${arrayBuffer.byteLength} bytes`)
+            
+            // Fazer upload do ArrayBuffer diretamente para o Supabase Storage
+            // Isso garante que apenas o conteúdo binário puro seja enviado, sem headers multipart
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('procedure-attachments')
+              .upload(filePath, arrayBuffer, {
+                contentType: correctMimeType,
+                upsert: false // Não sobrescrever arquivos existentes
+              })
+            
+            if (uploadError) {
+              console.error(`Erro ao fazer upload do arquivo ${file.name}:`, uploadError)
+              
+              // Verificar se o erro é relacionado a autenticação
+              if (uploadError.message?.includes('Refresh Token') || 
+                  uploadError.message?.includes('refresh_token') ||
+                  uploadError.message?.includes('Invalid Refresh Token') ||
+                  uploadError.message?.includes('401') ||
+                  uploadError.message?.includes('Unauthorized')) {
+                showFeedback('error', 'Sessão expirada. Por favor, faça login novamente.')
+                // Redirecionar para login após 2 segundos
+                setTimeout(() => {
+                  window.location.href = '/login?error=session_expired'
+                }, 2000)
+                return // Sair do loop de uploads
+              }
+              
+              showFeedback('error', `Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`)
+              continue
+            }
+            
+            // Obter URL pública do arquivo
+            const { data: urlData } = supabase.storage
+              .from('procedure-attachments')
+              .getPublicUrl(filePath)
+            
+            // Criar registro no banco de dados
+            const attachmentData = {
+              procedure_id: result.id,
+              file_name: file.name,
+              file_size: file.size,
+              file_type: correctMimeType, // Usar o tipo MIME correto
+              file_url: urlData.publicUrl
+            }
+            
+            console.log('💾 Criando registro do anexo no banco de dados...')
+            const attachmentResult = await procedureService.createAttachment(attachmentData)
+            console.log('✅ Anexo registrado:', attachmentResult ? 'Sucesso' : 'Falhou')
+            
+          } catch (error) {
+            console.error(`❌ Erro ao processar anexo ${file.name}:`, error)
+            // Continuar com os outros arquivos mesmo se um falhar
           }
-        } else {
-          
         }
-        
-        // Preparar dados para o modal de sucesso
-        setSuccessData({
-          paciente: formData.nomePaciente,
-          procedimento: formData.tipoProcedimento,
-          valor: formData.valor,
-          parcelas: formData.parcelas && formData.parcelas.length > 0 ? `${formData.parcelas.filter(p => p.recebida).length}/${formData.parcelas.length} recebidas` : 'Não parcelado',
-          feedbackUrl: feedbackUrl || undefined,
-          emailCirurgiao: formData.emailCirurgiao || undefined,
-          telefoneCirurgiao: formData.telefoneCirurgiao || undefined
-        })
-        
-        // Mostrar modal de sucesso
-        setShowSuccessModal(true)
-      } else {
-        showFeedback('error', '❌ Falha ao salvar: Não foi possível criar o procedimento. Verifique sua conexão e tente novamente.')
       }
-    } catch (error) {
       
+      console.log('🎉 Preparando modal de sucesso...')
+      // Preparar dados para o modal de sucesso
+      setSuccessData({
+        paciente: formData.nomePaciente,
+        procedimento: formData.tipoProcedimento,
+        valor: formData.valor,
+        parcelas: formData.parcelas && formData.parcelas.length > 0 ? `${formData.parcelas.filter(p => p.recebida).length}/${formData.parcelas.length} recebidas` : 'Não parcelado',
+        feedbackUrl: feedbackUrl || undefined,
+        emailCirurgiao: formData.emailCirurgiao || undefined,
+        telefoneCirurgiao: formData.telefoneCirurgiao || undefined
+      })
+      
+      // Mostrar modal de sucesso
+      console.log('✅ Procedimento salvo com sucesso! Mostrando modal...')
+      setShowSuccessModal(true)
+    } catch (error: any) {
+      console.error('❌ ERRO AO SALVAR PROCEDIMENTO:', error)
+      console.error('📋 Detalhes do erro:', {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+        error: error
+      })
       
       // Mensagens de erro mais específicas baseadas no tipo de erro
       if (error instanceof Error) {
@@ -1628,7 +1731,37 @@ export default function NovoProcedimento() {
                 </CardTitle>
               </CardHeader>
               <div className="p-6 space-y-6">
-                {/* Status do Pagamento - Primeiro item */}
+                {/* Secretaria Responsável - Primeiro item */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Adicionar Secretária *
+                  </label>
+                  <select
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    value={formData.secretariaId}
+                    onChange={(e) => {
+                      if (e.target.value === 'new') {
+                        // Abrir modal de cadastro de secretária
+                        setShowSecretariaModal(true)
+                      } else {
+                        updateFormData('secretariaId', e.target.value)
+                      }
+                    }}
+                  >
+                    <option value="">Nenhum</option>
+                    {secretaria && (
+                      <option value={secretaria.id}>{secretaria.nome} (Secretária)</option>
+                    )}
+                    <option value="new">+ Vincular Nova Secretária</option>
+                  </select>
+                  {secretaria && formData.secretariaId === secretaria.id && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      Secretaria vinculada: {secretaria.nome} ({secretaria.email})
+                    </p>
+                  )}
+                </div>
+
+                {/* Status do Pagamento */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Status do Pagamento
@@ -1862,26 +1995,6 @@ export default function NovoProcedimento() {
                 )}
 
                 {/* Campo Secretaria */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Secretaria Responsável
-                  </label>
-                  <select
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                    value={formData.secretariaId}
-                    onChange={(e) => updateFormData('secretariaId', e.target.value)}
-                  >
-                    <option value="">Nenhuma secretaria</option>
-                    {secretaria && (
-                      <option value={secretaria.id}>{secretaria.nome}</option>
-                    )}
-                  </select>
-                  {secretaria && (
-                    <p className="text-sm text-gray-600 mt-1">
-                      Secretaria vinculada: {secretaria.nome} ({secretaria.email})
-                    </p>
-                  )}
-                </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2158,6 +2271,101 @@ export default function NovoProcedimento() {
                   Ir para Lista de Procedimentos
                 </Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Cadastro de Secretária */}
+      {showSecretariaModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-teal-200 bg-teal-50">
+              <h3 className="text-lg font-semibold text-teal-800">Vincular Nova Secretária</h3>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowSecretariaModal(false)}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nome da Secretária *
+                </label>
+                <input
+                  type="text"
+                  id="secretariaNome"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  placeholder="Nome completo da secretária"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  id="secretariaEmail"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  placeholder="email@exemplo.com"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Telefone
+                </label>
+                <input
+                  type="tel"
+                  id="secretariaTelefone"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  placeholder="(11) 99999-9999"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 p-6 border-t border-teal-200">
+              <Button 
+                variant="outline"
+                onClick={() => setShowSecretariaModal(false)}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                onClick={async () => {
+                  const nome = (document.getElementById('secretariaNome') as HTMLInputElement)?.value
+                  const email = (document.getElementById('secretariaEmail') as HTMLInputElement)?.value
+                  const telefone = (document.getElementById('secretariaTelefone') as HTMLInputElement)?.value
+                  
+                  if (!nome || !email) {
+                    alert('Nome e email são obrigatórios')
+                    return
+                  }
+                  
+                  const result = await linkSecretaria(email, nome, telefone)
+                  if (result.success) {
+                    setShowSecretariaModal(false)
+                    // Atualizar o campo de secretária no formulário
+                    if (secretaria) {
+                      updateFormData('secretariaId', secretaria.id)
+                    }
+                    // Se for nova secretaria, informar sobre senha temporária
+                    if (result.isNew) {
+                      alert('Secretaria vinculada com sucesso! Uma senha temporária foi gerada. Verifique o console (F12) para ver a senha temporária.')
+                    }
+                  } else {
+                    alert('Erro ao vincular secretária. Verifique se o email está correto e tente novamente.')
+                  }
+                }}
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+              >
+                Vincular Secretária
+              </Button>
             </div>
           </div>
         </div>

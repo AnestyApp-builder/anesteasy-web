@@ -9,7 +9,7 @@ interface SecretariaContextType {
   notifications: Notification[]
   unreadNotifications: number
   isLoading: boolean
-  linkSecretaria: (email: string, nome?: string, telefone?: string) => Promise<boolean>
+  linkSecretaria: (email: string, nome?: string, telefone?: string) => Promise<{ success: boolean; isNew?: boolean }>
   unlinkSecretaria: () => Promise<boolean>
   refreshSecretaria: () => Promise<void>
   refreshNotifications: () => Promise<void>
@@ -62,22 +62,35 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
   }
 
   // Vincular secretaria
-  const linkSecretaria = async (email: string, nome?: string, telefone?: string): Promise<boolean> => {
-    if (!user) return false
+  const linkSecretaria = async (email: string, nome?: string, telefone?: string): Promise<{ success: boolean; isNew?: boolean }> => {
+    console.log('🎯 [CONTEXT] linkSecretaria chamado')
+    console.log('📧 Email:', email)
+    console.log('👤 Nome:', nome)
+    
+    if (!user) {
+      console.error('❌ [CONTEXT] Usuário não autenticado')
+      return { success: false }
+    }
 
     try {
+      console.log('🔄 [CONTEXT] Chamando secretariaService.createOrLinkSecretaria...')
       setIsLoading(true)
       const result = await secretariaService.createOrLinkSecretaria(user.id, email, nome, telefone)
       
+      console.log('📦 [CONTEXT] Resultado recebido:', result)
+      
       if (result) {
+        console.log('✅ [CONTEXT] Secretária vinculada com sucesso!')
+        console.log('📋 [CONTEXT] É nova?', result.isNew)
         setSecretaria(result.secretaria)
-        return true
+        return { success: true, isNew: result.isNew }
       }
       
-      return false
+      console.error('❌ [CONTEXT] Resultado vazio')
+      return { success: false }
     } catch (error) {
-      
-      return false
+      console.error('❌ [CONTEXT] Erro ao vincular secretaria:', error)
+      return { success: false }
     } finally {
       setIsLoading(false)
     }
