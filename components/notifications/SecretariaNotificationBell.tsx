@@ -11,7 +11,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 export function SecretariaNotificationBell() {
-  const { notifications, unreadCount, markAsRead, markAllAsRead, isLoading } = useSecretariaNotifications()
+  const { notifications, linkRequests, unreadCount, markAsRead, markAllAsRead, isLoading } = useSecretariaNotifications()
   const [isOpen, setIsOpen] = useState(false)
   
   // Debug: log das notificações
@@ -21,7 +21,7 @@ export function SecretariaNotificationBell() {
     console.log('🔔 [NOTIFICATION BELL] Carregando:', isLoading)
   }, [notifications, unreadCount, isLoading])
 
-  const handleAcceptLink = async (notificationId: string, anestesistaId: string) => {
+  const handleAcceptLink = async (requestId: string, anestesistaId?: string) => {
     try {
       // Obter token de autenticação
       const { data: { session } } = await supabase.auth.getSession()
@@ -39,7 +39,7 @@ export function SecretariaNotificationBell() {
           'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          notificationId,
+          requestId,
           anestesistaId
         })
       })
@@ -47,10 +47,14 @@ export function SecretariaNotificationBell() {
       const data = await response.json()
 
       if (data.success) {
-        await markAsRead(notificationId)
-        // Recarregar página para atualizar anestesistas vinculados
+        // Recarregar página para atualizar anestesistas vinculados e notificações
         if (!data.alreadyLinked) {
           window.location.reload()
+        } else {
+          // Recarregar apenas as notificações
+          setTimeout(() => {
+            window.location.reload()
+          }, 1000)
         }
       } else {
         alert(data.error || 'Erro ao aceitar vinculação')
@@ -61,7 +65,7 @@ export function SecretariaNotificationBell() {
     }
   }
 
-  const handleRejectLink = async (notificationId: string) => {
+  const handleRejectLink = async (requestId: string) => {
     try {
       // Obter token de autenticação
       const { data: { session } } = await supabase.auth.getSession()
@@ -79,14 +83,17 @@ export function SecretariaNotificationBell() {
           'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          notificationId
+          requestId
         })
       })
 
       const data = await response.json()
 
       if (data.success) {
-        await markAsRead(notificationId)
+        // Recarregar notificações
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
       } else {
         alert(data.error || 'Erro ao recusar vinculação')
       }
@@ -149,13 +156,60 @@ export function SecretariaNotificationBell() {
             </div>
 
             <div className="flex-1 overflow-y-auto min-h-0">
-              {notifications.length === 0 ? (
+              {notifications.length === 0 && linkRequests.length === 0 ? (
                 <div className="p-8 text-center text-gray-500">
                   <Bell className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                   <p className="text-sm">Nenhuma notificação</p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-200">
+                  {/* Solicitações de vinculação pendentes */}
+                  {linkRequests.map((request) => (
+                    <div
+                      key={request.id}
+                      className={`p-3 sm:p-4 hover:bg-gray-50 transition-colors ${
+                        !request.is_read ? 'bg-blue-50/50' : ''
+                      }`}
+                    >
+                      <div className="flex items-start space-x-2 sm:space-x-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className={`text-sm font-medium break-words ${
+                              !request.is_read ? 'text-gray-900' : 'text-gray-700'
+                            }`}>
+                              Solicitação de Vinculação
+                            </h4>
+                            {!request.is_read && (
+                              <div className="w-2 h-2 bg-teal-500 rounded-full flex-shrink-0"></div>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 mt-1 break-words">
+                            <strong>{request.anestesista_name}</strong> ({request.anestesista_email}) deseja vincular você como secretária.
+                          </p>
+                          <p className="text-xs text-gray-500 mt-2">
+                            {request.created_at && formatDistanceToNow(new Date(request.created_at), {
+                              addSuffix: true,
+                              locale: ptBR
+                            })}
+                          </p>
+                          
+                          {/* Botões de ação */}
+                          {!request.is_read && (
+                            <div className="mt-3">
+                              <LinkRequestActions 
+                                notificationId={request.requestId}
+                                anestesistaId={request.anestesista_id}
+                                onAccept={(requestId) => handleAcceptLink(requestId, request.anestesista_id)}
+                                onReject={(requestId) => handleRejectLink(requestId)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Notificações reais */}
                   {notifications.map((notification) => (
                     <div
                       key={notification.id}

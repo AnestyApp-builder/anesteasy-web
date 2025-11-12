@@ -41,10 +41,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
       secretariaId,
       {
-        password: newPassword,
-        user_metadata: {
-          mustChangePassword: true // Marcar que precisa trocar senha
-        }
+        password: newPassword
       }
     )
 

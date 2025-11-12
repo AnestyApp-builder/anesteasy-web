@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { 
   Settings, 
   User, 
-  Bell, 
   Shield, 
   Palette,
   Database,
@@ -43,11 +42,7 @@ export default function Configuracoes() {
     phone: '',
     gender: ''
   })
-  const [secretariaForm, setSecretariaForm] = useState({
-    email: '',
-    nome: '',
-    telefone: ''
-  })
+  const [secretariaEmail, setSecretariaEmail] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [isLinkingSecretaria, setIsLinkingSecretaria] = useState(false)
   const [showSecretariaForm, setShowSecretariaForm] = useState(false)
@@ -384,10 +379,18 @@ export default function Configuracoes() {
     }
   }
 
-  // Função para gerar link de convite de secretária
-  const handleGenerateInvite = async () => {
-    if (!secretariaForm.email.trim()) {
+  // Função para vincular secretária por email
+  const handleLinkSecretaria = async () => {
+    if (!secretariaEmail.trim()) {
       setFeedbackMessage({ type: 'error', message: 'Email é obrigatório.' })
+      setTimeout(() => setFeedbackMessage(null), 3000)
+      return
+    }
+
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(secretariaEmail.trim())) {
+      setFeedbackMessage({ type: 'error', message: 'Email inválido.' })
       setTimeout(() => setFeedbackMessage(null), 3000)
       return
     }
@@ -408,82 +411,104 @@ export default function Configuracoes() {
         return
       }
 
-      const response = await fetch('/api/secretaria/generate-invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          email: secretariaForm.email.trim()
+      // Verificar se o email é anestesista
+      const { data: existingAnestesista } = await supabase
+        .from('users')
+        .select('email')
+        .eq('email', secretariaEmail.trim().toLowerCase())
+        .maybeSingle()
+
+      if (existingAnestesista) {
+        setFeedbackMessage({ 
+          type: 'error', 
+          message: 'Este email já está cadastrado como anestesista. Um email de anestesista não pode ser usado como secretária.' 
         })
-      })
+        setTimeout(() => setFeedbackMessage(null), 5000)
+        setIsLinkingSecretaria(false)
+        return
+      }
 
-      const data = await response.json()
+      // Verificar se o email é secretária
+      const { data: existingSecretaria } = await supabase
+        .from('secretarias')
+        .select('id, email, nome')
+        .eq('email', secretariaEmail.trim().toLowerCase())
+        .maybeSingle()
 
-      if (data.success) {
-        if (data.exists) {
-          // Secretária já existe - notificação foi criada
+      if (existingSecretaria) {
+        // Secretária existe - criar solicitação de vinculação
+        const response = await fetch('/api/secretaria/generate-invite', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            email: secretariaEmail.trim()
+          })
+        })
+
+        const data = await response.json()
+
+        if (data.success && data.exists) {
           setFeedbackMessage({ 
             type: 'success', 
-            message: `Secretária já cadastrada! Uma notificação foi enviada para ${data.secretaria.email}.` 
+            message: `Solicitação de vinculação enviada para ${data.secretaria.email}. Aguarde a confirmação da secretária.` 
           })
-          setSecretariaForm({ email: '', nome: '', telefone: '' })
+          setSecretariaEmail('')
           setShowSecretariaForm(false)
           
-          // Forçar recarregamento das solicitações pendentes após criar notificação
-          // Isso vai buscar tanto link_requests quanto invites
-          setTimeout(() => {
-            // O useEffect vai recarregar automaticamente via realtime
-            // Mas forçamos um reload manual também
-            if (user && !secretaria) {
-              // Recarregar será feito pelo useEffect
-            }
-          }, 1500)
-        } else {
-          // Nova secretária - mostrar modal com link
-          setInviteLink(data.invite.inviteUrl)
-          setInviteEmail(data.invite.email)
-          setShowInviteModal(true)
-          setShowSecretariaForm(false)
-          
-          // Atualizar estado com convite pendente
-          setTimeout(async () => {
-            if (user && !secretaria) {
-              try {
-                const { data: invitesData } = await supabase
-                  .from('secretaria_invites')
-                  .select('id, email, created_at')
-                  .eq('anestesista_id', user.id)
-                  .is('used_at', null)
-                  .gt('expires_at', new Date().toISOString())
-                  .order('created_at', { ascending: false })
-                  .limit(1)
+          // Recarregar solicitações pendentes manualmente
+          if (user && !secretaria) {
+            try {
+              // Buscar solicitações de vinculação
+              const { data: requestsData } = await supabase
+                .from('secretaria_link_requests')
+                .select('id, secretaria_id, created_at')
+                .eq('anestesista_id', user.id)
+                .eq('status', 'pending')
+                .order('created_at', { ascending: false })
+                .limit(1)
 
-                if (invitesData && invitesData.length > 0) {
-                  const invite = invitesData[0]
+              if (requestsData && requestsData.length > 0) {
+                const request = requestsData[0]
+                const { data: secretariaData } = await supabase
+                  .from('secretarias')
+                  .select('id, email, nome')
+                  .eq('id', request.secretaria_id)
+                  .single()
+
+                if (secretariaData) {
                   setPendingRequest({
-                    id: invite.id,
-                    secretaria_email: invite.email || '',
-                    created_at: invite.created_at || '',
-                    type: 'invite'
+                    id: request.id,
+                    secretaria_id: request.secretaria_id,
+                    secretaria_email: secretariaData.email || '',
+                    secretaria_nome: secretariaData.nome || '',
+                    created_at: request.created_at || '',
+                    type: 'link_request'
                   })
-                  console.log('✅ [CONFIG] Convite pendente atualizado após gerar link')
+                  console.log('✅ [CONFIG] Card de pendência atualizado após criar solicitação')
                 }
-              } catch (error) {
-                console.error('Erro ao atualizar convite pendente:', error)
               }
+            } catch (error) {
+              console.error('Erro ao recarregar solicitações pendentes:', error)
             }
-          }, 1000)
+          }
+        } else {
+          setFeedbackMessage({ type: 'error', message: data.error || 'Erro ao criar solicitação de vinculação.' })
         }
         setTimeout(() => setFeedbackMessage(null), 6000)
       } else {
-        setFeedbackMessage({ type: 'error', message: data.error || 'Erro ao gerar link de convite.' })
+        // Email não existe em nenhuma tabela
+        setFeedbackMessage({ 
+          type: 'error', 
+          message: 'Não existe secretária cadastrada com este email. Verifique o email e tente novamente.' 
+        })
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('Erro ao gerar convite:', error)
-      setFeedbackMessage({ type: 'error', message: 'Erro ao gerar link de convite. Tente novamente.' })
+      console.error('Erro ao vincular secretária:', error)
+      setFeedbackMessage({ type: 'error', message: 'Erro ao vincular secretária. Tente novamente.' })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
       setIsLinkingSecretaria(false)
@@ -842,11 +867,14 @@ export default function Configuracoes() {
               {showSecretariaForm && (
                 <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
                   <div className="flex items-center justify-between">
-                    <h4 className="font-medium">Vincular Nova Secretaria</h4>
+                    <h4 className="font-medium">Vincular Secretaria</h4>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setShowSecretariaForm(false)}
+                      onClick={() => {
+                        setShowSecretariaForm(false)
+                        setSecretariaEmail('')
+                      }}
                     >
                       <X className="w-4 h-4" />
                     </Button>
@@ -854,37 +882,27 @@ export default function Configuracoes() {
                   
                   <Input
                     label="Email da Secretaria *"
-                    value={secretariaForm.email}
-                    onChange={(e) => setSecretariaForm(prev => ({ ...prev, email: e.target.value }))}
+                    value={secretariaEmail}
+                    onChange={(e) => setSecretariaEmail(e.target.value)}
                     type="email"
                     placeholder="secretaria@exemplo.com"
-                  />
-                  
-                  <Input
-                    label="Nome (opcional)"
-                    value={secretariaForm.nome}
-                    onChange={(e) => setSecretariaForm(prev => ({ ...prev, nome: e.target.value }))}
-                    placeholder="Nome da secretaria"
-                  />
-                  
-                  <Input
-                    label="Telefone (opcional)"
-                    value={secretariaForm.telefone}
-                    onChange={(e) => setSecretariaForm(prev => ({ ...prev, telefone: e.target.value }))}
-                    placeholder="(11) 99999-9999"
+                    icon={<Mail className="w-5 h-5" />}
                   />
                   
                   <div className="flex space-x-2">
                     <Button
-                      onClick={handleGenerateInvite}
-                      disabled={isLinkingSecretaria || !secretariaForm.email.trim()}
+                      onClick={handleLinkSecretaria}
+                      disabled={isLinkingSecretaria || !secretariaEmail.trim()}
                       className="flex-1"
                     >
-                      {isLinkingSecretaria ? 'Gerando link...' : 'Gerar Link de Cadastro'}
+                      {isLinkingSecretaria ? 'Enviando solicitação...' : 'Vincular Secretaria'}
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => setShowSecretariaForm(false)}
+                      onClick={() => {
+                        setShowSecretariaForm(false)
+                        setSecretariaEmail('')
+                      }}
                       className="flex-1"
                     >
                       Cancelar
@@ -892,8 +910,8 @@ export default function Configuracoes() {
                   </div>
                   
                   <p className="text-xs text-gray-600">
-                    Um link de cadastro será gerado para a secretária. 
-                    Se ela já estiver cadastrada, receberá uma notificação no dashboard.
+                    Digite o email da secretária que deseja vincular. 
+                    Se ela já estiver cadastrada, receberá uma notificação para aceitar a vinculação.
                   </p>
                 </div>
               )}
@@ -959,39 +977,6 @@ export default function Configuracoes() {
               >
                 {isSaving ? 'Salvando...' : 'Salvar Alterações'}
               </Button>
-            </div>
-          </Card>
-
-          {/* Notification Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Bell className="w-5 h-5 mr-2" />
-                Notificações
-              </CardTitle>
-            </CardHeader>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Email de procedimentos</p>
-                  <p className="text-sm text-gray-600">Receber notificações por email</p>
-                </div>
-                <input type="checkbox" defaultChecked className="h-4 w-4 text-primary-600" />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Lembretes de pagamento</p>
-                  <p className="text-sm text-gray-600">Notificações de pagamentos pendentes</p>
-                </div>
-                <input type="checkbox" defaultChecked className="h-4 w-4 text-primary-600" />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Relatórios semanais</p>
-                  <p className="text-sm text-gray-600">Resumo semanal por email</p>
-                </div>
-                <input type="checkbox" className="h-4 w-4 text-primary-600" />
-              </div>
             </div>
           </Card>
 

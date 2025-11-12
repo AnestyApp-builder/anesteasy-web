@@ -13,7 +13,11 @@ import {
   Eye,
   EyeOff,
   Save,
-  LogOut
+  LogOut,
+  Users,
+  Clock,
+  CheckCircle2,
+  X
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -42,6 +46,15 @@ export default function SecretariaConfiguracoes() {
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
+  const [pendingRequests, setPendingRequests] = useState<Array<{
+    id: string
+    anestesista_id: string
+    anestesista_name: string
+    anestesista_email: string
+    created_at: string
+  }>>([])
+  const [isLoadingRequests, setIsLoadingRequests] = useState(true)
+  const [isProcessingRequest, setIsProcessingRequest] = useState<string | null>(null)
 
   // Carregar dados da secretária
   useEffect(() => {
@@ -60,6 +73,80 @@ export default function SecretariaConfiguracoes() {
       router.push('/secretaria/login')
     }
   }, [authLoading, secretaria, router])
+
+  // Carregar solicitações pendentes
+  useEffect(() => {
+    const loadPendingRequests = async () => {
+      if (!secretaria) {
+        setPendingRequests([])
+        setIsLoadingRequests(false)
+        return
+      }
+
+      setIsLoadingRequests(true)
+      try {
+        const { data: requestsData, error: requestsError } = await supabase
+          .from('secretaria_link_requests')
+          .select(`
+            id,
+            anestesista_id,
+            created_at,
+            users (
+              id,
+              name,
+              email
+            )
+          `)
+          .eq('secretaria_id', secretaria.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+
+        if (requestsError) {
+          console.error('Erro ao carregar solicitações:', requestsError)
+          setPendingRequests([])
+        } else {
+          const formattedRequests = (requestsData || []).map((req: any) => ({
+            id: req.id,
+            anestesista_id: req.anestesista_id,
+            anestesista_name: req.users?.name || 'Nome não disponível',
+            anestesista_email: req.users?.email || 'Email não disponível',
+            created_at: req.created_at || ''
+          }))
+          setPendingRequests(formattedRequests)
+        }
+      } catch (error) {
+        console.error('Erro ao carregar solicitações:', error)
+        setPendingRequests([])
+      } finally {
+        setIsLoadingRequests(false)
+      }
+    }
+
+    loadPendingRequests()
+
+    // Escutar mudanças em tempo real
+    if (secretaria) {
+      const channel = supabase
+        .channel(`link_requests:${secretaria.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'secretaria_link_requests',
+            filter: `secretaria_id=eq.${secretaria.id}`
+          },
+          () => {
+            loadPendingRequests()
+          }
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [secretaria])
 
   const handleSaveProfile = async () => {
     if (!secretaria) return
@@ -141,6 +228,116 @@ export default function SecretariaConfiguracoes() {
       })
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleAcceptRequest = async (requestId: string) => {
+    if (!secretaria) return
+
+    setIsProcessingRequest(requestId)
+    setFeedbackMessage(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        setFeedbackMessage({
+          type: 'error',
+          message: 'Sessão expirada. Faça login novamente.'
+        })
+        return
+      }
+
+      const response = await fetch('/api/secretaria/accept-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ requestId })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setFeedbackMessage({
+          type: 'success',
+          message: data.message || 'Solicitação aceita com sucesso!'
+        })
+        // Recarregar solicitações
+        setTimeout(() => {
+          window.location.reload()
+        }, 1500)
+      } else {
+        setFeedbackMessage({
+          type: 'error',
+          message: data.error || 'Erro ao aceitar solicitação.'
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao aceitar solicitação:', error)
+      setFeedbackMessage({
+        type: 'error',
+        message: 'Erro ao aceitar solicitação. Tente novamente.'
+      })
+    } finally {
+      setIsProcessingRequest(null)
+    }
+  }
+
+  const handleRejectRequest = async (requestId: string) => {
+    if (!secretaria) return
+
+    setIsProcessingRequest(requestId)
+    setFeedbackMessage(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        setFeedbackMessage({
+          type: 'error',
+          message: 'Sessão expirada. Faça login novamente.'
+        })
+        return
+      }
+
+      const response = await fetch('/api/secretaria/reject-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ requestId })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setFeedbackMessage({
+          type: 'success',
+          message: data.message || 'Solicitação recusada.'
+        })
+        // Recarregar solicitações
+        setTimeout(() => {
+          window.location.reload()
+        }, 1500)
+      } else {
+        setFeedbackMessage({
+          type: 'error',
+          message: data.error || 'Erro ao recusar solicitação.'
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao recusar solicitação:', error)
+      setFeedbackMessage({
+        type: 'error',
+        message: 'Erro ao recusar solicitação. Tente novamente.'
+      })
+    } finally {
+      setIsProcessingRequest(null)
     }
   }
 
@@ -303,6 +500,65 @@ export default function SecretariaConfiguracoes() {
         )}
 
         <div className="space-y-6">
+          {/* Solicitações Pendentes */}
+          {pendingRequests.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 flex items-center">
+                  <Clock className="w-5 h-5 mr-2 text-teal-600" />
+                  Solicitações de Vinculação
+                </CardTitle>
+              </CardHeader>
+              <div className="p-6 space-y-4">
+                {pendingRequests.map((request) => (
+                  <div key={request.id} className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-yellow-900 mb-2">
+                          {request.anestesista_name}
+                        </h3>
+                        <div className="flex items-center text-sm text-yellow-800 mb-3">
+                          <Mail className="w-4 h-4 mr-1" />
+                          {request.anestesista_email}
+                        </div>
+                        <p className="text-xs text-yellow-700">
+                          Deseja vincular você como secretária
+                        </p>
+                      </div>
+                      <div className="flex space-x-2 ml-4">
+                        <Button
+                          size="sm"
+                          onClick={() => handleAcceptRequest(request.id)}
+                          disabled={isProcessingRequest === request.id}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          {isProcessingRequest === request.id ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4" />
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRejectRequest(request.id)}
+                          disabled={isProcessingRequest === request.id}
+                          className="border-red-300 text-red-600 hover:bg-red-50"
+                        >
+                          {isProcessingRequest === request.id ? (
+                            <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <X className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* Perfil */}
           <Card>
             <CardHeader>

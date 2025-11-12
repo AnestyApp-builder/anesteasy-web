@@ -23,8 +23,7 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
-  Users,
-  TestTube
+  Users
 } from 'lucide-react'
 import Link from 'next/link'
 import { Layout } from '@/components/layout/Layout'
@@ -232,10 +231,55 @@ export default function NovoProcedimento() {
   const [anestesiasFiltradas, setAnestesiasFiltradas] = useState(TIPOS_ANESTESIA)
   const [buscaAnestesia, setBuscaAnestesia] = useState('')
   const [showSecretariaModal, setShowSecretariaModal] = useState(false)
+  const [secretariasVinculadas, setSecretariasVinculadas] = useState<Array<{ id: string; nome: string; email: string }>>([])
 
-  // Definir secretaria automaticamente se houver uma vinculada
+  // Função para carregar secretárias vinculadas
+  const loadSecretarias = React.useCallback(async () => {
+    if (!user?.id) return
+
+    try {
+      const { data, error } = await supabase
+        .from('anestesista_secretaria')
+        .select(`
+          secretarias (
+            id,
+            nome,
+            email
+          )
+        `)
+        .eq('anestesista_id', user.id)
+
+      if (error) {
+        console.error('Erro ao carregar secretárias:', error)
+        return
+      }
+
+      const secretarias = (data || [])
+        .map(item => item.secretarias)
+        .filter(Boolean) as Array<{ id: string; nome: string; email: string }>
+      
+      setSecretariasVinculadas(secretarias)
+
+      // Se houver apenas uma secretária vinculada, selecionar automaticamente
+      if (secretarias.length === 1 && !formData.secretariaId) {
+        setFormData(prev => ({
+          ...prev,
+          secretariaId: secretarias[0].id
+        }))
+      }
+    } catch (error) {
+      console.error('Erro ao carregar secretárias:', error)
+    }
+  }, [user?.id, formData.secretariaId])
+
+  // Buscar todas as secretárias vinculadas ao anestesista
   useEffect(() => {
-    if (secretaria) {
+    loadSecretarias()
+  }, [loadSecretarias])
+
+  // Definir secretaria automaticamente se houver uma vinculada (compatibilidade com código antigo)
+  useEffect(() => {
+    if (secretaria && !formData.secretariaId) {
       setFormData(prev => ({
         ...prev,
         secretariaId: secretaria.id
@@ -329,68 +373,6 @@ export default function NovoProcedimento() {
     setAnestesiasFiltradas(TIPOS_ANESTESIA)
   }
 
-  // Função para preencher automaticamente todos os campos (botão Teste)
-  const preencherCamposTeste = () => {
-    const dataTeste = {
-      // 1. Identificação do Procedimento
-      nomePaciente: 'Maria Silva Santos',
-      dataNascimento: '1985-03-15',
-      convenio: 'Unimed',
-      carteirinha: '123456789',
-      tipoProcedimento: 'Cesariana',
-      tecnicaAnestesica: 'Raquianestesia',
-      codigoTSSU: '30701028',
-      especialidadeCirurgiao: 'Ginecologia',
-      nomeCirurgiao: 'Dr. João Carlos Oliveira',
-      nomeEquipe: 'Equipe Obstétrica Alpha',
-      hospital: 'Hospital São Lucas',
-      
-      // 2. Dados do Procedimento (obstétrico)
-      acompanhamentoAntes: 'Sim',
-      tipoParto: 'Cesariana',
-      tipoCesariana: 'Nova Ráqui',
-      indicacaoCesariana: 'Sim',
-      descricaoIndicacaoCesariana: 'Falha de progressão do trabalho de parto após 12 horas',
-      retencaoPlacenta: 'Não',
-      laceracaoPresente: 'Não',
-      grauLaceracao: '',
-      hemorragiaPuerperal: 'Não',
-      transfusaoRealizada: '',
-      
-      // Campos para procedimentos não-obstétricos (também preenchidos para teste)
-      sangramento: 'Não',
-      nauseaVomito: 'Não',
-      dor: 'Não',
-      observacoesProcedimento: 'Procedimento realizado sem intercorrências.',
-      
-      // Campos para relatório do cirurgião
-      enviarRelatorioCirurgiao: 'Sim',
-      emailCirurgiao: 'felipemakermoney@gmail.com',
-      telefoneCirurgiao: '349923878',
-      
-      // 3. Dados Administrativos
-      valor: '2500,00',
-      formaPagamento: 'À vista',
-      numero_parcelas: '',
-      parcelas_recebidas: '0',
-      parcelas: [],
-      statusPagamento: 'Pago',
-      secretariaId: secretaria?.id || '',
-      dataPagamento: new Date().toISOString().split('T')[0],
-      observacoes: 'Pagamento realizado via PIX. Convênio Unimed aprovado.',
-      
-      // 4. Upload de Fichas (mantém vazio)
-      fichas: []
-    }
-
-    // Aplicar todos os dados de teste
-    Object.entries(dataTeste).forEach(([key, value]) => {
-      updateFormData(key as keyof FormData, value)
-    })
-
-    // Mostrar feedback de sucesso
-    showFeedback('success', '✅ Todos os campos foram preenchidos automaticamente com dados de teste!')
-  }
 
   // Função para formatar valor monetário para exibição
   const formatValueForDisplay = (value: string) => {
@@ -641,7 +623,7 @@ export default function NovoProcedimento() {
         numero_parcelas: formData.numero_parcelas ? parseInt(formData.numero_parcelas) : undefined,
         parcelas_recebidas: formData.parcelas ? formData.parcelas.filter(p => p.recebida).length : 0,
         observacoes_financeiras: formData.observacoes,
-        secretaria_id: formData.secretariaId || undefined,
+        secretaria_id: formData.secretariaId && formData.secretariaId.trim() !== '' ? formData.secretariaId : null,
         user_id: user.id,
 
         // Campos de feedback
@@ -877,16 +859,6 @@ export default function NovoProcedimento() {
                   Voltar
                 </Button>
               </Link>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={preencherCamposTeste}
-                className="text-sm bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
-              >
-                <TestTube className="w-4 h-4 mr-2" />
-                Teste
-              </Button>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
               Novo Procedimento Anestésico
@@ -1749,14 +1721,21 @@ export default function NovoProcedimento() {
                     }}
                   >
                     <option value="">Nenhum</option>
-                    {secretaria && (
-                      <option value={secretaria.id}>{secretaria.nome} (Secretária)</option>
-                    )}
+                    {secretariasVinculadas.map((sec) => (
+                      <option key={sec.id} value={sec.id}>
+                        {sec.nome} ({sec.email})
+                      </option>
+                    ))}
                     <option value="new">+ Vincular Nova Secretária</option>
                   </select>
-                  {secretaria && formData.secretariaId === secretaria.id && (
+                  {formData.secretariaId && formData.secretariaId !== 'new' && (
                     <p className="text-sm text-gray-600 mt-1">
-                      Secretaria vinculada: {secretaria.nome} ({secretaria.email})
+                      {(() => {
+                        const selected = secretariasVinculadas.find(s => s.id === formData.secretariaId)
+                        return selected 
+                          ? `Secretária vinculada: ${selected.nome} (${selected.email})`
+                          : 'Secretária selecionada'
+                      })()}
                     </p>
                   )}
                 </div>
@@ -2349,11 +2328,9 @@ export default function NovoProcedimento() {
                   
                   const result = await linkSecretaria(email, nome, telefone)
                   if (result.success) {
+                    // Recarregar lista de secretárias vinculadas
+                    await loadSecretarias()
                     setShowSecretariaModal(false)
-                    // Atualizar o campo de secretária no formulário
-                    if (secretaria) {
-                      updateFormData('secretariaId', secretaria.id)
-                    }
                     // Se for nova secretaria, informar sobre senha temporária
                     if (result.isNew) {
                       alert('Secretaria vinculada com sucesso! Uma senha temporária foi gerada. Verifique o console (F12) para ver a senha temporária.')

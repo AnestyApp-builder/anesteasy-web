@@ -36,6 +36,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, handleButtonPress, handleCardPress } from '@/lib/utils'
 import { Loading } from '@/components/ui/Loading'
 import { isImageFile } from '@/lib/mime-utils'
+import { supabase } from '@/lib/supabase'
 
 // Componente de campo editável - Memoizado para evitar re-renders
 const EditField = memo(({ 
@@ -192,6 +193,7 @@ export default function Procedimentos() {
   const [dateFilter, setDateFilter] = useState<{start: string, end: string} | null>(null)
   const [feedbackStatuses, setFeedbackStatuses] = useState<Record<string, {linkCriado: boolean, respondido: boolean}>>({})
   const [selectedProcedureFeedback, setSelectedProcedureFeedback] = useState<any>(null)
+  const [secretariasVinculadas, setSecretariasVinculadas] = useState<Array<{ id: string; nome: string; email: string }>>([])
   const { user } = useAuth()
 
   useEffect(() => {
@@ -378,7 +380,11 @@ export default function Procedimentos() {
   }
 
   const handleProcedureClick = async (procedure: Procedure) => {
-    setSelectedProcedure(procedure)
+    // Buscar o procedimento completo com secretaria_id do banco
+    const fullProcedure = await procedureService.getProcedureById(procedure.id)
+    const procedureWithSecretaria = fullProcedure || procedure
+    
+    setSelectedProcedure(procedureWithSecretaria as Procedure)
     setShowDetailsModal(true)
     
     // Carregar parcelas se o procedimento for parcelado
@@ -394,16 +400,43 @@ export default function Procedimentos() {
     setAttachments(attachmentsData)
 
     // Carregar dados do feedback se o procedimento tiver feedback solicitado
-    if (procedure.feedback_solicitado) {
-      try {
-        const feedbackData = await feedbackService.getFeedbackByProcedureId(procedure.id)
-        setSelectedProcedureFeedback(feedbackData)
-      } catch (error) {
-        console.error('Erro ao carregar feedback:', error)
-        setSelectedProcedureFeedback(null)
-      }
-    } else {
+    // Sempre tentar carregar, mesmo que feedback_solicitado seja false, para verificar se há resposta
+    try {
+      const feedbackData = await feedbackService.getFeedbackByProcedureId(procedureWithSecretaria.id)
+      console.log('🔍 [FEEDBACK] Dados carregados:', feedbackData)
+      setSelectedProcedureFeedback(feedbackData)
+    } catch (error) {
+      console.error('❌ [FEEDBACK] Erro ao carregar feedback:', error)
       setSelectedProcedureFeedback(null)
+    }
+
+    // Carregar secretárias vinculadas ao anestesista
+    if (user?.id) {
+      try {
+        const { data, error } = await supabase
+          .from('anestesista_secretaria')
+          .select(`
+            secretarias (
+              id,
+              nome,
+              email
+            )
+          `)
+          .eq('anestesista_id', user.id)
+
+        if (error) {
+          console.error('Erro ao carregar secretárias:', error)
+          setSecretariasVinculadas([])
+        } else {
+          const secretarias = (data || [])
+            .map(item => item.secretarias)
+            .filter(Boolean) as Array<{ id: string; nome: string; email: string }>
+          setSecretariasVinculadas(secretarias)
+        }
+      } catch (error) {
+        console.error('Erro ao carregar secretárias:', error)
+        setSecretariasVinculadas([])
+      }
     }
   }
 
@@ -422,7 +455,12 @@ export default function Procedimentos() {
   // Funções de edição
   const startEdit = async () => {
     setIsEditingMode(true)
-    setEditFormData({ ...selectedProcedure })
+    const secretariaId = (selectedProcedure as any).secretaria_id || null
+    
+    setEditFormData({
+      ...selectedProcedure,
+      secretaria_id: secretariaId || ''
+    })
     
     // Carregar parcelas se o procedimento for parcelado
     if (selectedProcedure && (selectedProcedure.payment_method === 'Parcelado' || selectedProcedure.forma_pagamento === 'Parcelado')) {
@@ -437,7 +475,12 @@ export default function Procedimentos() {
   // Inicializar editFormData quando entrar no modo de edição
   useEffect(() => {
     if (isEditingMode && selectedProcedure) {
-      setEditFormData(selectedProcedure) // clona os dados originais
+      const secretariaId = (selectedProcedure as any).secretaria_id || null
+      
+      setEditFormData({
+        ...selectedProcedure,
+        secretaria_id: secretariaId || ''
+      }) // clona os dados originais
       
       // Carregar parcelas se o procedimento for parcelado
       if (selectedProcedure.payment_method === 'Parcelado' || selectedProcedure.forma_pagamento === 'Parcelado') {
@@ -569,6 +612,14 @@ export default function Procedimentos() {
     
     try {
       const { id, user_id, created_at, updated_at, parcelas, ...updateData } = editFormData
+      
+      // Garantir que secretaria_id seja null se estiver vazio
+      if (updateData.secretaria_id !== undefined) {
+        updateData.secretaria_id = updateData.secretaria_id && updateData.secretaria_id.trim() !== '' 
+          ? updateData.secretaria_id 
+          : null
+      }
+      
       const updatedProcedure = await procedureService.updateProcedure(selectedProcedure.id, updateData)
       
       if (updatedProcedure) {
@@ -1416,7 +1467,7 @@ export default function Procedimentos() {
                 </div>
 
                 {/* Seção de Respostas do Feedback */}
-                {selectedProcedure.feedback_solicitado && (
+                {(selectedProcedure.feedback_solicitado || selectedProcedureFeedback) && (
                   <div className="mt-6 pt-6 border-t border-purple-200">
                     <h4 className="text-lg font-semibold text-purple-800 mb-4 flex items-center">
                       <div className="w-6 h-6 bg-purple-100 rounded-lg flex items-center justify-center mr-2">
@@ -1444,12 +1495,6 @@ export default function Procedimentos() {
                             <p className="text-sm font-medium text-gray-700">Dor Lombar?</p>
                             <p className={`text-sm font-semibold ${selectedProcedureFeedback.dorLombar === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
                               {selectedProcedureFeedback.dorLombar}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-gray-700">Anemia/Transfusão?</p>
-                            <p className={`text-sm font-semibold ${selectedProcedureFeedback.anemiaTransfusao === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
-                              {selectedProcedureFeedback.anemiaTransfusao}
                             </p>
                           </div>
                         </div>
@@ -1776,6 +1821,41 @@ export default function Procedimentos() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">
+                      Secretária Vinculada
+                    </label>
+                    {isEditingMode ? (
+                      <select
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        value={editFormData.secretaria_id || (selectedProcedure as any).secretaria_id || ''}
+                        onChange={(e) => updateFormField('secretaria_id', e.target.value)}
+                      >
+                        <option value="">Nenhum</option>
+                        {secretariasVinculadas.map((sec) => (
+                          <option key={sec.id} value={sec.id}>
+                            {sec.nome} ({sec.email})
+                          </option>
+                        ))}
+                        {/* Mostrar secretária vinculada mesmo se não estiver na lista (caso tenha sido desvinculada) */}
+                        {(selectedProcedure as any).secretaria_id && 
+                         !secretariasVinculadas.find(s => s.id === (selectedProcedure as any).secretaria_id) && (
+                          <option value={(selectedProcedure as any).secretaria_id} disabled>
+                            Secretária vinculada (não disponível)
+                          </option>
+                        )}
+                      </select>
+                    ) : (
+                      <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        <span className="text-sm text-gray-600">
+                          {(selectedProcedure as any).secretaria_id ? (() => {
+                            const secretaria = secretariasVinculadas.find(s => s.id === (selectedProcedure as any).secretaria_id)
+                            return secretaria ? `${secretaria.nome} (${secretaria.email})` : 'Secretária vinculada'
+                          })() : 'Nenhuma secretária vinculada'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

@@ -412,18 +412,15 @@ export const authService = {
       }
 
       // Criar conta no Supabase Auth
-      // Marcar nos metadados que precisa trocar senha no primeiro login
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: 'https://anesteasy.com.br/auth/confirm?next=/secretaria/change-password&type=signup',
+          emailRedirectTo: 'https://anesteasy.com.br/auth/confirm?next=/secretaria/login&type=signup',
           data: {
             name: nome,
             phone: telefone || '',
-            role: 'secretaria',
-            mustChangePassword: true, // Marcar que precisa trocar senha
-            tempPassword: password // Salvar senha temporária nos metadados (será removida após troca)
+            role: 'secretaria'
           }
         }
       })

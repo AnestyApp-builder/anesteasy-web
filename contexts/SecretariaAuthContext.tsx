@@ -89,16 +89,8 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
 
         setSecretaria(secretariaData)
         
-        // Verificar se precisa trocar senha (primeiro login)
-        const mustChangePassword = data.user.user_metadata?.mustChangePassword === true
-        
-        if (mustChangePassword) {
-          // Redirecionar para página de troca de senha
-          router.push('/secretaria/change-password')
-        } else {
-          // Redirecionar para dashboard
-          router.push('/secretaria/dashboard')
-        }
+        // Redirecionar para dashboard
+        router.push('/secretaria/dashboard')
         
         return true
       }

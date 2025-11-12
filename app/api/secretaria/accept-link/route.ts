@@ -15,11 +15,11 @@ const supabaseAdmin = supabaseUrl && supabaseServiceKey
 
 export async function POST(request: NextRequest) {
   try {
-    const { anestesistaId, notificationId } = await request.json()
+    const { requestId, anestesistaId } = await request.json()
 
-    if (!anestesistaId || !notificationId) {
+    if (!requestId && !anestesistaId) {
       return NextResponse.json(
-        { success: false, error: 'anestesistaId e notificationId são obrigatórios' },
+        { success: false, error: 'requestId ou anestesistaId é obrigatório' },
         { status: 400 }
       )
     }
@@ -66,20 +66,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Se não tiver anestesistaId, buscar da solicitação
+    let finalAnestesistaId = anestesistaId
+    
+    if (!finalAnestesistaId && requestId) {
+      const { data: linkRequest } = await supabaseAdmin
+        .from('secretaria_link_requests')
+        .select('anestesista_id')
+        .eq('id', requestId)
+        .eq('secretaria_id', secretaria.id)
+        .eq('status', 'pending')
+        .single()
+      
+      if (!linkRequest) {
+        return NextResponse.json(
+          { success: false, error: 'Solicitação não encontrada ou já processada' },
+          { status: 404 }
+        )
+      }
+      
+      finalAnestesistaId = linkRequest.anestesista_id
+    }
+
     // Verificar se já existe vinculação
     const { data: existingLink } = await supabaseAdmin
       .from('anestesista_secretaria')
       .select('id')
-      .eq('anestesista_id', anestesistaId)
+      .eq('anestesista_id', finalAnestesistaId)
       .eq('secretaria_id', secretaria.id)
       .maybeSingle()
 
     if (existingLink) {
-      // Já está vinculado, apenas marcar notificação como lida
-      await supabaseAdmin
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notificationId)
+      // Já está vinculado, apenas atualizar status da solicitação
+      if (requestId) {
+        await supabaseAdmin
+          .from('secretaria_link_requests')
+          .update({ status: 'accepted' })
+          .eq('id', requestId)
+      }
 
       return NextResponse.json({
         success: true,
@@ -92,7 +116,7 @@ export async function POST(request: NextRequest) {
     const { error: linkError } = await supabaseAdmin
       .from('anestesista_secretaria')
       .insert({
-        anestesista_id: anestesistaId,
+        anestesista_id: finalAnestesistaId,
         secretaria_id: secretaria.id
       })
 
@@ -105,17 +129,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Atualizar status da solicitação
-    await supabaseAdmin
-      .from('secretaria_link_requests')
-      .update({ status: 'accepted' })
-      .eq('notification_id', notificationId)
-      .eq('status', 'pending')
-
-    // Marcar notificação como lida
-    await supabaseAdmin
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', notificationId)
+    if (requestId) {
+      await supabaseAdmin
+        .from('secretaria_link_requests')
+        .update({ status: 'accepted' })
+        .eq('id', requestId)
+        .eq('status', 'pending')
+    } else {
+      // Se não tiver requestId, atualizar por anestesista_id e secretaria_id
+      await supabaseAdmin
+        .from('secretaria_link_requests')
+        .update({ status: 'accepted' })
+        .eq('anestesista_id', finalAnestesistaId)
+        .eq('secretaria_id', secretaria.id)
+        .eq('status', 'pending')
+    }
 
     return NextResponse.json({
       success: true,

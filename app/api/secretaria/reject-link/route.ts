@@ -15,11 +15,11 @@ const supabaseAdmin = supabaseUrl && supabaseServiceKey
 
 export async function POST(request: NextRequest) {
   try {
-    const { notificationId } = await request.json()
+    const { requestId } = await request.json()
 
-    if (!notificationId) {
+    if (!requestId) {
       return NextResponse.json(
-        { success: false, error: 'notificationId é obrigatório' },
+        { success: false, error: 'requestId é obrigatório' },
         { status: 400 }
       )
     }
@@ -66,16 +66,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verificar se a notificação pertence à secretária
-    const { data: notification } = await supabaseAdmin
-      .from('notifications')
-      .select('id, user_id')
-      .eq('id', notificationId)
+    // Verificar se a solicitação pertence à secretária
+    const { data: linkRequest } = await supabaseAdmin
+      .from('secretaria_link_requests')
+      .select('id, secretaria_id')
+      .eq('id', requestId)
+      .eq('secretaria_id', secretaria.id)
+      .eq('status', 'pending')
       .single()
 
-    if (!notification || notification.user_id !== secretaria.id) {
+    if (!linkRequest) {
       return NextResponse.json(
-        { success: false, error: 'Notificação não encontrada' },
+        { success: false, error: 'Solicitação não encontrada ou já processada' },
         { status: 404 }
       )
     }
@@ -84,14 +86,8 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin
       .from('secretaria_link_requests')
       .update({ status: 'rejected' })
-      .eq('notification_id', notificationId)
+      .eq('id', requestId)
       .eq('status', 'pending')
-
-    // Marcar notificação como lida (recusada)
-    await supabaseAdmin
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', notificationId)
 
     return NextResponse.json({
       success: true,

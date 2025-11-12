@@ -6,8 +6,19 @@ import type { Tables } from '@/lib/supabase'
 
 type Notification = Tables<'notifications'>
 
+export interface LinkRequest {
+  id: string
+  requestId: string
+  anestesista_id: string
+  anestesista_name: string
+  anestesista_email: string
+  created_at: string
+  is_read: boolean
+}
+
 interface SecretariaNotificationsContextType {
   notifications: Notification[]
+  linkRequests: LinkRequest[]
   unreadCount: number
   isLoading: boolean
   markAsRead: (id: string) => Promise<void>
@@ -19,9 +30,54 @@ const SecretariaNotificationsContext = createContext<SecretariaNotificationsCont
 
 export function SecretariaNotificationsProvider({ children, secretariaId }: { children: ReactNode; secretariaId: string | null }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [linkRequests, setLinkRequests] = useState<LinkRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  const unreadCount = notifications.filter(n => !n.is_read).length
+  const unreadCount = notifications.filter(n => !n.is_read).length + linkRequests.filter(r => !r.is_read).length
+
+  const loadLinkRequests = async () => {
+    if (!secretariaId) {
+      setLinkRequests([])
+      return
+    }
+
+    try {
+      const { data: requestsData, error: requestsError } = await supabase
+        .from('secretaria_link_requests')
+        .select(`
+          id,
+          anestesista_id,
+          created_at,
+          users (
+            id,
+            name,
+            email
+          )
+        `)
+        .eq('secretaria_id', secretariaId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+
+      if (requestsError) {
+        console.error('❌ [NOTIFICATIONS] Erro ao carregar solicitações:', requestsError)
+        setLinkRequests([])
+      } else {
+        const formattedRequests: LinkRequest[] = (requestsData || []).map((req: any) => ({
+          id: `link_request_${req.id}`, // ID único para notificação virtual
+          requestId: req.id,
+          anestesista_id: req.anestesista_id,
+          anestesista_name: req.users?.name || 'Nome não disponível',
+          anestesista_email: req.users?.email || 'Email não disponível',
+          created_at: req.created_at || '',
+          is_read: false // Sempre não lida até ser processada
+        }))
+        setLinkRequests(formattedRequests)
+      }
+    } catch (error) {
+      console.error('❌ [NOTIFICATIONS] Erro ao carregar solicitações:', error)
+      setLinkRequests([])
+    }
+  }
 
   const loadNotifications = async () => {
     if (!secretariaId) {
@@ -33,6 +89,7 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
     try {
       console.log('🔔 [NOTIFICATIONS] Carregando notificações para secretária:', secretariaId)
       
+      // Carregar notificações reais
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
@@ -49,6 +106,9 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
         console.log('   Notificações:', data)
         setNotifications(data || [])
       }
+
+      // Carregar solicitações pendentes
+      await loadLinkRequests()
     } catch (error) {
       console.error('❌ [NOTIFICATIONS] Erro ao carregar notificações:', error)
       setNotifications([])
@@ -60,7 +120,7 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
   useEffect(() => {
     loadNotifications()
 
-    // Escutar novas notificações em tempo real
+    // Escutar novas notificações e solicitações em tempo real
     if (secretariaId) {
       const channel = supabase
         .channel(`notifications:${secretariaId}`)
@@ -74,6 +134,18 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
           },
           () => {
             loadNotifications()
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'secretaria_link_requests',
+            filter: `secretaria_id=eq.${secretariaId}`
+          },
+          () => {
+            loadLinkRequests()
           }
         )
         .subscribe()
@@ -129,6 +201,7 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
     <SecretariaNotificationsContext.Provider
       value={{
         notifications,
+        linkRequests,
         unreadCount,
         isLoading,
         markAsRead,

@@ -84,60 +84,64 @@ export default function Login() {
     }
 
     try {
-      // Tentar login direto usando o contexto de auth
-      const success = await login(formData.email, formData.password)
-      
-      if (success) {
-        // Buscar usuário do Supabase Auth após login bem-sucedido
-        const { data: { user: authUser }, error: authUserError } = await supabase.auth.getUser()
-        
-        if (authUserError || !authUser) {
-          setError('Erro ao obter dados do usuário')
+      // Fazer login direto com Supabase Auth primeiro
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password
+      })
+
+      if (authError) {
+        // Verificar se o erro é relacionado a email não confirmado
+        if (authError.message?.includes('email') || authError.message?.includes('Email')) {
+          setError('Email não confirmado. Verifique sua caixa de entrada e confirme seu email antes de fazer login.')
+        } else {
+          setError('Email ou senha incorretos')
+        }
+        return
+      }
+
+      if (!authData.user) {
+        setError('Erro ao fazer login. Tente novamente.')
+        return
+      }
+
+      // Verificar se email foi confirmado
+      if (!authData.user.email_confirmed_at) {
+        setError('Email não confirmado. Verifique sua caixa de entrada e confirme seu email antes de fazer login.')
+        await supabase.auth.signOut()
+        return
+      }
+
+      // Verificar se é secretaria ou anestesista
+      try {
+        const { data: secretaria, error: secretariaError } = await supabase
+          .from('secretarias')
+          .select('id')
+          .eq('id', authData.user.id)
+          .maybeSingle()
+
+        if (secretaria && !secretariaError) {
+          // É secretária, redirecionar para dashboard da secretária
+          router.push('/secretaria/dashboard')
           return
         }
 
-        // Verificar se é secretaria após login bem-sucedido
-        try {
-          const { data: secretaria, error: secretariaError } = await supabase
-            .from('secretarias')
-            .select('id')
-            .eq('id', authUser.id)
-            .maybeSingle()
-
-          if (secretaria && !secretariaError) {
-            // Verificar se precisa trocar senha
-            const mustChangePassword = authUser.user_metadata?.mustChangePassword === true
-            
-            if (mustChangePassword) {
-              router.push('/secretaria/change-password')
-            } else {
-              router.push('/secretaria/dashboard')
-            }
-            return
-          }
-
-          // É anestesista, redirecionar para dashboard normal
+        // É anestesista, usar o contexto de auth para carregar dados do usuário
+        const anestesistaSuccess = await login(formData.email, formData.password)
+        
+        if (anestesistaSuccess) {
           router.push('/dashboard')
-        } catch (error) {
-          console.error('Erro ao verificar tipo de usuário após login:', error)
-          // Em caso de erro, redirecionar para dashboard normal
-          router.push('/dashboard')
+        } else {
+          setError('Erro ao carregar dados do usuário. Tente novamente.')
+          await supabase.auth.signOut()
         }
-      } else {
-        // Verificar se o erro é relacionado a email não confirmado
-        try {
-          const { data: userData } = await supabase.auth.getUser()
-          if (userData?.user && !userData.user.email_confirmed_at) {
-            setError('Email não confirmado. Verifique sua caixa de entrada e confirme seu email antes de fazer login.')
-          } else {
-            setError('Email ou senha incorretos')
-          }
-        } catch {
-          setError('Email ou senha incorretos')
-        }
+      } catch (error) {
+        console.error('Erro ao verificar tipo de usuário após login:', error)
+        setError('Erro ao verificar tipo de usuário. Tente novamente.')
+        await supabase.auth.signOut()
       }
     } catch (error) {
-      
+      console.error('Erro no login:', error)
       setError('Erro interno. Tente novamente.')
     }
   }

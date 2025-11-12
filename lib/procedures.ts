@@ -124,7 +124,7 @@ export const procedureService = {
         payment_date: procedure.payment_date || null,
         forma_pagamento: procedure.forma_pagamento || null,
         observacoes_financeiras: procedure.observacoes_financeiras || null,
-        secretaria_id: procedure.secretaria_id || null,
+        secretaria_id: procedure.secretaria_id && procedure.secretaria_id.trim() !== '' ? procedure.secretaria_id : null,
         numero_parcelas: procedure.numero_parcelas || null,
         parcelas_recebidas: procedure.parcelas_recebidas || 0,
         

@@ -99,64 +99,23 @@ export async function POST(request: NextRequest) {
 
       const anestesistaName = anestesistaData?.name || userData.email
       
-      // Criar notificação ANTES da solicitação
-      console.log('📧 [API] Criando notificação para secretária...')
-      console.log('   Secretária ID:', existingSecretaria.id)
-      console.log('   Anestesista:', anestesistaName, userData.email)
+      // NOTA: Não podemos criar notificações para secretárias porque a tabela notifications
+      // tem uma foreign key constraint que exige user_id na tabela users.
+      // Secretárias estão na tabela secretarias, então a constraint falha.
+      // A secretária verá a solicitação pendente através da tabela secretaria_link_requests.
       
-      let notification = null
-      let notificationError = null
-      
-      // Tentar criar notificação até 3 vezes se necessário
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        console.log(`🔄 [API] Tentativa ${attempt} de criar notificação...`)
-        
-        const { data: notifData, error: notifErr } = await supabaseAdmin
-          .from('notifications')
-          .insert({
-            user_id: existingSecretaria.id,
-            title: 'Solicitação de Vinculação',
-            message: `${anestesistaName} (${userData.email}) deseja vincular você como secretária. Acesse seu dashboard para aceitar ou recusar.`,
-            type: 'link_request'
-          })
-          .select()
-          .single()
-
-        if (notifErr) {
-          console.error(`❌ [API] Erro na tentativa ${attempt}:`, notifErr)
-          console.error('   Detalhes:', JSON.stringify(notifErr, null, 2))
-          notificationError = notifErr
-          
-          // Se não for erro de duplicação, tentar novamente
-          if (attempt < 3 && !notifErr.message?.includes('duplicate')) {
-            await new Promise(resolve => setTimeout(resolve, 500)) // Aguardar 500ms
-            continue
-          }
-        } else {
-          notification = notifData
-          console.log(`✅ [API] Notificação criada com sucesso na tentativa ${attempt}:`, notification.id)
-          break
-        }
-      }
-
-      if (!notification && notificationError) {
-        console.error('❌ [API] FALHA CRÍTICA: Não foi possível criar notificação após 3 tentativas')
-        console.error('   Último erro:', JSON.stringify(notificationError, null, 2))
-        // Continuar mesmo assim - criar a solicitação de qualquer forma
-      }
-
-      // Criar solicitação de vinculação (mesmo se a notificação falhou)
       console.log('📝 [API] Criando solicitação de vinculação...')
       console.log('   Anestesista ID:', user.id)
       console.log('   Secretária ID:', existingSecretaria.id)
-      console.log('   Notification ID:', notification?.id || 'N/A')
+      console.log('   Anestesista:', anestesistaName, userData.email)
       
+      // Criar solicitação de vinculação
       const { data: requestData, error: requestError } = await supabaseAdmin
         .from('secretaria_link_requests')
         .insert({
           anestesista_id: user.id,
           secretaria_id: existingSecretaria.id,
-          notification_id: notification?.id || null,
+          notification_id: null, // Não podemos criar notificação devido à constraint
           status: 'pending'
         })
         .select()
@@ -176,42 +135,17 @@ export async function POST(request: NextRequest) {
       } else {
         console.log('✅ [API] Solicitação de vinculação criada:', requestData)
       }
-      
-      // Se a notificação não foi criada, tentar criar novamente
-      if (!notification && notificationError) {
-        console.log('🔄 [API] Tentando criar notificação novamente...')
-        const { data: retryNotification, error: retryError } = await supabaseAdmin
-          .from('notifications')
-          .insert({
-            user_id: existingSecretaria.id,
-            title: 'Solicitação de Vinculação',
-            message: `${anestesistaName} (${userData.email}) deseja vincular você como secretária. Acesse seu dashboard para aceitar ou recusar.`,
-            type: 'link_request'
-          })
-          .select()
-          .single()
-        
-        if (retryNotification) {
-          console.log('✅ [API] Notificação criada na segunda tentativa:', retryNotification.id)
-          // Atualizar a solicitação com o ID da notificação
-          await supabaseAdmin
-            .from('secretaria_link_requests')
-            .update({ notification_id: retryNotification.id })
-            .eq('id', requestData.id)
-        } else if (retryError) {
-          console.error('❌ [API] Erro na segunda tentativa de criar notificação:', retryError)
-        }
-      }
 
       return NextResponse.json({
         success: true,
         exists: true,
-        message: 'Secretária já cadastrada. Uma notificação foi enviada para ela.',
+        message: 'Solicitação de vinculação criada com sucesso. A secretária verá a solicitação no dashboard dela.',
         secretaria: {
           id: existingSecretaria.id,
           email: existingSecretaria.email,
           nome: existingSecretaria.nome
-        }
+        },
+        requestId: requestData.id
       })
     }
 

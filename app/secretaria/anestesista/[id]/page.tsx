@@ -7,7 +7,6 @@ import {
   UserCheck, 
   FileText, 
   Calendar,
-  DollarSign,
   Edit,
   Search,
   Filter,
@@ -120,8 +119,10 @@ export default function AnestesistaProcedimentos({ params }: { params: Promise<{
         console.log('✅ [ANESTESISTA PROCEDIMENTOS] Anestesista encontrado:', anestesistaData.name)
         setAnestesista(anestesistaData)
 
-        // Buscar procedimentos do anestesista
-        console.log('🔍 [ANESTESISTA PROCEDIMENTOS] Buscando procedimentos...')
+        // Buscar apenas procedimentos do anestesista que foram vinculados a esta secretária
+        // A secretária só tem acesso a procedimentos que foram explicitamente vinculados a ela
+        // através do campo "Adicionar Secretaria" no formulário de criação
+        console.log('🔍 [ANESTESISTA PROCEDIMENTOS] Buscando procedimentos vinculados...')
         const { data: proceduresData, error: proceduresError } = await supabase
           .from('procedures')
           .select(`
@@ -133,6 +134,7 @@ export default function AnestesistaProcedimentos({ params }: { params: Promise<{
             )
           `)
           .eq('user_id', anestesistaId)
+          .eq('secretaria_id', secretaria.id)
           .order('procedure_date', { ascending: false })
 
         console.log('📦 [ANESTESISTA PROCEDIMENTOS] Resultado:', {
@@ -282,7 +284,7 @@ export default function AnestesistaProcedimentos({ params }: { params: Promise<{
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6 mb-4 sm:mb-6 lg:mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6 mb-4 sm:mb-6 lg:mb-8">
           <Card className="hover:shadow-lg transition-all duration-300">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
               <CardTitle className="text-xs sm:text-sm font-semibold text-gray-700">Total de Procedimentos</CardTitle>
@@ -300,7 +302,7 @@ export default function AnestesistaProcedimentos({ params }: { params: Promise<{
             </CardHeader>
             <div className="px-4 sm:px-6 pb-4 sm:pb-6">
               <div className="text-xl sm:text-2xl font-bold text-amber-600">
-                {procedures.filter(p => p.payment_status === 'pending').length}
+                {procedures.filter(p => p.payment_status !== 'paid').length}
               </div>
             </div>
           </Card>
@@ -313,18 +315,6 @@ export default function AnestesistaProcedimentos({ params }: { params: Promise<{
             <div className="px-4 sm:px-6 pb-4 sm:pb-6">
               <div className="text-xl sm:text-2xl font-bold text-green-600">
                 {procedures.filter(p => p.payment_status === 'paid').length}
-              </div>
-            </div>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-all duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
-              <CardTitle className="text-xs sm:text-sm font-semibold text-gray-700">Valor Total</CardTitle>
-              <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 flex-shrink-0" />
-            </CardHeader>
-            <div className="px-4 sm:px-6 pb-4 sm:pb-6">
-              <div className="text-lg sm:text-xl lg:text-2xl font-bold text-teal-600">
-                {formatCurrency(procedures.reduce((sum, p) => sum + p.procedure_value, 0))}
               </div>
             </div>
           </Card>

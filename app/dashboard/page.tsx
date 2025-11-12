@@ -49,7 +49,23 @@ export default function Dashboard() {
     resetDay: 30, // Padrão: último dia do mês
     isEnabled: false
   })
+  const [currentProgress, setCurrentProgress] = useState({
+    currentValue: 0,
+    percentage: 0,
+    daysRemaining: 0,
+    isCompleted: false
+  })
   const [showGoalModal, setShowGoalModal] = useState(false)
+  const [showCalculationModal, setShowCalculationModal] = useState(false)
+  const [calculationDetails, setCalculationDetails] = useState<{
+    title: string
+    description: string
+    procedures: any[]
+    totalValue: number
+    period: string
+  } | null>(null)
+  const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null)
+  const [monthlyProcedures, setMonthlyProcedures] = useState<any[]>([])
   const { user } = useAuth()
   const router = useRouter()
 
@@ -69,6 +85,14 @@ export default function Dashboard() {
     }
     checkIfSecretaria()
   }, [user, router])
+
+  // Verificar se precisa resetar a meta e recalcular progresso
+  useEffect(() => {
+    if (monthlyGoal.isEnabled && user?.id) {
+      checkAndResetGoal(monthlyGoal)
+      calculateProgress(monthlyGoal)
+    }
+  }, [stats.completedValue, monthlyGoal, user])
 
   // Função para atualizar o índice atual baseado no scroll
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -91,6 +115,20 @@ export default function Dashboard() {
       
       setStats(statsData)
       setRecentProcedures(proceduresData.slice(0, 5))
+      
+      // Filtrar procedimentos do mês atual para os detalhes
+      const now = new Date()
+      const currentMonth = now.getMonth()
+      const currentYear = now.getFullYear()
+      const monthStart = new Date(currentYear, currentMonth, 1)
+      const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999)
+      
+      const monthlyProcs = proceduresData.filter((proc: any) => {
+        if (!proc.procedure_date) return false
+        const procDate = new Date(proc.procedure_date)
+        return procDate >= monthStart && procDate <= monthEnd
+      })
+      setMonthlyProcedures(monthlyProcs)
       
       // Carregar anexos para os procedimentos recentes
       const attachmentsMap: Record<string, ProcedureAttachment[]> = {}
@@ -119,20 +157,24 @@ export default function Dashboard() {
       
       if (goal) {
         // Converter formato do banco para formato do estado
-        setMonthlyGoal({
+        const goalData = {
           targetValue: goal.target_value,
           resetDay: goal.reset_day || 30, // Padrão: último dia do mês se não definido
           isEnabled: goal.is_enabled
-        })
+        }
+        setMonthlyGoal(goalData)
+        // O useEffect irá calcular o progresso automaticamente quando monthlyGoal mudar
       } else {
         // Se não encontrar no banco, tentar migrar do localStorage
         const migratedGoal = await goalService.migrateFromLocalStorage(user.id)
         if (migratedGoal) {
-          setMonthlyGoal({
+          const goalData = {
             targetValue: migratedGoal.target_value,
             resetDay: migratedGoal.reset_day || 30, // Padrão: último dia do mês
             isEnabled: migratedGoal.is_enabled
-          })
+          }
+          setMonthlyGoal(goalData)
+          // O useEffect irá calcular o progresso automaticamente quando monthlyGoal mudar
         } else {
           // Se não há meta, usar padrão: último dia do mês (30)
           setMonthlyGoal({
@@ -170,6 +212,136 @@ export default function Dashboard() {
     } catch (error) {
       
     }
+  }
+
+  // Função para verificar e resetar a meta automaticamente
+  const checkAndResetGoal = async (goal: any) => {
+    if (!goal.isEnabled || !user?.id) return
+
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    const currentDay = now.getDate()
+    
+    // Calcular o dia de reset (último dia do mês se resetDay for 30)
+    const resetDay = goal.resetDay === 30 ? new Date(currentYear, currentMonth + 1, 0).getDate() : goal.resetDay
+    
+    // Verificar se chegou o dia de reset
+    const lastResetKey = `lastReset_${user.id}`
+    const lastResetStr = localStorage.getItem(lastResetKey)
+    let lastReset: Date | null = null
+    
+    if (lastResetStr) {
+      try {
+        lastReset = new Date(lastResetStr)
+      } catch (e) {
+        lastReset = null
+      }
+    }
+    
+    // Verificar se precisa resetar (se passou o dia de reset desde o último reset)
+    const today = new Date(currentYear, currentMonth, currentDay)
+    const shouldReset = !lastReset || (today >= new Date(currentYear, currentMonth, resetDay) && 
+      (lastReset.getMonth() !== currentMonth || lastReset.getFullYear() !== currentYear || lastReset.getDate() < resetDay))
+    
+    // Se chegou o dia de reset e ainda não foi resetado neste período
+    if (currentDay >= resetDay && shouldReset) {
+      console.log(`🔄 [DASHBOARD] Resetando meta no dia ${resetDay} do mês ${currentMonth + 1}/${currentYear}`)
+      localStorage.setItem(lastResetKey, today.toISOString())
+      // Recarregar dados do dashboard para recalcular com novo período
+      await loadDashboardData()
+    }
+  }
+
+  // Função para calcular o progresso da meta baseado no período
+  const calculateProgress = async (goal: any) => {
+    if (!goal.isEnabled || goal.targetValue === 0 || !user?.id) {
+      setCurrentProgress({
+        currentValue: 0,
+        percentage: 0,
+        daysRemaining: 0,
+        isCompleted: false
+      })
+      return
+    }
+
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    
+    // Calcular data de início do período atual baseado no resetDay
+    // Se o resetDay é 30, considerar como último dia do mês
+    let startDate = new Date(currentYear, currentMonth, goal.resetDay)
+    
+    // Ajustar para último dia do mês se resetDay for 30
+    if (goal.resetDay === 30) {
+      // Último dia do mês atual
+      const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
+      startDate = new Date(currentYear, currentMonth, lastDayOfMonth)
+    }
+    
+    // Se a data de reset ainda não chegou este mês, usar o mês anterior
+    if (startDate > now) {
+      if (goal.resetDay === 30) {
+        // Último dia do mês anterior
+        const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate()
+        startDate = new Date(currentYear, currentMonth - 1, lastDayOfPrevMonth)
+      } else {
+        startDate = new Date(currentYear, currentMonth - 1, goal.resetDay)
+      }
+    }
+    
+    // Calcular data de fim do período (próximo reset)
+    const endDate = new Date(startDate)
+    if (goal.resetDay === 30) {
+      // Próximo último dia do mês
+      const nextMonth = endDate.getMonth() + 1
+      const nextYear = endDate.getFullYear()
+      const lastDayOfNextMonth = new Date(nextYear, nextMonth + 1, 0).getDate()
+      endDate.setMonth(nextMonth)
+      endDate.setDate(lastDayOfNextMonth)
+    } else {
+      endDate.setMonth(endDate.getMonth() + 1)
+      endDate.setDate(goal.resetDay)
+    }
+    
+    // Calcular dias restantes
+    const daysRemaining = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+    
+    // Calcular valor atual do período (apenas procedimentos pagos no período atual)
+    let currentValue = 0
+    try {
+      const procedures = await procedureService.getProcedures(user.id)
+      
+      // Filtrar procedimentos pagos no período atual
+      const periodProcedures = procedures.filter((proc: any) => {
+        if (proc.payment_status !== 'paid' || !proc.payment_date) return false
+        
+        const paymentDate = new Date(proc.payment_date)
+        return paymentDate >= startDate && paymentDate < endDate
+      })
+      
+      // Somar valores dos procedimentos do período
+      currentValue = periodProcedures.reduce((sum: number, proc: any) => {
+        return sum + (proc.procedure_value || 0)
+      }, 0)
+      
+      console.log(`📊 [DASHBOARD] Meta: Valor atual do período: R$ ${currentValue.toFixed(2)} (${periodProcedures.length} procedimentos)`)
+    } catch (error) {
+      console.error('Erro ao calcular valor do período:', error)
+      // Fallback: usar valor total se houver erro
+      currentValue = stats.completedValue
+    }
+    
+    const percentage = Math.min(100, (currentValue / goal.targetValue) * 100)
+    const isCompleted = currentValue >= goal.targetValue
+
+    setCurrentProgress({
+      currentValue,
+      percentage,
+      daysRemaining,
+      isCompleted
+    })
   }
 
   // Função para calcular receita mensal
@@ -277,34 +449,146 @@ export default function Dashboard() {
     { name: 'Não Lançados', value: stats.cancelled, color: '#ef4444' }
   ]
 
+  // Calcular valores mensais para os cards
+  const calculateMonthlyStats = () => {
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    const monthStart = new Date(currentYear, currentMonth, 1)
+    const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999)
+    
+    // Filtrar procedimentos do mês atual
+    const monthlyProcs = monthlyProcedures.filter((proc: any) => {
+      if (!proc.procedure_date) return false
+      const procDate = new Date(proc.procedure_date)
+      return procDate >= monthStart && procDate <= monthEnd
+    })
+    
+    // Calcular receita recebida (procedimentos pagos)
+    const paidProcedures = monthlyProcs.filter((p: any) => p.payment_status === 'paid')
+    const receivedValue = paidProcedures.reduce((sum: number, p: any) => {
+      return sum + (p.procedure_value || 0)
+    }, 0)
+    
+    // Calcular receita pendente (procedimentos pendentes)
+    const pendingProcedures = monthlyProcs.filter((p: any) => p.payment_status === 'pending')
+    const pendingValue = pendingProcedures.reduce((sum: number, p: any) => {
+      return sum + (p.procedure_value || 0)
+    }, 0)
+    
+    // Total de procedimentos do mês
+    const totalMonthly = monthlyProcs.length
+    
+    // Procedimentos concluídos do mês
+    const completedMonthly = paidProcedures.length
+    
+    return {
+      receivedValue,
+      pendingValue,
+      totalMonthly,
+      completedMonthly,
+      paidProcedures,
+      pendingProcedures,
+      monthlyProcs
+    }
+  }
+
+  const monthlyStats = calculateMonthlyStats()
+
+  // Função para preparar detalhes do cálculo
+  const prepareCalculationDetails = (statKey: string) => {
+    const now = new Date()
+    const monthName = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    
+    switch (statKey) {
+      case 'received':
+        return {
+          title: 'Receita Total (mensal) - Recebida',
+          description: `Soma dos valores de todos os procedimentos pagos realizados em ${monthName}`,
+          procedures: monthlyStats.paidProcedures,
+          totalValue: monthlyStats.receivedValue,
+          period: monthName
+        }
+      case 'pending':
+        return {
+          title: 'Receita Total (mensal) - Pendente',
+          description: `Soma dos valores de todos os procedimentos pendentes realizados em ${monthName}`,
+          procedures: monthlyStats.pendingProcedures,
+          totalValue: monthlyStats.pendingValue,
+          period: monthName
+        }
+      case 'total':
+        return {
+          title: 'Procedimentos (mensal) - Total',
+          description: `Total de procedimentos realizados em ${monthName}`,
+          procedures: monthlyStats.monthlyProcs,
+          totalValue: monthlyStats.totalMonthly,
+          period: monthName
+        }
+      case 'completed':
+        return {
+          title: 'Procedimentos Realizados - Concluídos',
+          description: `Total de procedimentos pagos realizados em ${monthName}`,
+          procedures: monthlyStats.paidProcedures,
+          totalValue: monthlyStats.completedMonthly,
+          period: monthName
+        }
+      default:
+        return null
+    }
+  }
+
+  // Handlers para long press
+  const handleLongPressStart = (statKey: string) => {
+    const timer = setTimeout(() => {
+      const details = prepareCalculationDetails(statKey)
+      if (details) {
+        setCalculationDetails(details)
+        setShowCalculationModal(true)
+      }
+    }, 500) // 500ms para ativar o long press
+    setLongPressTimer(timer)
+  }
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer)
+      setLongPressTimer(null)
+    }
+  }
+
   const dashboardStats = [
     {
       title: 'Receita Total (mensal)',
-      value: formatCurrency(stats.completedValue),
+      value: formatCurrency(monthlyStats.receivedValue),
       change: 'Recebida',
       changeType: 'positive' as const,
-      icon: DollarSign
+      icon: DollarSign,
+      statKey: 'received'
     },
     {
       title: 'Receita Total (mensal)',
-      value: formatCurrency(stats.pendingValue),
+      value: formatCurrency(monthlyStats.pendingValue),
       change: 'Pendente',
       changeType: 'neutral' as const,
-      icon: DollarSign
+      icon: DollarSign,
+      statKey: 'pending'
     },
     {
       title: 'Procedimentos (mensal)',
-      value: stats.total.toString(),
+      value: monthlyStats.totalMonthly.toString(),
       change: 'Total',
       changeType: 'positive' as const,
-      icon: FileText
+      icon: FileText,
+      statKey: 'total'
     },
     {
       title: 'Procedimentos Realizados',
-      value: stats.completed.toString(),
+      value: monthlyStats.completedMonthly.toString(),
       change: 'Concluídos',
       changeType: 'positive' as const,
-      icon: Users
+      icon: Users,
+      statKey: 'completed'
     }
   ]
 
@@ -343,7 +627,15 @@ export default function Dashboard() {
             onScroll={handleScroll}
           >
             {dashboardStats.map((stat, index) => (
-              <Card key={index} className="min-w-[280px] flex-shrink-0 hover:shadow-lg transition-all duration-300">
+              <Card 
+                key={index} 
+                className="min-w-[280px] flex-shrink-0 hover:shadow-lg transition-all duration-300 cursor-pointer select-none"
+                onMouseDown={() => handleLongPressStart(stat.statKey)}
+                onMouseUp={handleLongPressEnd}
+                onMouseLeave={handleLongPressEnd}
+                onTouchStart={() => handleLongPressStart(stat.statKey)}
+                onTouchEnd={handleLongPressEnd}
+              >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-semibold text-gray-700 truncate">
                     {stat.title}
@@ -399,24 +691,24 @@ export default function Dashboard() {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-700">Meta Mensal</span>
                 <span className="text-sm font-semibold text-teal-600">
-                  {formatCurrency(stats.completedValue)} / {formatCurrency(monthlyGoal.targetValue)}
+                  {formatCurrency(currentProgress.currentValue || stats.completedValue)} / {formatCurrency(monthlyGoal.targetValue)}
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div 
                   className="bg-gradient-to-r from-teal-500 to-teal-600 h-3 rounded-full transition-all duration-500 ease-out"
                   style={{ 
-                    width: `${Math.min((stats.completedValue / monthlyGoal.targetValue) * 100, 100)}%` 
+                    width: `${Math.min(((currentProgress.currentValue || stats.completedValue) / monthlyGoal.targetValue) * 100, 100)}%` 
                   }}
                 ></div>
               </div>
               <div className="flex justify-between items-center mt-2">
                 <span className="text-xs text-gray-500">
-                  {Math.round((stats.completedValue / monthlyGoal.targetValue) * 100)}% concluído
+                  {Math.round(((currentProgress.currentValue || stats.completedValue) / monthlyGoal.targetValue) * 100)}% concluído
                 </span>
                 <span className="text-xs text-gray-500">
-                  {stats.completedValue >= monthlyGoal.targetValue ? 'Meta atingida!' : 
-                   `Faltam ${formatCurrency(monthlyGoal.targetValue - stats.completedValue)}`}
+                  {(currentProgress.currentValue || stats.completedValue) >= monthlyGoal.targetValue ? 'Meta atingida!' : 
+                   `Faltam ${formatCurrency(monthlyGoal.targetValue - (currentProgress.currentValue || stats.completedValue))}`}
                 </span>
               </div>
             </div>
@@ -451,7 +743,15 @@ export default function Dashboard() {
         {/* Stats Grid - Desktop */}
         <div className="hidden lg:grid grid-cols-4 gap-6">
           {dashboardStats.map((stat, index) => (
-            <Card key={index} className="hover:shadow-lg transition-all duration-300">
+            <Card 
+              key={index} 
+              className="hover:shadow-lg transition-all duration-300 cursor-pointer select-none"
+              onMouseDown={() => handleLongPressStart(stat.statKey)}
+              onMouseUp={handleLongPressEnd}
+              onMouseLeave={handleLongPressEnd}
+              onTouchStart={() => handleLongPressStart(stat.statKey)}
+              onTouchEnd={handleLongPressEnd}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-semibold text-gray-700 truncate">
                   {stat.title}
@@ -482,44 +782,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Quick Actions - Desktop */}
-        <div className="hidden lg:block">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Ações Rápidas</CardTitle>
-            </CardHeader>
-            <div className="p-4 sm:p-6">
-              <div className="grid grid-cols-3 gap-4">
-                <Link href="/procedimentos/novo">
-                  <Button 
-                    variant="outline" 
-                    className="h-20 flex flex-col items-center justify-center w-full"
-                    onClick={() => handleButtonPress(undefined, 'light')}
-                  >
-                    <FileText className="w-6 h-6 mb-2" />
-                    <span className="text-sm sm:text-base font-medium">Novo Procedimento</span>
-                  </Button>
-                </Link>
-                <Button 
-                  variant="outline" 
-                  className="h-20 flex flex-col items-center justify-center w-full"
-                  onClick={() => handleButtonPress(undefined, 'light')}
-                >
-                  <DollarSign className="w-6 h-6 mb-2" />
-                  <span className="text-sm sm:text-base font-medium">Registrar Pagamento</span>
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="h-20 flex flex-col items-center justify-center w-full"
-                  onClick={() => handleButtonPress(undefined, 'light')}
-                >
-                  <Users className="w-6 h-6 mb-2" />
-                  <span className="text-sm sm:text-base font-medium">Adicionar Paciente</span>
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </div>
 
         {/* Charts and Recent Activity */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
@@ -783,34 +1045,6 @@ export default function Dashboard() {
             )}
           </div>
 
-        {/* Mobile Quick Actions */}
-        <div className="lg:hidden">
-        <Card>
-          <CardHeader>
-              <CardTitle className="text-lg sm:text-xl font-bold text-gray-900">Ações Rápidas</CardTitle>
-          </CardHeader>
-            <div className="p-4">
-              <div className="grid grid-cols-2 gap-3">
-                <Button 
-                  variant="outline" 
-                  className="h-16 flex flex-col items-center justify-center w-full"
-                  onClick={() => handleButtonPress(undefined, 'light')}
-                >
-                  <DollarSign className="w-5 h-5 mb-1" />
-                  <span className="text-sm font-medium">Registrar Pagamento</span>
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="h-16 flex flex-col items-center justify-center w-full"
-                  onClick={() => handleButtonPress(undefined, 'light')}
-                >
-                  <Users className="w-5 h-5 mb-1" />
-                  <span className="text-sm font-medium">Adicionar Paciente</span>
-              </Button>
-            </div>
-          </div>
-        </Card>
-        </div>
 
       </div>
 
@@ -924,6 +1158,107 @@ export default function Dashboard() {
           </button>
         </Link>
       </div>
+
+      {/* Modal de Detalhes do Cálculo */}
+      {showCalculationModal && calculationDetails && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[9999]" onClick={() => setShowCalculationModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">{calculationDetails.title}</h2>
+                <p className="text-sm text-gray-600 mt-1">{calculationDetails.description}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowCalculationModal(false)}
+                className="ml-4"
+              >
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="mb-4 p-4 bg-teal-50 rounded-lg border border-teal-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-teal-800">Período:</span>
+                  <span className="text-sm font-semibold text-teal-900 capitalize">{calculationDetails.period}</span>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-sm font-medium text-teal-800">
+                    {calculationDetails.title.includes('Receita') ? 'Total:' : 'Quantidade:'}
+                  </span>
+                  <span className="text-lg font-bold text-teal-900">
+                    {calculationDetails.title.includes('Receita') 
+                      ? formatCurrency(calculationDetails.totalValue)
+                      : calculationDetails.totalValue}
+                  </span>
+                </div>
+              </div>
+
+              {calculationDetails.procedures.length > 0 ? (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-700">
+                    Procedimentos ({calculationDetails.procedures.length}):
+                  </h3>
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                    {calculationDetails.procedures.map((proc: any, idx: number) => (
+                      <div key={proc.id || idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">
+                              {proc.patient_name || 'Paciente não informado'}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1">
+                              {proc.procedure_type || 'Tipo não informado'}
+                            </p>
+                            {proc.procedure_date && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                {formatDate(proc.procedure_date)}
+                              </p>
+                            )}
+                          </div>
+                          {calculationDetails.title.includes('Receita') && (
+                            <div className="ml-4 text-right">
+                              <p className="text-sm font-semibold text-teal-600">
+                                {formatCurrency(proc.procedure_value || 0)}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {proc.payment_status === 'paid' ? 'Pago' : 'Pendente'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">Nenhum procedimento encontrado para este período.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">
+                  💡 Dica: Clique e segure em qualquer card para ver os detalhes do cálculo
+                </p>
+                <Button
+                  onClick={() => setShowCalculationModal(false)}
+                  className="bg-teal-600 hover:bg-teal-700"
+                >
+                  Fechar
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
     </ProtectedRoute>
   )

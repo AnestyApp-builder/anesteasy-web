@@ -6,27 +6,51 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 
 interface LinkRequestActionsProps {
-  notificationId: string
-  onAccept: (notificationId: string, anestesistaId: string) => Promise<void>
-  onReject: (notificationId: string) => Promise<void>
+  notificationId: string // Pode ser requestId ou notificationId
+  onAccept: (requestId: string, anestesistaId?: string) => Promise<void>
+  onReject: (requestId: string) => Promise<void>
+  anestesistaId?: string // Opcional: se já tiver o ID do anestesista
 }
 
-export function LinkRequestActions({ notificationId, onAccept, onReject }: LinkRequestActionsProps) {
-  const [anestesistaId, setAnestesistaId] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+export function LinkRequestActions({ notificationId, onAccept, onReject, anestesistaId: providedAnestesistaId }: LinkRequestActionsProps) {
+  const [anestesistaId, setAnestesistaId] = useState<string | null>(providedAnestesistaId || null)
+  const [isLoading, setIsLoading] = useState(!providedAnestesistaId)
 
   useEffect(() => {
+    // Se já tiver o anestesistaId fornecido, não precisa buscar
+    if (providedAnestesistaId) {
+      setAnestesistaId(providedAnestesistaId)
+      setIsLoading(false)
+      return
+    }
+
+    // Tentar buscar pelo requestId (se notificationId for um requestId)
     const fetchRequestData = async () => {
       try {
+        // Primeiro tentar buscar diretamente pelo ID (pode ser requestId)
         const { data, error } = await supabase
+          .from('secretaria_link_requests')
+          .select('anestesista_id')
+          .eq('id', notificationId)
+          .eq('status', 'pending')
+          .maybeSingle()
+
+        if (!error && data) {
+          setAnestesistaId(data.anestesista_id)
+          setIsLoading(false)
+          return
+        }
+
+        // Se não encontrou, tentar buscar por notification_id
+        const { data: dataByNotification, error: errorByNotification } = await supabase
           .from('secretaria_link_requests')
           .select('anestesista_id')
           .eq('notification_id', notificationId)
           .eq('status', 'pending')
-          .single()
+          .maybeSingle()
 
-        if (!error && data) {
-          setAnestesistaId(data.anestesista_id)
+        if (!errorByNotification && dataByNotification) {
+          setAnestesistaId(dataByNotification.anestesista_id)
         }
       } catch (error) {
         console.error('Erro ao buscar dados da solicitação:', error)
@@ -36,7 +60,7 @@ export function LinkRequestActions({ notificationId, onAccept, onReject }: LinkR
     }
 
     fetchRequestData()
-  }, [notificationId])
+  }, [notificationId, providedAnestesistaId])
 
   if (isLoading) {
     return (
@@ -46,15 +70,11 @@ export function LinkRequestActions({ notificationId, onAccept, onReject }: LinkR
     )
   }
 
-  if (!anestesistaId) {
-    return null
-  }
-
   return (
     <div className="flex flex-col sm:flex-row gap-2 sm:gap-2">
       <Button
         size="sm"
-        onClick={() => onAccept(notificationId, anestesistaId)}
+        onClick={() => onAccept(notificationId, anestesistaId || undefined)}
         className="text-xs bg-teal-600 hover:bg-teal-700 w-full sm:w-auto"
       >
         <UserCheck className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />

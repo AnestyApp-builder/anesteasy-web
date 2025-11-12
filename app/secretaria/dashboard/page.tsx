@@ -18,7 +18,10 @@ import {
   Download,
   Upload,
   UserCheck,
-  Settings
+  Settings,
+  Mail,
+  CheckCircle2,
+  X
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -65,6 +68,15 @@ function SecretariaDashboardContent() {
   const [anestesistaFilter, setAnestesistaFilter] = useState('all')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [pendingRequests, setPendingRequests] = useState<Array<{
+    id: string
+    anestesista_id: string
+    anestesista_name: string
+    anestesista_email: string
+    created_at: string
+  }>>([])
+  const [isLoadingRequests, setIsLoadingRequests] = useState(true)
+  const [isProcessingRequest, setIsProcessingRequest] = useState<string | null>(null)
   const router = useRouter()
 
   // Carregar dados da secretaria e procedimentos
@@ -106,38 +118,41 @@ function SecretariaDashboardContent() {
         const anestesistasList = anestesistasData?.map(item => item.users).filter(Boolean).flat() || []
         setAnestesistas(anestesistasList)
 
-        // Buscar procedimentos dos anestesistas vinculados
-        // Busca tanto procedimentos com secretaria_id específico quanto todos os procedimentos dos anestesistas vinculados
-        const anestesistasIds = anestesistasList.map(a => a.id)
-        
-        let proceduresData: any[] = []
-        
-        if (anestesistasIds.length > 0) {
-          // Buscar procedimentos dos anestesistas vinculados
-          const { data: proceduresByAnestesista, error: proceduresError1 } = await supabase
-            .from('procedures')
-            .select(`
-              *,
-              users (
-                id,
-                name,
-                email
-              )
-            `)
-            .in('user_id', anestesistasIds)
-            .order('procedure_date', { ascending: false })
+        // Buscar apenas procedimentos vinculados a esta secretária
+        // A secretária só tem acesso a procedimentos que foram explicitamente vinculados a ela
+        // através do campo "Adicionar Secretaria" no formulário de criação
+        const { data: proceduresData, error: proceduresError } = await supabase
+          .from('procedures')
+          .select(`
+            *,
+            users (
+              id,
+              name,
+              email
+            )
+          `)
+          .eq('secretaria_id', secretaria.id)
+          .order('procedure_date', { ascending: false })
 
-          if (proceduresError1) {
-            console.error('Erro ao buscar procedimentos por anestesista:', proceduresError1)
-          } else {
-            proceduresData = proceduresByAnestesista || []
-          }
+        if (proceduresError) {
+          console.error('Erro ao buscar procedimentos:', proceduresError)
+          setError('Erro ao carregar procedimentos')
+          setProcedures([])
+          setFilteredProcedures([])
+        } else {
+          const proceduresList = proceduresData || []
+          setProcedures(proceduresList)
+          setFilteredProcedures(proceduresList)
+        }
 
-          // Também buscar procedimentos com secretaria_id específico (para garantir compatibilidade)
-          const { data: proceduresBySecretaria, error: proceduresError2 } = await supabase
-            .from('procedures')
+        // Carregar solicitações pendentes
+        if (secretaria) {
+          const { data: requestsData, error: requestsError } = await supabase
+            .from('secretaria_link_requests')
             .select(`
-              *,
+              id,
+              anestesista_id,
+              created_at,
               users (
                 id,
                 name,
@@ -145,31 +160,26 @@ function SecretariaDashboardContent() {
               )
             `)
             .eq('secretaria_id', secretaria.id)
-            .order('procedure_date', { ascending: false })
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
 
-          if (proceduresError2) {
-            console.error('Erro ao buscar procedimentos por secretaria:', proceduresError2)
+          if (requestsError) {
+            console.error('Erro ao carregar solicitações:', requestsError)
+            setPendingRequests([])
           } else {
-            // Combinar resultados e remover duplicatas
-            const existingIds = new Set(proceduresData.map(p => p.id))
-            const additionalProcedures = (proceduresBySecretaria || []).filter(p => !existingIds.has(p.id))
-            proceduresData = [...proceduresData, ...additionalProcedures]
+            const formattedRequests = (requestsData || []).map((req: any) => ({
+              id: req.id,
+              anestesista_id: req.anestesista_id,
+              anestesista_name: req.users?.name || 'Nome não disponível',
+              anestesista_email: req.users?.email || 'Email não disponível',
+              created_at: req.created_at || ''
+            }))
+            setPendingRequests(formattedRequests)
           }
+          setIsLoadingRequests(false)
         }
-
-        // Ordenar por data novamente após combinar
-        proceduresData.sort((a, b) => {
-          const dateA = new Date(a.procedure_date).getTime()
-          const dateB = new Date(b.procedure_date).getTime()
-          return dateB - dateA
-        })
-
-        const proceduresError = null // Sem erro se chegou até aqui
-
-        setProcedures(proceduresData)
-        setFilteredProcedures(proceduresData)
       } catch (error) {
-        
+        console.error('Erro ao carregar dados:', error)
         setError('Erro interno')
       } finally {
         setIsLoading(false)
@@ -177,6 +187,32 @@ function SecretariaDashboardContent() {
     }
 
     loadData()
+
+    // Escutar mudanças em tempo real nas solicitações
+    let channel: any = null
+    if (secretaria) {
+      channel = supabase
+        .channel(`link_requests:${secretaria.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'secretaria_link_requests',
+            filter: `secretaria_id=eq.${secretaria.id}`
+          },
+          () => {
+            loadData()
+          }
+        )
+        .subscribe()
+    }
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+    }
   }, [router, isAuthenticated, secretaria, authLoading])
 
   // Filtrar procedimentos
@@ -206,6 +242,84 @@ function SecretariaDashboardContent() {
   }, [procedures, searchTerm, statusFilter, anestesistaFilter])
 
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  const handleAcceptRequest = async (requestId: string) => {
+    setIsProcessingRequest(requestId)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        alert('Sessão expirada. Faça login novamente.')
+        return
+      }
+
+      const response = await fetch('/api/secretaria/accept-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ requestId })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Recarregar página para atualizar anestesistas vinculados
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
+      } else {
+        alert(data.error || 'Erro ao aceitar solicitação.')
+      }
+    } catch (error) {
+      console.error('Erro ao aceitar solicitação:', error)
+      alert('Erro ao aceitar solicitação. Tente novamente.')
+    } finally {
+      setIsProcessingRequest(null)
+    }
+  }
+
+  const handleRejectRequest = async (requestId: string) => {
+    setIsProcessingRequest(requestId)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        alert('Sessão expirada. Faça login novamente.')
+        return
+      }
+
+      const response = await fetch('/api/secretaria/reject-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ requestId })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Recarregar solicitações
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
+      } else {
+        alert(data.error || 'Erro ao recusar solicitação.')
+      }
+    } catch (error) {
+      console.error('Erro ao recusar solicitação:', error)
+      alert('Erro ao recusar solicitação. Tente novamente.')
+    } finally {
+      setIsProcessingRequest(null)
+    }
+  }
 
   const handleLogout = async () => {
     setIsLoggingOut(true)
@@ -355,7 +469,7 @@ function SecretariaDashboardContent() {
             </CardHeader>
             <div className="px-4 sm:px-6 pb-4 sm:pb-6">
               <div className="text-xl sm:text-2xl font-bold text-amber-600">
-                {procedures.filter(p => p.payment_status === 'pending').length}
+                {procedures.filter(p => p.payment_status !== 'paid').length}
               </div>
             </div>
           </Card>
@@ -372,6 +486,67 @@ function SecretariaDashboardContent() {
             </div>
           </Card>
         </div>
+
+        {/* Solicitações Pendentes */}
+        {pendingRequests.length > 0 && (
+          <Card className="mb-4 sm:mb-6">
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-base sm:text-lg lg:text-xl xl:text-2xl font-bold text-gray-900 flex items-center">
+                <Clock className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-amber-600" />
+                <span className="truncate">Solicitações de Vinculação ({pendingRequests.length})</span>
+              </CardTitle>
+            </CardHeader>
+            <div className="p-4 sm:p-6">
+              <div className="space-y-3 sm:space-y-4">
+                {pendingRequests.map((request) => (
+                  <div key={request.id} className="p-3 sm:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="flex items-start justify-between gap-3 sm:gap-4">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-yellow-900 mb-1 text-sm sm:text-base">
+                          {request.anestesista_name}
+                        </h3>
+                        <div className="flex items-center text-sm text-yellow-800 mb-2">
+                          <Mail className="w-4 h-4 mr-1 flex-shrink-0" />
+                          <span className="truncate">{request.anestesista_email}</span>
+                        </div>
+                        <p className="text-xs text-yellow-700">
+                          Deseja vincular você como secretária
+                        </p>
+                      </div>
+                      <div className="flex space-x-2 flex-shrink-0">
+                        <Button
+                          size="sm"
+                          onClick={() => handleAcceptRequest(request.id)}
+                          disabled={isProcessingRequest === request.id}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          {isProcessingRequest === request.id ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4" />
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRejectRequest(request.id)}
+                          disabled={isProcessingRequest === request.id}
+                          className="border-red-300 text-red-600 hover:bg-red-50"
+                        >
+                          {isProcessingRequest === request.id ? (
+                            <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <X className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Anestesistas Vinculados */}
         <Card className="mb-4 sm:mb-6">

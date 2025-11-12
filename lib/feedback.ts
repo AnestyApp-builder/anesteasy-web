@@ -158,6 +158,24 @@ export const feedbackService = {
   // Buscar feedback de um procedimento específico
   async getFeedbackByProcedureId(procedureId: string): Promise<FeedbackFormData | null> {
     try {
+      // Primeiro, buscar o feedback_link relacionado ao procedimento
+      const { data: linkData, error: linkError } = await supabase
+        .from('feedback_links')
+        .select('id')
+        .eq('procedure_id', procedureId)
+        .maybeSingle()
+
+      if (linkError) {
+        console.error('Erro ao buscar feedback_link:', linkError)
+        return null
+      }
+
+      if (!linkData) {
+        // Não há link criado ainda
+        return null
+      }
+
+      // Agora buscar a resposta usando o feedback_link_id
       const { data, error } = await supabase
         .from('feedback_responses')
         .select(`
@@ -165,23 +183,35 @@ export const feedbackService = {
           cefaleia,
           dor_lombar,
           anemia_transfusao,
-          respondido_em
+          created_at
         `)
-        .eq('procedure_id', procedureId)
-        .single()
+        .eq('feedback_link_id', linkData.id)
+        .maybeSingle()
 
-      if (error) throw error
+      if (error) {
+        // Se não encontrar resposta, não é erro - pode não ter sido respondido ainda
+        if (error.code === 'PGRST116') {
+          return null
+        }
+        console.error('Erro ao buscar feedback_responses:', error)
+        return null
+      }
       
-      return data ? {
+      if (!data) {
+        return null
+      }
+
+      // Converter boolean para 'Sim' | 'Não'
+      return {
         procedureId,
-        nauseaVomito: data.nausea_vomito as 'Sim' | 'Não',
-        cefaleia: data.cefaleia as 'Sim' | 'Não',
-        dorLombar: data.dor_lombar as 'Sim' | 'Não',
-        anemiaTransfusao: data.anemia_transfusao as 'Sim' | 'Não',
-        respondidoEm: data.respondido_em
-      } : null
+        nauseaVomito: data.nausea_vomito ? 'Sim' : 'Não',
+        cefaleia: data.cefaleia ? 'Sim' : 'Não',
+        dorLombar: data.dor_lombar ? 'Sim' : 'Não',
+        anemiaTransfusao: data.anemia_transfusao ? 'Sim' : 'Não',
+        respondidoEm: data.created_at || undefined
+      }
     } catch (error) {
-      
+      console.error('Erro ao buscar feedback:', error)
       return null
     }
   },
