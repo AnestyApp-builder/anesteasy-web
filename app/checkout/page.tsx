@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { CreditCard, Lock, Loader2, ArrowLeft } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
@@ -42,7 +42,7 @@ interface CustomerData {
   state: string
 }
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const plan = searchParams.get('plan') as 'monthly' | 'quarterly' | 'annual' | null
@@ -546,5 +546,22 @@ export default function CheckoutPage() {
           </div>
         </div>
       </Layout>
+  )
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={
+      <Layout>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
+            <p className="text-gray-600">Carregando...</p>
+          </div>
+        </div>
+      </Layout>
+    }>
+      <CheckoutPageContent />
+    </Suspense>
   )
 }
