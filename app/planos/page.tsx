@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   Check, 
@@ -85,7 +85,7 @@ const PLANS: Plan[] = [
   }
 ]
 
-export default function Planos() {
+function PlanosContent() {
   const { user, isAuthenticated } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -661,3 +661,19 @@ export default function Planos() {
   )
 }
 
+export default function Planos() {
+  return (
+    <Suspense fallback={
+      <Layout>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
+            <p className="text-gray-600">Carregando...</p>
+          </div>
+        </div>
+      </Layout>
+    }>
+      <PlanosContent />
+    </Suspense>
+  )
+}
