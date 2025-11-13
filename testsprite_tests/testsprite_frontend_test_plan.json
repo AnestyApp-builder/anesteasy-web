@@ -1,0 +1,597 @@
+[
+  {
+    "id": "TC001",
+    "title": "User Registration Success for Anesthesiologist and Secretary",
+    "description": "Verify that new users can successfully register as anesthesiologist or secretary, receive confirmation email, and complete profile setup.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to registration page"
+      },
+      {
+        "type": "action",
+        "description": "Fill registration form with valid details selecting anesthesiologist role"
+      },
+      {
+        "type": "action",
+        "description": "Submit registration form"
+      },
+      {
+        "type": "assertion",
+        "description": "Check that registration succeeds and confirmation email is sent"
+      },
+      {
+        "type": "action",
+        "description": "Confirm email via link in inbox"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify email confirmation is successful and user is prompted to complete profile"
+      },
+      {
+        "type": "action",
+        "description": "Repeat the above steps for secretary role"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Login and Logout Functionality for Both User Types",
+    "description": "Verify login, protected route access, session expiry, and logout for anesthesiologists and secretaries.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login page"
+      },
+      {
+        "type": "action",
+        "description": "Input valid anesthesiologist credentials and submit"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify successful login and access to anesthesiologist dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to a protected anesthesiologist route"
+      },
+      {
+        "type": "assertion",
+        "description": "Access is granted"
+      },
+      {
+        "type": "action",
+        "description": "Logout from application"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is redirected to login page and session is invalidated"
+      },
+      {
+        "type": "action",
+        "description": "Repeat steps with secretary user credentials"
+      },
+      {
+        "type": "action",
+        "description": "Simulate session expiry"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is prompted to login again when accessing protected routes"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Password Reset Flow",
+    "description": "Validate forgot password and reset password functionality including validations and email delivery.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to forgot password page"
+      },
+      {
+        "type": "action",
+        "description": "Submit registered email address"
+      },
+      {
+        "type": "assertion",
+        "description": "Check that password reset email is sent"
+      },
+      {
+        "type": "action",
+        "description": "Click on password reset link received in email"
+      },
+      {
+        "type": "action",
+        "description": "Enter new password and confirm"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify password is updated and user can login with new password"
+      },
+      {
+        "type": "action",
+        "description": "Try reset password flow with unregistered email"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify appropriate error message is shown"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Dashboard Data Rendering and Interactivity",
+    "description": "Test that anesthesiologist dashboard loads metrics, graphs, recent procedures and action buttons correctly.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as anesthesiologist"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to main dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify metrics and graphs are displayed with real-time data"
+      },
+      {
+        "type": "assertion",
+        "description": "Check recent procedures list displays correct records"
+      },
+      {
+        "type": "action",
+        "description": "Click on action buttons (e.g., add new procedure, view reports)"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify correct navigation and UI response"
+      },
+      {
+        "type": "action",
+        "description": "Test dashboard responsiveness on mobile and desktop screen sizes"
+      },
+      {
+        "type": "assertion",
+        "description": "UI adapts correctly with no loss of functionality"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Procedures Management with OCR Data Capture",
+    "description": "Verify creation, editing, searching and viewing anesthetic procedures including automatic OCR data extraction and image upload.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and navigate to procedures page"
+      },
+      {
+        "type": "action",
+        "description": "Start new procedure registration"
+      },
+      {
+        "type": "action",
+        "description": "Upload image of medical label for OCR processing"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify OCR extracts correct labels and fields auto-populate accordingly"
+      },
+      {
+        "type": "action",
+        "description": "Manually edit any OCR fields and save procedure"
+      },
+      {
+        "type": "assertion",
+        "description": "Procedure is saved and appears in procedures list with searchable metadata"
+      },
+      {
+        "type": "action",
+        "description": "Search for procedures by date, status, or keyword"
+      },
+      {
+        "type": "assertion",
+        "description": "Search results display correct procedures"
+      },
+      {
+        "type": "action",
+        "description": "Edit existing procedure and verify updates"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Financial Module: Revenue and Expenses Management",
+    "description": "Test recording incomes and expenses, updating statuses, viewing financial performance analytics and hitting financial goals.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and navigate to financial module"
+      },
+      {
+        "type": "action",
+        "description": "Add new revenue entry with valid details"
+      },
+      {
+        "type": "assertion",
+        "description": "Revenue entry is listed with correct status and amounts"
+      },
+      {
+        "type": "action",
+        "description": "Add new expense entry"
+      },
+      {
+        "type": "assertion",
+        "description": "Expense entry is visible and totals update accordingly"
+      },
+      {
+        "type": "action",
+        "description": "Modify status of payment to 'paid' or 'pending'"
+      },
+      {
+        "type": "assertion",
+        "description": "Status update is reflected in UI and backend"
+      },
+      {
+        "type": "action",
+        "description": "Access financial analysis and performance charts"
+      },
+      {
+        "type": "assertion",
+        "description": "Charts render correctly with up-to-date financial data"
+      },
+      {
+        "type": "action",
+        "description": "Verify goal tracking updates appropriately"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Reports Generation with Export in PDF and CSV",
+    "description": "Validate customizable filters for reports, generation of reports with correct data, and exporting functionality in PDF and CSV formats.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to reports page"
+      },
+      {
+        "type": "action",
+        "description": "Apply filters for date range, procedure type and status"
+      },
+      {
+        "type": "assertion",
+        "description": "Filtered report data is displayed accurately"
+      },
+      {
+        "type": "action",
+        "description": "Export report as PDF"
+      },
+      {
+        "type": "assertion",
+        "description": "Exported PDF contains correct data and formatting"
+      },
+      {
+        "type": "action",
+        "description": "Export report as CSV"
+      },
+      {
+        "type": "assertion",
+        "description": "CSV file contains accurate records matching filtered data"
+      },
+      {
+        "type": "action",
+        "description": "Test export with empty filter criteria resulting in full report"
+      },
+      {
+        "type": "assertion",
+        "description": "Complete report data exported successfully"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Secretary Management and Permissions",
+    "description": "Test ability of anesthesiologist to add secretaries, assign permissions, access secretary dashboard, and confirm correct permission enforcement.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as anesthesiologist and navigate to secretary management"
+      },
+      {
+        "type": "action",
+        "description": "Add new secretary with unique email and assign role permissions"
+      },
+      {
+        "type": "assertion",
+        "description": "Secretary receives invitation email and can register"
+      },
+      {
+        "type": "action",
+        "description": "Login as secretary and access secretary dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Secretary dashboard shows only permitted procedures and notifications"
+      },
+      {
+        "type": "action",
+        "description": "Attempt action not allowed by permissions"
+      },
+      {
+        "type": "assertion",
+        "description": "Access is denied with appropriate error"
+      },
+      {
+        "type": "action",
+        "description": "Verify auditing logs capture secretary management actions"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Subscription and Payment Integration with Pagar.me",
+    "description": "Verify subscription sign-up flow, checkout, payment processing, webhook updates, plan management and access control based on subscription status.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to subscription plans page"
+      },
+      {
+        "type": "action",
+        "description": "Select plan and proceed to checkout"
+      },
+      {
+        "type": "action",
+        "description": "Complete payment through integrated Pagar.me checkout"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify subscription creation and confirmation page displays correct details"
+      },
+      {
+        "type": "action",
+        "description": "Simulate webhook notification for successful payment"
+      },
+      {
+        "type": "assertion",
+        "description": "Subscription status is updated appropriately in system"
+      },
+      {
+        "type": "action",
+        "description": "Attempt access to premium features with active and inactive subscriptions"
+      },
+      {
+        "type": "assertion",
+        "description": "Access control is enforced based on subscription validity"
+      },
+      {
+        "type": "action",
+        "description": "Cancel subscription and verify UI and access updates"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Real-time Notifications System",
+    "description": "Test sending, receiving and displaying real-time notifications and alerts for both anesthesiologists and secretaries.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and open notifications panel"
+      },
+      {
+        "type": "action",
+        "description": "Trigger system notifications such as new procedure added or payment update"
+      },
+      {
+        "type": "assertion",
+        "description": "Notification bell icon updates count in real-time"
+      },
+      {
+        "type": "assertion",
+        "description": "Notification list displays latest messages with correct content"
+      },
+      {
+        "type": "action",
+        "description": "Mark notifications as read and verify count updates"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "User Profile Settings and Account Deletion",
+    "description": "Ensure users can update profile info, change preferences and delete their account with necessary confirmations.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to user settings page"
+      },
+      {
+        "type": "action",
+        "description": "Update profile details such as name, contact info and preferences"
+      },
+      {
+        "type": "assertion",
+        "description": "Changes persist correctly and UI reflects updates"
+      },
+      {
+        "type": "action",
+        "description": "Initiate account deletion process"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirmation prompt is shown to user"
+      },
+      {
+        "type": "action",
+        "description": "Confirm account deletion"
+      },
+      {
+        "type": "assertion",
+        "description": "User is logged out, data is removed as per privacy policy, and access revoked"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Security and Privacy Compliance Tests (LGPD)",
+    "description": "Validate encryption of sensitive data at rest and in transit, role-level security enforcement and data anonymization for privacy compliance.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt to access anesthesiologist data as secretary without permission"
+      },
+      {
+        "type": "assertion",
+        "description": "Access is denied according to role-level security policies"
+      },
+      {
+        "type": "action",
+        "description": "Inspect network traffic during authentication and data transmission"
+      },
+      {
+        "type": "assertion",
+        "description": "All data is transmitted over encrypted channels (HTTPS/TLS)"
+      },
+      {
+        "type": "action",
+        "description": "Review database storage to ensure sensitive fields are encrypted"
+      },
+      {
+        "type": "assertion",
+        "description": "Sensitive medical and financial data are stored encrypted as per LGPD"
+      },
+      {
+        "type": "action",
+        "description": "Test anonymization or deletion of data after account removal"
+      },
+      {
+        "type": "assertion",
+        "description": "User data is properly anonymized or deleted, supporting privacy requirements"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Performance Testing for Key Routes",
+    "description": "Ensure uptime of 99.9% and response times below 2 seconds for main routes including authentication, dashboard, procedures and finance.",
+    "category": "performance",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate high load on authentication services"
+      },
+      {
+        "type": "assertion",
+        "description": "Response time remains under 2 seconds and no downtime occurs"
+      },
+      {
+        "type": "action",
+        "description": "Test dashboard data loading under concurrent users"
+      },
+      {
+        "type": "assertion",
+        "description": "Dashboard renders correctly within performance targets"
+      },
+      {
+        "type": "action",
+        "description": "Perform stress test on procedure management and finance modules"
+      },
+      {
+        "type": "assertion",
+        "description": "System remains stable and responsive"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "OCR Accuracy and Error Handling",
+    "description": "Validate OCR extraction accuracy using Tesseract.js on various medical label image qualities and handle OCR failure cases gracefully.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Upload high quality image with clear medical label"
+      },
+      {
+        "type": "assertion",
+        "description": "OCR extracts label data with expected accuracy"
+      },
+      {
+        "type": "action",
+        "description": "Upload low quality or rotated image"
+      },
+      {
+        "type": "assertion",
+        "description": "OCR performs best effort extraction and shows confidence or error message"
+      },
+      {
+        "type": "action",
+        "description": "Submit procedure with partial data from OCR"
+      },
+      {
+        "type": "assertion",
+        "description": "User can manually edit fields before saving"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "UI Responsiveness and Component Consistency",
+    "description": "Verify UI components across the application render correctly on various devices, screen sizes and browsers, matching Tailwind CSS design system.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Access all main pages (login, dashboard, procedures, finance, reports, secretary, subscription, settings) on desktop"
+      },
+      {
+        "type": "assertion",
+        "description": "UI components appear consistent, aligned and functional"
+      },
+      {
+        "type": "action",
+        "description": "Repeat above navigation and inspection on tablet and mobile devices"
+      },
+      {
+        "type": "assertion",
+        "description": "Layouts adapt without clipping or overlapping UI elements"
+      },
+      {
+        "type": "action",
+        "description": "Check interactive components like buttons, selects and modals respond appropriately"
+      }
+    ]
+  }
+]

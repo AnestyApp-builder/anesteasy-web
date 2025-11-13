@@ -24,9 +24,11 @@ import {
   Paperclip,
   MessageSquare,
   Image as ImageIcon,
-  Download
+  Download,
+  Banknote
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -167,7 +169,7 @@ const EditField = memo(({
 
 EditField.displayName = 'EditField'
 
-export default function Procedimentos() {
+function ProcedimentosContent() {
   const [searchTerm, setSearchTerm] = useState('')
   const [procedures, setProcedures] = useState<Procedure[]>([])
   const [loading, setLoading] = useState(true)
@@ -194,6 +196,7 @@ export default function Procedimentos() {
   const [feedbackStatuses, setFeedbackStatuses] = useState<Record<string, {linkCriado: boolean, respondido: boolean}>>({})
   const [selectedProcedureFeedback, setSelectedProcedureFeedback] = useState<any>(null)
   const [secretariasVinculadas, setSecretariasVinculadas] = useState<Array<{ id: string; nome: string; email: string }>>([])
+  const [showPaymentRegistrationBanner, setShowPaymentRegistrationBanner] = useState(false)
   const { user } = useAuth()
 
   useEffect(() => {
@@ -213,6 +216,10 @@ export default function Procedimentos() {
       if (statusParam) {
         if (statusParam === 'pending,not_launched') {
           setStatusFilter('pending,not_launched')
+          // Mostrar banner informativo quando vier do botão "Registrar Pagamento"
+          setShowPaymentRegistrationBanner(true)
+          // Remover banner após 5 segundos
+          setTimeout(() => setShowPaymentRegistrationBanner(false), 5000)
         } else {
           setStatusFilter(statusParam)
         }
@@ -752,6 +759,29 @@ export default function Procedimentos() {
             </Link>
           </div>
         </div>
+
+        {/* Banner informativo para registro de pagamento */}
+        {showPaymentRegistrationBanner && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Banknote className="w-5 h-5 text-emerald-600" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-900">
+                  Registro de Pagamento
+                </p>
+                <p className="text-xs text-emerald-700 mt-1">
+                  Procedimentos pendentes e não lançados estão sendo exibidos. Clique em um procedimento para registrar o pagamento.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowPaymentRegistrationBanner(false)}
+              className="text-emerald-600 hover:text-emerald-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Search */}
         <div className="lg:hidden">
@@ -2630,5 +2660,13 @@ export default function Procedimentos() {
         </button>
       </Link>
     </Layout>
+  )
+}
+
+export default function Procedimentos() {
+  return (
+    <ProtectedRoute>
+      <ProcedimentosContent />
+    </ProtectedRoute>
   )
 }

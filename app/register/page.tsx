@@ -3,13 +3,14 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Stethoscope, Mail, Lock, User, Eye, EyeOff, CheckCircle, AlertCircle, Users, UserCheck } from 'lucide-react'
+import { Stethoscope, Mail, Lock, User, Eye, EyeOff, CheckCircle, AlertCircle, Users, UserCheck, CreditCard } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
 import { useAuth } from '@/contexts/AuthContext'
 import { authService } from '@/lib/auth'
+import { validateCPF, formatCPF } from '@/lib/utils'
 
 export default function Register() {
   const [activeTab, setActiveTab] = useState<'anestesista' | 'secretaria'>('anestesista')
@@ -29,7 +30,8 @@ export default function Register() {
     specialty: '',
     crm: '',
     gender: '',
-    phone: ''
+    phone: '',
+    cpf: ''
   })
   
   // Formulário para secretaria
@@ -38,7 +40,8 @@ export default function Register() {
     email: '',
     password: '',
     confirmPassword: '',
-    phone: ''
+    phone: '',
+    cpf: ''
   })
 
   const { register, user, isAuthenticated } = useAuth()
@@ -82,8 +85,15 @@ export default function Register() {
     
     if (activeTab === 'anestesista') {
       // Validação para anestesista
-      if (!anestesistaForm.name || !anestesistaForm.email || !anestesistaForm.password || !anestesistaForm.specialty || !anestesistaForm.crm || !anestesistaForm.gender || !anestesistaForm.phone) {
+      if (!anestesistaForm.name || !anestesistaForm.email || !anestesistaForm.password || !anestesistaForm.specialty || !anestesistaForm.crm || !anestesistaForm.gender || !anestesistaForm.phone || !anestesistaForm.cpf) {
         setError('Por favor, preencha todos os campos obrigatórios')
+        setIsRegistering(false)
+        return
+      }
+
+      // Validar CPF
+      if (!validateCPF(anestesistaForm.cpf)) {
+        setError('CPF inválido. Por favor, verifique o CPF informado.')
         setIsRegistering(false)
         return
       }
@@ -100,12 +110,16 @@ export default function Register() {
         return
       }
 
-      const result = await register(anestesistaForm.email, anestesistaForm.password, {
+      // Salvar email antes de limpar formulário
+      const userEmail = anestesistaForm.email.trim().toLowerCase()
+      
+      const result = await register(userEmail, anestesistaForm.password, {
         name: anestesistaForm.name,
         specialty: anestesistaForm.specialty,
         crm: anestesistaForm.crm,
         gender: anestesistaForm.gender,
-        phone: anestesistaForm.phone
+        phone: anestesistaForm.phone,
+        cpf: formatCPF(anestesistaForm.cpf)
       })
 
       if (!result.success) {
@@ -117,8 +131,9 @@ export default function Register() {
             setError('Muitas tentativas. Aguarde alguns minutos e tente novamente. Dica: O rate limit do Supabase é temporário e geralmente passa em 5-10 minutos.')
           }, 2000)
         }
+        setIsRegistering(false)
       } else {
-        // Não exibir mensagem de sucesso, pois será redirecionado para página de confirmação
+        // Limpar formulário
         setAnestesistaForm({
           name: '',
           email: '',
@@ -127,13 +142,32 @@ export default function Register() {
           specialty: '',
           crm: '',
           gender: '',
-          phone: ''
+          phone: '',
+          cpf: ''
         })
+        
+        // O redirecionamento será feito pelo contexto, mas vamos garantir aqui também
+        console.log('✅ [REGISTER] Registro bem-sucedido, redirecionando para confirmação de email...')
+        
+        // Garantir redirecionamento mesmo se o contexto não fizer
+        setTimeout(() => {
+          console.log('🔄 [REGISTER] Redirecionando para:', `/confirm-email?email=${encodeURIComponent(userEmail)}`)
+          router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
+        }, 300)
+        
+        // Não definir setIsRegistering(false) aqui, pois será redirecionado
       }
     } else {
       // Validação para secretaria
-      if (!secretariaForm.name || !secretariaForm.email || !secretariaForm.password) {
+      if (!secretariaForm.name || !secretariaForm.email || !secretariaForm.password || !secretariaForm.cpf) {
         setError('Por favor, preencha todos os campos obrigatórios')
+        setIsRegistering(false)
+        return
+      }
+
+      // Validar CPF
+      if (!validateCPF(secretariaForm.cpf)) {
+        setError('CPF inválido. Por favor, verifique o CPF informado.')
         setIsRegistering(false)
         return
       }
@@ -155,7 +189,8 @@ export default function Register() {
           secretariaForm.email,
           secretariaForm.password,
           secretariaForm.name,
-          secretariaForm.phone || undefined
+          secretariaForm.phone || undefined,
+          formatCPF(secretariaForm.cpf)
         )
 
         if (result.success) {
@@ -165,7 +200,8 @@ export default function Register() {
             email: '',
             password: '',
             confirmPassword: '',
-            phone: ''
+            phone: '',
+            cpf: ''
           })
         } else {
           setError('Erro ao criar conta da secretaria. Tente novamente.')
@@ -275,6 +311,31 @@ export default function Register() {
                   setSecretariaForm({ ...secretariaForm, email: e.target.value })
                 }
               }}
+              required
+            />
+
+            <Input
+              label="CPF"
+              type="text"
+              placeholder="000.000.000-00"
+              icon={<CreditCard className="w-5 h-5" />}
+              value={(() => {
+                const cpfValue = activeTab === 'anestesista' ? anestesistaForm.cpf : secretariaForm.cpf
+                if (cpfValue && cpfValue.length === 11) {
+                  return formatCPF(cpfValue)
+                }
+                return cpfValue || ''
+              })()}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '')
+                const formatted = value.length <= 11 ? value : value.slice(0, 11)
+                if (activeTab === 'anestesista') {
+                  setAnestesistaForm({ ...anestesistaForm, cpf: formatted })
+                } else {
+                  setSecretariaForm({ ...secretariaForm, cpf: formatted })
+                }
+              }}
+              maxLength={14}
               required
             />
 

@@ -13,7 +13,8 @@ import {
   DollarSign,
   BarChart3,
   Settings,
-  Calendar
+  Calendar,
+  CreditCard
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Logo } from '@/components/ui/Logo'
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Agenda', href: '/agenda', icon: Calendar },
   { name: 'Financeiro', href: '/financeiro', icon: DollarSign },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
+  { name: 'Plano', href: '/assinatura', icon: CreditCard },
   { name: 'Configurações', href: '/configuracoes', icon: Settings },
 ]
 
@@ -84,7 +86,12 @@ export function Navigation() {
           )}
 
           {/* Mobile menu button */}
-          <div className="md:hidden flex items-center">
+          <div className="md:hidden flex items-center space-x-2">
+            {isAuthenticated && (
+              <div className="flex items-center">
+                <NotificationBell />
+              </div>
+            )}
             <Button
               variant="ghost"
               size="sm"

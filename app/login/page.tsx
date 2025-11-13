@@ -84,64 +84,85 @@ export default function Login() {
     }
 
     try {
-      // Fazer login direto com Supabase Auth primeiro
+      console.log('🔐 [LOGIN] Iniciando processo de login para:', formData.email)
+      
+      // Primeiro, fazer login direto com Supabase Auth para verificar credenciais
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
+        email: formData.email.trim().toLowerCase(),
         password: formData.password
       })
 
       if (authError) {
-        // Verificar se o erro é relacionado a email não confirmado
-        if (authError.message?.includes('email') || authError.message?.includes('Email')) {
+        console.error('❌ [LOGIN] Erro Supabase Auth:', authError)
+        if (authError.message?.includes('Invalid login credentials')) {
+          setError('Email ou senha incorretos. Verifique se você digitou corretamente ou use "Esqueceu a senha?" para redefinir.')
+        } else if (authError.message?.includes('Email not confirmed') || authError.message?.includes('email_confirmed_at')) {
           setError('Email não confirmado. Verifique sua caixa de entrada e confirme seu email antes de fazer login.')
+        } else if (authError.message?.includes('User not found')) {
+          setError('Usuário não encontrado. Verifique se o email está correto ou cadastre-se primeiro.')
+        } else if (authError.message?.includes('Too many requests')) {
+          setError('Muitas tentativas. Aguarde alguns minutos e tente novamente.')
         } else {
-          setError('Email ou senha incorretos')
+          setError(`Erro ao fazer login: ${authError.message || 'Tente novamente ou entre em contato com o suporte'}`)
         }
         return
       }
 
-      if (!authData.user) {
+      if (!authData?.user) {
         setError('Erro ao fazer login. Tente novamente.')
         return
       }
 
-      // Verificar se email foi confirmado
-      if (!authData.user.email_confirmed_at) {
-        setError('Email não confirmado. Verifique sua caixa de entrada e confirme seu email antes de fazer login.')
-        await supabase.auth.signOut()
+      console.log('✅ [LOGIN] Login Supabase Auth bem-sucedido. User ID:', authData.user.id)
+
+      // Verificar se é secretária ANTES de tentar usar o contexto de anestesistas
+      const { data: secretaria, error: secretariaError } = await supabase
+        .from('secretarias')
+        .select('id')
+        .eq('id', authData.user.id)
+        .maybeSingle()
+
+      if (secretaria && !secretariaError) {
+        console.log('👩‍💼 [LOGIN] É secretária, redirecionando...')
+        router.push('/secretaria/dashboard')
         return
       }
 
-      // Verificar se é secretaria ou anestesista
-      try {
-        const { data: secretaria, error: secretariaError } = await supabase
-          .from('secretarias')
-          .select('id')
+      // Se não é secretária, é anestesista - usar o contexto de auth para carregar dados
+      console.log('👨‍⚕️ [LOGIN] É anestesista, carregando dados do usuário...')
+      const loginSuccess = await login(formData.email, formData.password)
+      
+      if (loginSuccess) {
+        console.log('✅ [LOGIN] Login bem-sucedido via contexto')
+        router.push('/dashboard')
+      } else {
+        console.error('❌ [LOGIN] Login falhou via contexto para anestesista')
+        
+        // Verificar qual foi o problema específico
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('id, email, name, subscription_status')
           .eq('id', authData.user.id)
           .maybeSingle()
-
-        if (secretaria && !secretariaError) {
-          // É secretária, redirecionar para dashboard da secretária
-          router.push('/secretaria/dashboard')
-          return
-        }
-
-        // É anestesista, usar o contexto de auth para carregar dados do usuário
-        const anestesistaSuccess = await login(formData.email, formData.password)
         
-        if (anestesistaSuccess) {
-          router.push('/dashboard')
+        console.log('🔍 [LOGIN] Dados do usuário na tabela:', { userData, userError })
+        
+        if (userError) {
+          console.error('❌ [LOGIN] Erro ao buscar usuário:', userError)
+          setError('Erro ao buscar dados do usuário. Tente novamente ou entre em contato com o suporte.')
+        } else if (!userData) {
+          console.error('❌ [LOGIN] Usuário não encontrado na tabela users')
+          setError('Usuário não encontrado no sistema. Entre em contato com o suporte para verificar sua conta.')
         } else {
-          setError('Erro ao carregar dados do usuário. Tente novamente.')
-          await supabase.auth.signOut()
+          console.error('❌ [LOGIN] Usuário encontrado mas login falhou. Status:', userData.subscription_status)
+          setError('Erro ao carregar dados do usuário. Tente novamente ou entre em contato com o suporte.')
         }
-      } catch (error) {
-        console.error('Erro ao verificar tipo de usuário após login:', error)
-        setError('Erro ao verificar tipo de usuário. Tente novamente.')
+        
+        // Fazer logout para limpar sessão
         await supabase.auth.signOut()
       }
     } catch (error) {
-      console.error('Erro no login:', error)
+      console.error('❌ [LOGIN] Erro geral no login:', error)
       setError('Erro interno. Tente novamente.')
     }
   }

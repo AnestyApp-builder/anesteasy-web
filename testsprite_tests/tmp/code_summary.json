@@ -1,0 +1,174 @@
+{
+  "tech_stack": [
+    "TypeScript",
+    "Next.js 15",
+    "React 19",
+    "Tailwind CSS",
+    "Supabase",
+    "PostgreSQL",
+    "Pagarme",
+    "Tesseract.js",
+    "Lucide React",
+    "Vercel"
+  ],
+  "features": [
+    {
+      "name": "Sistema de Autenticação",
+      "description": "Sistema completo de autenticação com Supabase Auth, confirmação de email, login/logout, reset de senha e proteção de rotas. Suporta dois tipos de usuários: anestesistas e secretárias.",
+      "files": [
+        "contexts/AuthContext.tsx",
+        "contexts/SecretariaAuthContext.tsx",
+        "lib/auth.ts",
+        "app/login/page.tsx",
+        "app/register/page.tsx",
+        "app/auth/confirm/route.ts",
+        "app/forgot-password/page.tsx",
+        "app/reset-password/page.tsx",
+        "components/auth/ProtectedRoute.tsx"
+      ]
+    },
+    {
+      "name": "Dashboard Principal",
+      "description": "Dashboard interativo com métricas em tempo real, gráficos de receitas, procedimentos recentes e ações rápidas para anestesistas.",
+      "files": [
+        "app/dashboard/page.tsx"
+      ]
+    },
+    {
+      "name": "Gestão de Procedimentos",
+      "description": "Sistema completo para cadastro, edição e visualização de procedimentos anestésicos com OCR para captura de etiquetas, upload de imagens e histórico detalhado.",
+      "files": [
+        "app/procedimentos/page.tsx",
+        "app/procedimentos/novo/page.tsx",
+        "app/procedimentos/[id]/page.tsx",
+        "lib/procedures.ts"
+      ]
+    },
+    {
+      "name": "Sistema Financeiro",
+      "description": "Controle financeiro completo com receitas, despesas, relatórios e análise de performance financeira.",
+      "files": [
+        "app/financeiro/page.tsx"
+      ]
+    },
+    {
+      "name": "Relatórios",
+      "description": "Sistema de relatórios personalizáveis com exportação de dados e análises estatísticas.",
+      "files": [
+        "app/relatorios/page.tsx"
+      ]
+    },
+    {
+      "name": "Sistema de Assinaturas",
+      "description": "Integração com Pagarme para gestão de planos de assinatura, checkout hospedado e webhooks para processamento de pagamentos.",
+      "files": [
+        "app/assinatura/page.tsx",
+        "app/planos/page.tsx",
+        "app/checkout/page.tsx",
+        "app/checkout/success/page.tsx",
+        "lib/pagarme.ts",
+        "lib/pagarme-subscriptions.ts",
+        "lib/subscription.ts",
+        "lib/subscription-access.ts",
+        "components/subscription/SubscriptionStatus.tsx",
+        "app/api/pagarme/create-subscription/route.ts",
+        "app/api/webhooks/pagarme/route.ts"
+      ]
+    },
+    {
+      "name": "Sistema de Secretárias",
+      "description": "Sistema separado para secretárias com dashboard próprio, gestão de procedimentos vinculados e notificações específicas.",
+      "files": [
+        "app/secretaria/login/page.tsx",
+        "app/secretaria/dashboard/page.tsx",
+        "app/secretaria/procedimentos/page.tsx",
+        "app/secretaria/procedimentos/[id]/page.tsx",
+        "app/secretaria/configuracoes/page.tsx",
+        "app/secretaria/notificacoes/page.tsx",
+        "contexts/SecretariaContext.tsx",
+        "contexts/SecretariaNotificationsContext.tsx",
+        "lib/secretarias.ts"
+      ]
+    },
+    {
+      "name": "Configurações de Usuário",
+      "description": "Página de configurações para gerenciar perfil, preferências do sistema e exclusão de conta.",
+      "files": [
+        "app/configuracoes/page.tsx"
+      ]
+    },
+    {
+      "name": "Sistema de Notificações",
+      "description": "Sistema de notificações em tempo real para alertas e atualizações importantes.",
+      "files": [
+        "components/notifications/NotificationBell.tsx",
+        "components/notifications/NotificationItem.tsx",
+        "components/notifications/NotificationList.tsx"
+      ]
+    },
+    {
+      "name": "Componentes UI",
+      "description": "Biblioteca de componentes reutilizáveis baseados em Tailwind CSS incluindo botões, inputs, cards, modais e outros elementos de interface.",
+      "files": [
+        "components/ui/Button.tsx",
+        "components/ui/Input.tsx",
+        "components/ui/Card.tsx",
+        "components/ui/Modal.tsx",
+        "components/ui/Progress.tsx",
+        "components/ui/Logo.tsx",
+        "components/ui/LoadingSpinner.tsx",
+        "components/ui/Select.tsx",
+        "components/ui/Textarea.tsx"
+      ]
+    },
+    {
+      "name": "Layout e Navegação",
+      "description": "Sistema de layout responsivo com navegação principal, sidebar e componentes de estrutura da aplicação.",
+      "files": [
+        "app/layout.tsx",
+        "components/layout/Navigation.tsx",
+        "components/layout/Sidebar.tsx"
+      ]
+    },
+    {
+      "name": "Utilitários e Helpers",
+      "description": "Funções utilitárias para formatação, validação, manipulação de dados e integração com APIs externas.",
+      "files": [
+        "lib/utils.ts",
+        "lib/supabase.ts",
+        "lib/types.ts",
+        "lib/user-utils.ts"
+      ]
+    },
+    {
+      "name": "OCR e Processamento de Imagens",
+      "description": "Sistema de OCR usando Tesseract.js para captura automática de dados de etiquetas médicas e processamento de imagens.",
+      "files": [
+        "lib/ocr.ts"
+      ]
+    },
+    {
+      "name": "Páginas Institucionais",
+      "description": "Páginas de conteúdo institucional como política de privacidade, termos de uso e responsabilidades.",
+      "files": [
+        "app/page.tsx",
+        "app/politica-privacidade/page.tsx",
+        "app/termos/page.tsx",
+        "app/responsabilidade/page.tsx"
+      ]
+    },
+    {
+      "name": "APIs e Rotas",
+      "description": "APIs REST para integração com serviços externos, webhooks e processamento de dados do backend.",
+      "files": [
+        "app/api/auth/confirm/route.ts",
+        "app/api/procedures/route.ts",
+        "app/api/upload/route.ts",
+        "app/api/ocr/route.ts",
+        "app/api/pagarme/plans/route.ts",
+        "app/api/pagarme/create-subscription/route.ts",
+        "app/api/webhooks/pagarme/route.ts"
+      ]
+    }
+  ]
+}

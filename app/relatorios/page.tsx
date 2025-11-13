@@ -13,13 +13,14 @@ import {
   FileImage
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { reportService, ReportData } from '@/lib/reports'
 import { useAuth } from '@/contexts/AuthContext'
 
-export default function Relatorios() {
+function RelatoriosContent() {
   const [loading, setLoading] = useState(false)
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
@@ -27,38 +28,62 @@ export default function Relatorios() {
   })
   const { user } = useAuth()
 
-  const handleExportCSV = async () => {
+  const handleExportCSV = async (customStartDate?: string, customEndDate?: string) => {
     if (!user?.id) return
     
     setLoading(true)
     try {
+      // Usar datas customizadas se fornecidas, senão usar o dateRange do estado
+      const startDate = customStartDate || dateRange.start
+      const endDate = customEndDate || dateRange.end
+      
       const reportData = await reportService.generateReportData(
         user.id, 
-        dateRange.start, 
-        dateRange.end
+        startDate, 
+        endDate
       )
+      
+      // Validar se há dados antes de exportar
+      if (!reportData.procedures || reportData.procedures.length === 0) {
+        alert('Nenhum procedimento encontrado no período selecionado.')
+        setLoading(false)
+        return
+      }
+      
       reportService.exportToCSV(reportData)
     } catch (error) {
-      
+      console.error('Erro ao exportar CSV:', error)
       alert('Erro ao exportar relatório. Tente novamente.')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleExportPDF = async () => {
+  const handleExportPDF = async (customStartDate?: string, customEndDate?: string) => {
     if (!user?.id) return
     
     setLoading(true)
     try {
+      // Usar datas customizadas se fornecidas, senão usar o dateRange do estado
+      const startDate = customStartDate || dateRange.start
+      const endDate = customEndDate || dateRange.end
+      
       const reportData = await reportService.generateReportData(
         user.id, 
-        dateRange.start, 
-        dateRange.end
+        startDate, 
+        endDate
       )
+      
+      // Validar se há dados antes de exportar
+      if (!reportData.procedures || reportData.procedures.length === 0) {
+        alert('Nenhum procedimento encontrado no período selecionado.')
+        setLoading(false)
+        return
+      }
+      
       reportService.exportToPDF(reportData)
     } catch (error) {
-      
+      console.error('Erro ao exportar PDF:', error)
       alert('Erro ao exportar relatório. Tente novamente.')
     } finally {
       setLoading(false)
@@ -99,7 +124,7 @@ export default function Relatorios() {
       description: 'Detalhamento de todos os procedimentos realizados',
       type: 'Procedimentos',
       lastGenerated: '2024-01-14',
-      action: handleExportPDF,
+      action: () => handleExportPDF(dateRange.start, dateRange.end),
       icon: FileText
     },
     {
@@ -107,7 +132,7 @@ export default function Relatorios() {
       description: 'Análise completa da situação financeira',
       type: 'Financeiro',
       lastGenerated: '2024-01-13',
-      action: handleExportCSV,
+      action: () => handleExportCSV(dateRange.start, dateRange.end),
       icon: TrendingUp
     },
     {
@@ -115,7 +140,7 @@ export default function Relatorios() {
       description: 'Estatísticas e dados dos pacientes atendidos',
       type: 'Pacientes',
       lastGenerated: '2024-01-12',
-      action: handleExportPDF,
+      action: () => handleExportPDF(dateRange.start, dateRange.end),
       icon: PieChart
     }
   ]
@@ -130,11 +155,18 @@ export default function Relatorios() {
             <p className="text-gray-600 mt-1">Gere e visualize relatórios detalhados</p>
           </div>
           <div className="mt-4 sm:mt-0 flex space-x-2">
-            <Button variant="outline" onClick={handleExportCSV} disabled={loading}>
+            <Button 
+              variant="outline" 
+              onClick={() => handleExportCSV(dateRange.start, dateRange.end)} 
+              disabled={loading}
+            >
               <FileSpreadsheet className="w-4 h-4 mr-2" />
               Exportar CSV
             </Button>
-            <Button onClick={handleExportPDF} disabled={loading}>
+            <Button 
+              onClick={() => handleExportPDF(dateRange.start, dateRange.end)} 
+              disabled={loading}
+            >
               <FileImage className="w-4 h-4 mr-2" />
               Exportar PDF
             </Button>
@@ -242,5 +274,13 @@ export default function Relatorios() {
         </Card>
       </div>
     </Layout>
+  )
+}
+
+export default function Relatorios() {
+  return (
+    <ProtectedRoute>
+      <RelatoriosContent />
+    </ProtectedRoute>
   )
 }

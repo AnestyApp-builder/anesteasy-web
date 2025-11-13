@@ -1,18 +1,25 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSecretaria } from '@/lib/user-utils'
+import { hasActiveSubscription } from '@/lib/subscription'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
+  requireSubscription?: boolean // Se true, verifica assinatura ativa
 }
 
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, requireSubscription = true }: ProtectedRouteProps) {
   const { isAuthenticated, isEmailConfirmed, isLoading, user } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
   const [isCheckingSecretaria, setIsCheckingSecretaria] = useState(true)
+  const [isCheckingSubscription, setIsCheckingSubscription] = useState(false)
+
+  // Rotas que não requerem assinatura
+  const publicRoutes = ['/planos', '/checkout']
 
   useEffect(() => {
     const checkUserType = async () => {
@@ -43,15 +50,30 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           setIsCheckingSecretaria(false)
           return
         }
+
+        // Verificar assinatura apenas para anestesistas e se a rota requer
+        if (requireSubscription && !publicRoutes.includes(pathname)) {
+          setIsCheckingSubscription(true)
+          const hasSubscription = await hasActiveSubscription(user.id)
+          
+          if (!hasSubscription) {
+            // Sem assinatura ativa - redirecionar para planos
+            router.push('/planos?required=true')
+            setIsCheckingSubscription(false)
+            setIsCheckingSecretaria(false)
+            return
+          }
+          setIsCheckingSubscription(false)
+        }
       }
 
       setIsCheckingSecretaria(false)
     }
 
     checkUserType()
-  }, [isAuthenticated, isEmailConfirmed, isLoading, router, user])
+  }, [isAuthenticated, isEmailConfirmed, isLoading, router, user, requireSubscription, pathname])
 
-  if (isLoading || isCheckingSecretaria) {
+  if (isLoading || isCheckingSecretaria || isCheckingSubscription) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">

@@ -50,10 +50,10 @@ export function NotificationBell() {
   return (
     <div className="relative">
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
         onClick={() => setIsOpen(!isOpen)}
-        className="relative"
+        className="relative text-white hover:bg-white/10 border-0"
       >
         <Bell className="w-4 h-4" />
         {unreadNotifications > 0 && (
@@ -72,19 +72,20 @@ export function NotificationBell() {
           />
           
           {/* Notification Panel */}
-          <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg border z-50">
+          <div className="fixed md:absolute right-2 md:right-0 top-16 md:top-full mt-0 md:mt-2 w-[calc(100vw-1rem)] max-w-sm md:w-80 bg-white rounded-lg shadow-lg border z-50">
             <div className="p-4 border-b">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">Notificações</h3>
                 {unreadNotifications > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleMarkAllAsRead}
-                    className="text-xs"
+                    className="text-xs whitespace-nowrap"
                   >
                     <Check className="w-3 h-3 mr-1" />
-                    Marcar todas como lidas
+                    <span className="hidden sm:inline">Marcar todas como lidas</span>
+                    <span className="sm:hidden">Todas</span>
                   </Button>
                 )}
               </div>

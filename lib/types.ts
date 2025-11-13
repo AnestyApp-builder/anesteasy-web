@@ -6,6 +6,7 @@ export interface User {
   crm: string
   gender: string | null
   phone?: string | null
+  cpf?: string | null
 }
 
 export interface ProcedureInsert {
@@ -28,6 +29,10 @@ export interface ProcedureInsert {
   especialidade_cirurgiao?: string
   nome_equipe?: string
   hospital_clinic?: string
+  
+  // Campos de horário e duração
+  horario?: string
+  duracao_minutos?: number
   
   // Campos do procedimento (não-obstétrico)
   sangramento?: 'Sim' | 'Não'

@@ -18,6 +18,7 @@ import {
   X
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { procedureService } from '@/lib/procedures'
@@ -26,7 +27,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import { ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts'
 
-export default function Financeiro() {
+function FinanceiroContent() {
   const [stats, setStats] = useState({
     total: 0,
     completed: 0,
@@ -406,8 +407,8 @@ export default function Financeiro() {
             <Button 
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={() => {
-                
-                // Redireciona para procedimentos com filtros ativados
+                // Redireciona para procedimentos com filtros ativados para registrar pagamentos
+                // Mostra apenas procedimentos pendentes e não lançados que precisam ter pagamento registrado
                 router.push('/procedimentos?status=pending,not_launched');
               }}
             >
@@ -855,6 +856,14 @@ export default function Financeiro() {
         )}
       </div>
     </Layout>
+  )
+}
+
+export default function Financeiro() {
+  return (
+    <ProtectedRoute>
+      <FinanceiroContent />
+    </ProtectedRoute>
   )
 }
 

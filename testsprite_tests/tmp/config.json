@@ -1,0 +1,18 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "loginUser": "felipemakermoney@gmail.com",
+  "loginPassword": "123456",
+  "executionArgs": {
+    "projectName": "AnestEasy WEB",
+    "projectPath": "D:\\PROJETOS\\AnestEasy WEB",
+    "testIds": [],
+    "additionalInstruction": "Execute todos os testes do plano gerado para validar as funcionalidades principais do sistema AnestEasy, incluindo autenticação, dashboard, procedimentos, financeiro e sistema de assinaturas.",
+    "envs": {
+      "API_KEY": "sk-user-IZeNCLkixTC20Z1GBV2mKilKoWMGJ5eHho-VhsEZe1RsuuW0T8YXZHmCW1-WMWMcrhPoHRGxRxD5VSSa8WN_9MZ4Z0hCONsvWHZGNR7AO5Yw8pflFyczs1hNk5jsSC2_-6U"
+    }
+  },
+  "proxy": "http://065ce538-8cde-47ba-954a-d9f111643bb8:jwykK1ATRX54z1VNb1gJpsenbxrVZSGq@tun.testsprite.com:8080"
+}

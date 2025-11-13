@@ -740,6 +740,7 @@ export default function Dashboard() {
           </div>
         )}
 
+
         {/* Stats Grid - Desktop */}
         <div className="hidden lg:grid grid-cols-4 gap-6">
           {dashboardStats.map((stat, index) => (

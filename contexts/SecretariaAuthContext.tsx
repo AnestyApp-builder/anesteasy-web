@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -29,31 +29,44 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
   const [secretaria, setSecretaria] = useState<Secretaria | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
+  const isLoggingOutRef = useRef(false)
 
   useEffect(() => {
     let mounted = true
 
     // Escutar mudanças de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (mounted) {
-        if (session?.user) {
-          // Buscar dados da secretaria
-          const { data: secretariaData, error: secretariaError } = await supabase
-            .from('secretarias')
-            .select('*')
-            .eq('email', session.user.email)
-            .single()
+      if (!mounted) return
 
-          if (secretariaData && !secretariaError) {
-            setSecretaria(secretariaData)
-          } else {
-            setSecretaria(null)
-          }
+      // Ignorar eventos durante logout para evitar relogin automático
+      if (isLoggingOutRef.current) {
+        console.log('🚪 [SECRETARIA] Ignorando evento durante logout:', event)
+        if (event === 'SIGNED_OUT') {
+          setSecretaria(null)
+          setIsLoading(false)
+          isLoggingOutRef.current = false
+        }
+        return
+      }
+
+      if (session?.user) {
+        // Buscar dados da secretaria
+        const { data: secretariaData, error: secretariaError } = await supabase
+          .from('secretarias')
+          .select('*')
+          .eq('email', session.user.email)
+          .single()
+
+        if (secretariaData && !secretariaError) {
+          setSecretaria(secretariaData)
         } else {
           setSecretaria(null)
         }
-        setIsLoading(false)
+      } else if (event === 'SIGNED_OUT') {
+        setSecretaria(null)
       }
+      
+      setIsLoading(false)
     })
 
     return () => {
@@ -104,20 +117,52 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
+    console.log('🚪 [SECRETARIA] Iniciando logout...')
+    
+    // Marcar que está fazendo logout para evitar relogin automático
+    isLoggingOutRef.current = true
+    
     // Limpar estado imediatamente para feedback visual rápido
     setSecretaria(null)
     
-    // Fazer signOut primeiro (rápido)
-    try {
-      // Não esperar o signOut completar, fazer em paralelo
-      supabase.auth.signOut().catch(() => {
-        // Ignorar erros, o redirect já foi feito
+    // Limpar todos os dados do localStorage relacionados ao Supabase ANTES do signOut
+    if (typeof window !== 'undefined') {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key)
+        }
       })
-    } catch (error) {
-      // Ignorar erros
     }
     
-    // Redirecionar imediatamente usando window.location para garantir
+    // Fazer signOut e AGUARDAR completar
+    try {
+      console.log('🚪 [SECRETARIA] Fazendo signOut no Supabase...')
+      const { error } = await supabase.auth.signOut()
+      
+      if (error) {
+        console.error('❌ [SECRETARIA] Erro ao fazer signOut:', error)
+      } else {
+        console.log('✅ [SECRETARIA] SignOut concluído')
+      }
+    } catch (error) {
+      console.error('❌ [SECRETARIA] Erro ao fazer signOut:', error)
+    }
+    
+    // Aguardar um pouco para garantir que o signOut foi processado
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    // Limpar localStorage novamente após signOut
+    if (typeof window !== 'undefined') {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key)
+        }
+      })
+    }
+    
+    console.log('🚪 [SECRETARIA] Redirecionando para login...')
+    
+    // Redirecionar usando window.location para forçar reload completo e evitar relogin
     window.location.href = '/login'
   }
 

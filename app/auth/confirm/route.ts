@@ -131,6 +131,18 @@ async function handleSuccessfulConfirmation(user: any, next: string, baseUrl: st
         return NextResponse.redirect(new URL(next, baseUrl))
       }
       
+      console.log('📝 [CONFIRM] Criando registro na tabela users para:', {
+        id: user.id,
+        email: user.email,
+        name: user.user_metadata?.name,
+        specialty: user.user_metadata?.specialty,
+        crm: user.user_metadata?.crm
+      })
+      
+      // Calcular data de término do período de teste (7 dias a partir de agora)
+      const trialEndsAt = new Date()
+      trialEndsAt.setDate(trialEndsAt.getDate() + 7)
+      
       const { data: insertData, error: insertError } = await supabase
         .from('users')
         .insert({
@@ -141,16 +153,26 @@ async function handleSuccessfulConfirmation(user: any, next: string, baseUrl: st
           crm: user.user_metadata?.crm || '',
           gender: user.user_metadata?.gender || null,
           phone: user.user_metadata?.phone || null,
+          cpf: user.user_metadata?.cpf || null,
           password_hash: '', // Não armazenar senha na tabela users
           subscription_plan: 'premium',
-          subscription_status: 'active' // Status ativo após confirmação
+          subscription_status: 'trial', // Status de teste durante os 7 dias
+          trial_ends_at: trialEndsAt.toISOString() // 7 dias a partir de agora
         })
         .select()
 
       if (insertError) {
-        console.error('❌ [CONFIRM] Erro ao criar registro na tabela users:', insertError)
+        console.error('❌ [CONFIRM] Erro ao criar registro na tabela users:', {
+          error: insertError,
+          code: insertError.code,
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint
+        })
+        // Não redirecionar se houver erro - deixar o usuário ver o erro
+        // Mas ainda redirecionar para login para não travar
       } else {
-        console.log('✅ [CONFIRM] Registro criado na tabela users para anestesista')
+        console.log('✅ [CONFIRM] Registro criado na tabela users para anestesista:', insertData)
       }
     } catch (insertError) {
       console.error('❌ [CONFIRM] Erro ao processar confirmação de email:', insertError)

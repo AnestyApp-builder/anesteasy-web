@@ -81,6 +81,9 @@ function SecretariaDashboardContent() {
 
   // Carregar dados da secretaria e procedimentos
   useEffect(() => {
+    let isMounted = true
+    let channel: any = null
+
     const loadData = async () => {
       try {
         // Aguardar a verificação de autenticação
@@ -90,7 +93,9 @@ function SecretariaDashboardContent() {
 
         // Verificar se a secretaria está autenticada
         if (!isAuthenticated || !secretaria) {
-          router.push('/login')
+          if (isMounted) {
+            router.push('/login')
+          }
           return
         }
 
@@ -108,9 +113,12 @@ function SecretariaDashboardContent() {
             )
           `)
           .eq('secretaria_id', secretaria.id)
+          .limit(100) // Limitar para evitar queries muito lentas
+
+        if (!isMounted) return
 
         if (anestesistasError) {
-          
+          console.error('Erro ao carregar anestesistas:', anestesistasError)
           setError('Erro ao carregar anestesistas')
           return
         }
@@ -121,6 +129,7 @@ function SecretariaDashboardContent() {
         // Buscar apenas procedimentos vinculados a esta secretária
         // A secretária só tem acesso a procedimentos que foram explicitamente vinculados a ela
         // através do campo "Adicionar Secretaria" no formulário de criação
+        // Limitar a 500 procedimentos para evitar queries muito lentas
         const { data: proceduresData, error: proceduresError } = await supabase
           .from('procedures')
           .select(`
@@ -133,6 +142,9 @@ function SecretariaDashboardContent() {
           `)
           .eq('secretaria_id', secretaria.id)
           .order('procedure_date', { ascending: false })
+          .limit(500) // Limitar para melhorar performance
+
+        if (!isMounted) return
 
         if (proceduresError) {
           console.error('Erro ao buscar procedimentos:', proceduresError)
@@ -146,7 +158,7 @@ function SecretariaDashboardContent() {
         }
 
         // Carregar solicitações pendentes
-        if (secretaria) {
+        if (secretaria && isMounted) {
           const { data: requestsData, error: requestsError } = await supabase
             .from('secretaria_link_requests')
             .select(`
@@ -162,6 +174,9 @@ function SecretariaDashboardContent() {
             .eq('secretaria_id', secretaria.id)
             .eq('status', 'pending')
             .order('created_at', { ascending: false })
+            .limit(50) // Limitar solicitações pendentes
+
+          if (!isMounted) return
 
           if (requestsError) {
             console.error('Erro ao carregar solicitações:', requestsError)
@@ -179,41 +194,78 @@ function SecretariaDashboardContent() {
           setIsLoadingRequests(false)
         }
       } catch (error) {
+        if (!isMounted) return
         console.error('Erro ao carregar dados:', error)
         setError('Erro interno')
       } finally {
-        setIsLoading(false)
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
     }
 
-    loadData()
+    // Carregar dados apenas se autenticado e não estiver carregando
+    if (!authLoading && isAuthenticated && secretaria) {
+      loadData()
 
-    // Escutar mudanças em tempo real nas solicitações
-    let channel: any = null
-    if (secretaria) {
-      channel = supabase
-        .channel(`link_requests:${secretaria.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'secretaria_link_requests',
-            filter: `secretaria_id=eq.${secretaria.id}`
-          },
-          () => {
-            loadData()
-          }
-        )
-        .subscribe()
+      // Escutar mudanças em tempo real nas solicitações (apenas uma vez)
+      if (secretaria && !channel) {
+        channel = supabase
+          .channel(`link_requests:${secretaria.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'secretaria_link_requests',
+              filter: `secretaria_id=eq.${secretaria.id}`
+            },
+            () => {
+              // Recarregar apenas solicitações, não tudo
+              if (isMounted && secretaria) {
+                supabase
+                  .from('secretaria_link_requests')
+                  .select(`
+                    id,
+                    anestesista_id,
+                    created_at,
+                    users (
+                      id,
+                      name,
+                      email
+                    )
+                  `)
+                  .eq('secretaria_id', secretaria.id)
+                  .eq('status', 'pending')
+                  .order('created_at', { ascending: false })
+                  .limit(50)
+                  .then(({ data: requestsData, error: requestsError }) => {
+                    if (!isMounted) return
+                    if (!requestsError && requestsData) {
+                      const formattedRequests = requestsData.map((req: any) => ({
+                        id: req.id,
+                        anestesista_id: req.anestesista_id,
+                        anestesista_name: req.users?.name || 'Nome não disponível',
+                        anestesista_email: req.users?.email || 'Email não disponível',
+                        created_at: req.created_at || ''
+                      }))
+                      setPendingRequests(formattedRequests)
+                    }
+                  })
+              }
+            }
+          )
+          .subscribe()
+      }
     }
 
     return () => {
+      isMounted = false
       if (channel) {
         supabase.removeChannel(channel)
       }
     }
-  }, [router, isAuthenticated, secretaria, authLoading])
+  }, [authLoading, isAuthenticated, secretaria?.id]) // Remover router das dependências para evitar re-renders
 
   // Filtrar procedimentos
   useEffect(() => {

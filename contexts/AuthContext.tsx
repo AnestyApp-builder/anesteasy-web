@@ -55,12 +55,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Atualizar sessão quando houver mudanças
       if (session?.user) {
+        // Verificar se é secretária antes de fazer checkUser
+        // Isso evita que o AuthContext tente fazer login automático para secretárias
+        const isSec = await isSecretaria(session.user.id)
+        if (isSec) {
+          // É secretária, ignorar - deixar o SecretariaAuthContext lidar
+          console.log('👩‍💼 [AUTH CONTEXT] Evento de sessão é de secretária, ignorando...')
+          setUser(null)
+          setIsEmailConfirmed(false)
+          localStorage.removeItem('currentUser')
+          localStorage.removeItem('isEmailConfirmed')
+          return
+        }
         checkUser()
       } else if (event === 'SIGNED_OUT') {
+        // Limpar completamente quando signOut for detectado
         setUser(null)
         setIsEmailConfirmed(false)
         localStorage.removeItem('currentUser')
         localStorage.removeItem('isEmailConfirmed')
+        localStorage.removeItem('supabase.auth.token')
+        localStorage.removeItem('sb-auth-token')
+        
+        // Limpar todos os dados do Supabase do localStorage
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) {
+            localStorage.removeItem(key)
+          }
+        })
       }
     })
 
@@ -97,9 +119,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         
         if (session?.user) {
+          // IMPORTANTE: Verificar se é secretária ANTES de qualquer coisa
+          // Secretárias NÃO devem usar o AuthContext de anestesistas
+          const secretaria = await isSecretaria(session.user.id)
+          if (secretaria) {
+            // É secretária, limpar dados e NÃO fazer login automático
+            console.log('👩‍💼 [AUTH CONTEXT] Sessão detectada é de secretária, ignorando...')
+            setUser(null)
+            setIsEmailConfirmed(false)
+            localStorage.removeItem('currentUser')
+            localStorage.removeItem('isEmailConfirmed')
+            // NÃO redirecionar aqui - deixar o SecretariaAuthContext lidar com isso
+            if (mounted) {
+              setIsLoading(false)
+            }
+            return
+          }
           
           
-          // Buscar dados do usuário na tabela users
+          // Buscar dados do usuário na tabela users (apenas para anestesistas)
           const { data: userData, error: userError } = await supabase
             .from('users')
             .select('*')
@@ -111,19 +149,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           if (userData && mounted) {
-            // Verificar se é secretária - secretárias NÃO devem usar o AuthContext de anestesistas
-            const secretaria = await isSecretaria(session.user.id)
-            if (secretaria) {
-              // É secretária, limpar dados e redirecionar
-              setUser(null)
-              setIsEmailConfirmed(false)
-              localStorage.removeItem('currentUser')
-              localStorage.removeItem('isEmailConfirmed')
-              if (mounted) {
-                router.push('/secretaria/dashboard')
-              }
-              return
-            }
             
             const currentUser = {
               id: userData.id,
@@ -148,6 +173,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             
             // Tentar criar o registro na tabela users
             try {
+              // Calcular data de término do período de teste (7 dias a partir de agora)
+              const trialEndsAt = new Date()
+              trialEndsAt.setDate(trialEndsAt.getDate() + 7)
+              
               const { error: insertError } = await supabase
                 .from('users')
                 .insert({
@@ -156,9 +185,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   name: session.user.user_metadata?.name || 'Usuário',
                   specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
                   crm: session.user.user_metadata?.crm || '000000',
+                  cpf: session.user.user_metadata?.cpf || null,
                   password_hash: '',
                   subscription_plan: 'premium',
-                  subscription_status: 'active'
+                  subscription_status: 'trial', // Status de teste durante os 7 dias
+                  trial_ends_at: trialEndsAt.toISOString() // 7 dias a partir de agora
                 })
 
               if (insertError) {
@@ -185,14 +216,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             // VALIDAÇÃO DUPLA: Verificar se status é 'active' na tabela users
+            // Se não for 'active', ainda permitir login mas logar aviso
             if (userData.subscription_status !== 'active') {
-              // Usuário não está ativo, limpar dados
-              setUser(null)
-              setIsEmailConfirmed(false)
-              localStorage.removeItem('currentUser')
-              localStorage.removeItem('isEmailConfirmed')
-              localStorage.removeItem('supabase.auth.token')
-              return
+              console.warn('Usuário com subscription_status diferente de active:', {
+                userId: userData.id,
+                status: userData.subscription_status
+              })
+              // Ainda permitir login - a validação de acesso será feita nas rotas protegidas
             }
             
             // Usar dados do user_metadata como fallback
@@ -236,7 +266,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    checkUser()
+    // Verificar sessão inicial apenas se não for secretária
+    const checkInitialSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        const isSec = await isSecretaria(session.user.id)
+        if (!isSec) {
+          // Só verificar se não for secretária
+          checkUser()
+        } else {
+          // É secretária, não fazer nada - deixar o SecretariaAuthContext lidar
+          setUser(null)
+          setIsEmailConfirmed(false)
+          setIsLoading(false)
+        }
+      } else {
+        setIsLoading(false)
+      }
+    }
+
+    checkInitialSession()
 
     return () => {
       mounted = false
@@ -247,29 +296,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true)
     try {
+      console.log('🔐 [AUTH CONTEXT] Iniciando login no contexto para:', email)
+      
       const user = await authService.login(email, password)
+      
       if (user) {
+        console.log('✅ [AUTH CONTEXT] Usuário obtido do authService:', user.id)
+        
         // Verificar se o email foi confirmado
         const emailConfirmed = await authService.isEmailConfirmed(user.id)
+        console.log('📧 [AUTH CONTEXT] Email confirmado:', emailConfirmed)
+        
         setIsEmailConfirmed(emailConfirmed)
         
         setUser(user)
         localStorage.setItem('currentUser', JSON.stringify(user))
         localStorage.setItem('isEmailConfirmed', emailConfirmed.toString())
         
+        console.log('✅ [AUTH CONTEXT] Usuário salvo no estado e localStorage')
+        
         // Se email não confirmado, redirecionar para página de espera
         if (!emailConfirmed) {
-          
+          console.log('⚠️ [AUTH CONTEXT] Email não confirmado, redirecionando...')
           router.push('/confirm-email?email=' + encodeURIComponent(email))
         } else {
-          
+          console.log('✅ [AUTH CONTEXT] Login completo com sucesso')
         }
         
         return true
       }
+      
+      console.error('❌ [AUTH CONTEXT] authService.login retornou null')
       return false
     } catch (error) {
-      
+      console.error('❌ [AUTH CONTEXT] Erro no login:', error)
       return false
     } finally {
       setIsLoading(false)
@@ -286,7 +346,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       
       if (result.success) {
-        
+        console.log('✅ [AUTH CONTEXT] Registro bem-sucedido, redirecionando para confirmação de email')
         
         if (result.user) {
           setUser(result.user)
@@ -295,8 +355,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('isEmailConfirmed', 'false')
         }
         
-        // Redirecionar para página de login
-        router.push('/login')
+        // Redirecionar para página de confirmação de email
+        router.push('/confirm-email?email=' + encodeURIComponent(email))
         return { success: true, message: result.message }
       }
       
@@ -313,35 +373,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     setIsLoading(true)
     try {
-      await authService.logout()
+      // Limpar estado imediatamente para feedback visual rápido
       setUser(null)
       setIsEmailConfirmed(false)
+      
+      // Limpar todos os dados do localStorage relacionados ao usuário
       localStorage.removeItem('currentUser')
       localStorage.removeItem('isEmailConfirmed')
-      router.push('/')
-    } catch (error) {
+      localStorage.removeItem('supabase.auth.token')
+      localStorage.removeItem('sb-auth-token')
       
+      // Limpar todos os dados do Supabase do localStorage
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key)
+        }
+      })
+      
+      // Fazer signOut no Supabase
+      await authService.logout()
+      
+      // Usar window.location.href para forçar reload completo e garantir logout
+      // Isso evita que o router.push mantenha estado em cache
+      window.location.href = '/login'
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error)
+      // Mesmo com erro, forçar redirecionamento e limpeza
+      setUser(null)
+      setIsEmailConfirmed(false)
+      localStorage.clear()
+      window.location.href = '/login'
     } finally {
       setIsLoading(false)
     }
   }
 
   const updateUser = async (userData: { name?: string; email?: string; crm?: string; specialty?: string; phone?: string; gender?: string }): Promise<boolean> => {
-    if (!user) return false
+    if (!user) {
+      console.error('❌ [AUTH CONTEXT] updateUser: Usuário não encontrado')
+      return false
+    }
     
-    setIsLoading(true)
+    console.log('🔄 [AUTH CONTEXT] Atualizando usuário:', { userId: user.id, userData })
+    // NÃO usar setIsLoading aqui para não bloquear a interface
+    // O componente que chama updateUser deve gerenciar seu próprio estado de loading
     try {
       const updatedUser = await authService.updateUser(user.id, userData)
       if (updatedUser) {
+        console.log('✅ [AUTH CONTEXT] Usuário atualizado com sucesso:', updatedUser)
         setUser(updatedUser)
+        // Atualizar localStorage também
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser))
         return true
+      } else {
+        console.error('❌ [AUTH CONTEXT] updateUser retornou null')
+        return false
       }
-      return false
     } catch (error) {
-      
+      console.error('❌ [AUTH CONTEXT] Erro ao atualizar usuário:', error)
       return false
-    } finally {
-      setIsLoading(false)
     }
   }
 

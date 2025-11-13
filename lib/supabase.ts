@@ -49,6 +49,7 @@ export type Database = {
           nome: string
           email: string
           telefone: string | null
+          cpf: string | null
           data_cadastro: string
           status: string
           created_at: string | null
@@ -59,6 +60,7 @@ export type Database = {
           nome: string
           email: string
           telefone?: string | null
+          cpf?: string | null
           data_cadastro?: string
           status?: string
           created_at?: string | null
@@ -69,6 +71,7 @@ export type Database = {
           nome?: string
           email?: string
           telefone?: string | null
+          cpf?: string | null
           data_cadastro?: string
           status?: string
           created_at?: string | null
@@ -610,6 +613,7 @@ export type Database = {
           avatar_url: string | null
           created_at: string | null
           crm: string | null
+          cpf: string | null
           email: string
           id: string
           last_login_at: string | null
@@ -626,6 +630,7 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string | null
           crm?: string | null
+          cpf?: string | null
           email: string
           id?: string
           last_login_at?: string | null
@@ -642,6 +647,7 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string | null
           crm?: string | null
+          cpf?: string | null
           email?: string
           id?: string
           last_login_at?: string | null
@@ -737,6 +743,131 @@ export type Database = {
             columns: ["feedback_link_id"]
             isOneToOne: false
             referencedRelation: "feedback_links"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      subscriptions: {
+        Row: {
+          id: string
+          user_id: string
+          plan_type: 'monthly' | 'quarterly' | 'annual'
+          amount: number
+          status: 'pending' | 'active' | 'cancelled' | 'expired' | 'suspended'
+          pagarme_subscription_id: string | null
+          pagarme_customer_id: string | null
+          current_period_start: string
+          current_period_end: string
+          cancel_at_period_end: boolean
+          cancelled_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          plan_type: 'monthly' | 'quarterly' | 'annual'
+          amount: number
+          status?: 'pending' | 'active' | 'cancelled' | 'expired' | 'suspended'
+          pagarme_subscription_id?: string | null
+          pagarme_customer_id?: string | null
+          current_period_start?: string
+          current_period_end?: string
+          cancel_at_period_end?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          plan_type?: 'monthly' | 'quarterly' | 'annual'
+          amount?: number
+          status?: 'pending' | 'active' | 'cancelled' | 'expired' | 'suspended'
+          pagarme_subscription_id?: string | null
+          pagarme_customer_id?: string | null
+          current_period_start?: string
+          current_period_end?: string
+          cancel_at_period_end?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      payment_transactions: {
+        Row: {
+          id: string
+          subscription_id: string | null
+          user_id: string
+          pagarme_transaction_id: string
+          amount: number
+          status: 'pending' | 'paid' | 'refused' | 'refunded' | 'cancelled'
+          payment_method: 'credit_card' | 'boleto' | 'pix'
+          card_last_digits: string | null
+          card_brand: string | null
+          installments: number
+          barcode: string | null
+          pix_qr_code: string | null
+          paid_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          subscription_id?: string | null
+          user_id: string
+          pagarme_transaction_id: string
+          amount: number
+          status?: 'pending' | 'paid' | 'refused' | 'refunded' | 'cancelled'
+          payment_method: 'credit_card' | 'boleto' | 'pix'
+          card_last_digits?: string | null
+          card_brand?: string | null
+          installments?: number
+          barcode?: string | null
+          pix_qr_code?: string | null
+          paid_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          subscription_id?: string | null
+          user_id?: string
+          pagarme_transaction_id?: string
+          amount?: number
+          status?: 'pending' | 'paid' | 'refused' | 'refunded' | 'cancelled'
+          payment_method?: 'credit_card' | 'boleto' | 'pix'
+          card_last_digits?: string | null
+          card_brand?: string | null
+          installments?: number
+          barcode?: string | null
+          pix_qr_code?: string | null
+          paid_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           }
         ]

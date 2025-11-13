@@ -19,9 +19,16 @@ import {
   Copy,
   CheckCircle2,
   Clock,
-  RefreshCw
+  RefreshCw,
+  CreditCard,
+  Calendar,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -30,7 +37,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useSecretaria } from '@/contexts/SecretariaContext'
 import { supabase } from '@/lib/supabase'
 
-export default function Configuracoes() {
+function ConfiguracoesContent() {
   const { user, updateUser, deleteAccount, isLoading, isAuthenticated } = useAuth()
   const { secretaria, linkSecretaria, unlinkSecretaria, isLoading: secretariaLoading } = useSecretaria()
   const router = useRouter()
@@ -70,13 +77,44 @@ export default function Configuracoes() {
     confirmPassword: ''
   })
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
+  
+  // Estados para gerenciamento de assinatura
+  const [subscription, setSubscription] = useState<any>(null)
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true)
+  const [isCancelling, setIsCancelling] = useState(false)
+  const [showChangePlanModal, setShowChangePlanModal] = useState(false)
+  const [isChangingPlan, setIsChangingPlan] = useState(false)
+  const [showRefundModal, setShowRefundModal] = useState(false)
+  const [isProcessingRefund, setIsProcessingRefund] = useState(false)
+  const [refundEligibility, setRefundEligibility] = useState<{eligible: boolean, daysUsed: number, reason?: string} | null>(null)
 
   // Verificar autenticação e redirecionar se necessário
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push('/login')
+      return
     }
-  }, [isLoading, isAuthenticated, router])
+
+    // Verificar se é secretária e redirecionar (secretárias não devem acessar configurações de anestesistas)
+    if (user && !isLoading) {
+      const checkIfSecretaria = async () => {
+        try {
+          const { isSecretaria } = await import('@/lib/user-utils')
+          const isSec = await isSecretaria(user.id)
+          
+          if (isSec) {
+            // Secretária tentando acessar configurações de anestesista - bloquear acesso
+            console.warn('⚠️ Tentativa de acesso não autorizado: Secretária tentando acessar configurações de anestesista')
+            router.push('/secretaria/dashboard')
+          }
+        } catch (error) {
+          console.error('Erro ao verificar tipo de usuário:', error)
+        }
+      }
+
+      checkIfSecretaria()
+    }
+  }, [isLoading, isAuthenticated, user, router])
 
   // Carregar dados do usuário
   useEffect(() => {
@@ -90,6 +128,54 @@ export default function Configuracoes() {
         gender: user.gender || ''
       })
     }
+  }, [user])
+
+  // Carregar assinatura do usuário
+  useEffect(() => {
+    const loadSubscription = async () => {
+      if (!user) {
+        setSubscriptionLoading(false)
+        return
+      }
+
+      try {
+        setSubscriptionLoading(true)
+        const { supabase } = await import('@/lib/supabase')
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!session?.access_token) {
+          setSubscriptionLoading(false)
+          return
+        }
+
+        const response = await fetch('/api/pagarme/subscription', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setSubscription(data.subscription)
+          
+          // Verificar elegibilidade para reembolso se tiver assinatura
+          if (data.subscription && data.subscription.id) {
+            const { checkRefundEligibility } = await import('@/lib/subscription-access')
+            const eligibility = await checkRefundEligibility(data.subscription.id)
+            setRefundEligibility(eligibility)
+          }
+        } else if (response.status === 404) {
+          setSubscription(null)
+        }
+      } catch (error) {
+        console.error('Erro ao carregar assinatura:', error)
+      } finally {
+        setSubscriptionLoading(false)
+      }
+    }
+
+    loadSubscription()
   }, [user])
 
   // Carregar solicitações pendentes de vinculação
@@ -355,7 +441,16 @@ export default function Configuracoes() {
 
   // Função para salvar alterações
   const saveProfile = async () => {
-    if (!user) return
+    if (!user) {
+      console.error('❌ [CONFIG] saveProfile: Usuário não encontrado')
+      setFeedbackMessage({ type: 'error', message: 'Erro: Usuário não encontrado. Faça login novamente.' })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+      return
+    }
+
+    console.log('💾 [CONFIG] Iniciando salvamento do perfil...')
+    console.log('📋 [CONFIG] Dados do formulário:', formData)
+    console.log('👤 [CONFIG] Usuário atual:', user)
 
     setIsSaving(true)
     setFeedbackMessage(null)
@@ -363,16 +458,20 @@ export default function Configuracoes() {
     try {
       const success = await updateUser(formData)
       
+      console.log('📊 [CONFIG] Resultado do updateUser:', success)
+      
       if (success) {
+        console.log('✅ [CONFIG] Perfil atualizado com sucesso!')
         setFeedbackMessage({ type: 'success', message: 'Perfil atualizado com sucesso!' })
         setTimeout(() => setFeedbackMessage(null), 3000)
       } else {
-        setFeedbackMessage({ type: 'error', message: 'Erro ao atualizar perfil. Tente novamente.' })
+        console.error('❌ [CONFIG] Falha ao atualizar perfil')
+        setFeedbackMessage({ type: 'error', message: 'Erro ao atualizar perfil. Verifique o console para mais detalhes.' })
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      
-      setFeedbackMessage({ type: 'error', message: 'Erro ao salvar alterações.' })
+      console.error('❌ [CONFIG] Erro ao salvar alterações:', error)
+      setFeedbackMessage({ type: 'error', message: `Erro ao salvar alterações: ${error instanceof Error ? error.message : 'Erro desconhecido'}` })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
       setIsSaving(false)
@@ -576,27 +675,325 @@ export default function Configuracoes() {
     setFeedbackMessage(null)
 
     try {
+      console.log('🔐 [CONFIG] Iniciando alteração de senha...')
+      
       // Importar authService dinamicamente para evitar problemas de SSR
       const { authService } = await import('@/lib/auth')
       
-      const result = await authService.updatePassword(passwordForm.newPassword)
+      console.log('📞 [CONFIG] Chamando authService.updatePassword...')
+      const result = await authService.updatePassword(
+        passwordForm.currentPassword,
+        passwordForm.newPassword
+      )
+      
+      console.log('📊 [CONFIG] Resultado do updatePassword:', result)
       
       if (result.success) {
+        console.log('✅ [CONFIG] Senha alterada com sucesso!')
         setFeedbackMessage({ type: 'success', message: 'Senha alterada com sucesso!' })
         setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
         setShowPasswordModal(false)
         setTimeout(() => setFeedbackMessage(null), 3000)
       } else {
+        console.error('❌ [CONFIG] Falha ao alterar senha:', result.message)
         setFeedbackMessage({ type: 'error', message: result.message || 'Erro ao alterar senha.' })
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      setFeedbackMessage({ type: 'error', message: 'Erro interno ao alterar senha.' })
+      console.error('❌ [CONFIG] Erro ao alterar senha:', error)
+      setFeedbackMessage({ 
+        type: 'error', 
+        message: `Erro interno ao alterar senha: ${error instanceof Error ? error.message : 'Erro desconhecido'}` 
+      })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
+      console.log('🏁 [CONFIG] Finalizando alteração de senha (finally)')
       setIsUpdatingPassword(false)
     }
   }
+
+  // Funções de gerenciamento de assinatura
+  const handleChangePlan = async (newPlanType: string) => {
+    if (!subscription) return
+
+    try {
+      setIsChangingPlan(true)
+      setFeedbackMessage(null)
+
+      const { supabase } = await import('@/lib/supabase')
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        setFeedbackMessage({ type: 'error', message: 'Sessão expirada. Por favor, faça login novamente.' })
+        setTimeout(() => setFeedbackMessage(null), 3000)
+        return
+      }
+
+      const response = await fetch('/api/pagarme/subscription/change-plan', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          subscription_id: subscription.pagarme_subscription_id,
+          new_plan_type: newPlanType
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao agendar mudança de plano')
+      }
+
+      setFeedbackMessage({ type: 'success', message: data.message || 'Mudança de plano agendada com sucesso!' })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+      setShowChangePlanModal(false)
+
+      // Recarregar assinatura
+      const reloadResponse = await fetch('/api/pagarme/subscription', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+      if (reloadResponse.ok) {
+        const reloadData = await reloadResponse.json()
+        setSubscription(reloadData.subscription)
+      }
+
+    } catch (err: any) {
+      console.error('Erro ao agendar mudança de plano:', err)
+      setFeedbackMessage({ 
+        type: 'error', 
+        message: err.message || 'Erro ao agendar mudança de plano' 
+      })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+    } finally {
+      setIsChangingPlan(false)
+    }
+  }
+
+  const handleRequestRefund = async () => {
+    if (!subscription) return
+
+    if (!refundEligibility?.eligible) {
+      setFeedbackMessage({ 
+        type: 'error', 
+        message: refundEligibility?.reason || 'Você não é elegível para reembolso (mínimo de 8 dias de uso)' 
+      })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+      return
+    }
+
+    if (!confirm(`Tem certeza que deseja solicitar reembolso? Você utilizou a plataforma por ${refundEligibility.daysUsed} dias. O valor será reembolsado e sua assinatura será cancelada.`)) {
+      return
+    }
+
+    try {
+      setIsProcessingRefund(true)
+      setFeedbackMessage(null)
+
+      const { supabase } = await import('@/lib/supabase')
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        setFeedbackMessage({ type: 'error', message: 'Sessão expirada. Por favor, faça login novamente.' })
+        setTimeout(() => setFeedbackMessage(null), 3000)
+        return
+      }
+
+      const response = await fetch('/api/pagarme/subscription/refund', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          subscription_id: subscription.pagarme_subscription_id
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao processar reembolso')
+      }
+
+      setFeedbackMessage({ type: 'success', message: data.message || 'Reembolso processado com sucesso!' })
+      setTimeout(() => setFeedbackMessage(null), 8000)
+      setShowRefundModal(false)
+
+      // Recarregar assinatura
+      const reloadResponse = await fetch('/api/pagarme/subscription', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+      if (reloadResponse.ok) {
+        const reloadData = await reloadResponse.json()
+        setSubscription(reloadData.subscription)
+      }
+
+    } catch (err: any) {
+      console.error('Erro ao processar reembolso:', err)
+      setFeedbackMessage({ 
+        type: 'error', 
+        message: err.message || 'Erro ao processar reembolso' 
+      })
+      setTimeout(() => setFeedbackMessage(null), 5000)
+    } finally {
+      setIsProcessingRefund(false)
+    }
+  }
+
+  const getAvailablePlansForChange = () => {
+    if (!subscription) return []
+    
+    const currentPlanIndex = ['monthly', 'quarterly', 'annual'].indexOf(subscription.plan_type)
+    const allPlans = ['monthly', 'quarterly', 'annual']
+    
+    return allPlans.filter((plan, index) => index !== currentPlanIndex)
+  }
+
+  const PLAN_NAMES: Record<string, string> = {
+    monthly: 'Plano Mensal',
+    quarterly: 'Plano Trimestral',
+    annual: 'Plano Anual'
+  }
+
+  const PLAN_PRICES: Record<string, number> = {
+    monthly: 79.00,
+    quarterly: 225.00,
+    annual: 850.00
+  }
+
+  const handleCancelSubscription = async (cancelImmediately: boolean = false) => {
+    if (!subscription) return
+
+    // Verificar se já está cancelada
+    if (subscription.status === 'cancelled' || subscription.status === 'expired') {
+      setFeedbackMessage({ 
+        type: 'error', 
+        message: 'Esta assinatura já foi cancelada.' 
+      })
+      setTimeout(() => setFeedbackMessage(null), 3000)
+      return
+    }
+
+    try {
+      setIsCancelling(true)
+      setFeedbackMessage(null)
+
+      const { supabase } = await import('@/lib/supabase')
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        setFeedbackMessage({ type: 'error', message: 'Sessão expirada. Por favor, faça login novamente.' })
+        setTimeout(() => setFeedbackMessage(null), 3000)
+        return
+      }
+
+      const response = await fetch('/api/pagarme/subscription/cancel', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          subscription_id: subscription.pagarme_subscription_id,
+          cancel_immediately: cancelImmediately
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        // Verificar se o erro é porque já está cancelada
+        const errorMessage = data.error || 'Erro ao cancelar assinatura'
+        if (errorMessage.toLowerCase().includes('canceled') || errorMessage.toLowerCase().includes('cancelada')) {
+          // Assinatura já estava cancelada, apenas atualizar dados
+          const reloadResponse = await fetch('/api/pagarme/subscription', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          })
+          if (reloadResponse.ok) {
+            const reloadData = await reloadResponse.json()
+            setSubscription(reloadData.subscription)
+          }
+          setFeedbackMessage({ 
+            type: 'success', 
+            message: 'Esta assinatura já estava cancelada.' 
+          })
+          setTimeout(() => setFeedbackMessage(null), 5000)
+          return
+        }
+        throw new Error(errorMessage)
+      }
+
+      // Mostrar mensagem de sucesso
+      if (data.success) {
+        setFeedbackMessage({ 
+          type: 'success', 
+          message: data.message || (cancelImmediately 
+            ? 'Assinatura cancelada com sucesso. Você perdeu o acesso imediatamente.'
+            : 'Assinatura será cancelada ao fim do período atual. Você manterá o acesso até então.')
+        })
+        setTimeout(() => setFeedbackMessage(null), 5000)
+      }
+
+      // Recarregar assinatura
+      const reloadResponse = await fetch('/api/pagarme/subscription', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+      if (reloadResponse.ok) {
+        const reloadData = await reloadResponse.json()
+        setSubscription(reloadData.subscription)
+      }
+
+    } catch (err: any) {
+      console.error('Erro ao cancelar assinatura:', err)
+      const errorMessage = err.message || 'Erro ao cancelar assinatura'
+      // Verificar se o erro é porque já está cancelada
+      if (errorMessage.toLowerCase().includes('canceled') || errorMessage.toLowerCase().includes('cancelada')) {
+        setFeedbackMessage({ 
+          type: 'error', 
+          message: 'Esta assinatura já está cancelada.' 
+        })
+        // Recarregar para atualizar status
+        const { supabase } = await import('@/lib/supabase')
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          const reloadResponse = await fetch('/api/pagarme/subscription', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          })
+          if (reloadResponse.ok) {
+            const reloadData = await reloadResponse.json()
+            setSubscription(reloadData.subscription)
+          }
+        }
+      } else {
+        setFeedbackMessage({ 
+          type: 'error', 
+          message: errorMessage
+        })
+      }
+      setTimeout(() => setFeedbackMessage(null), 5000)
+    } finally {
+      setIsCancelling(false)
+    }
+  }
+
 
   // Função para excluir conta
   const handleDeleteAccount = async () => {
@@ -972,7 +1369,7 @@ export default function Configuracoes() {
               </div>
               <Button 
                 onClick={saveProfile}
-                disabled={isSaving || isLoading}
+                disabled={isSaving}
                 className="w-full"
               >
                 {isSaving ? 'Salvando...' : 'Salvar Alterações'}
@@ -999,6 +1396,205 @@ export default function Configuracoes() {
             </div>
           </Card>
 
+          {/* Subscription/Plan Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <CreditCard className="w-5 h-5 mr-2" />
+                Plano
+              </CardTitle>
+            </CardHeader>
+            <div className="p-6 space-y-4">
+              {subscriptionLoading ? (
+                <div className="text-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary-500 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">Carregando informações do plano...</p>
+                </div>
+              ) : !subscription ? (
+                <div className="text-center py-6">
+                  <CreditCard className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-sm font-medium text-gray-900 mb-2">
+                    Nenhuma assinatura ativa
+                  </p>
+                  <p className="text-xs text-gray-600 mb-4">
+                    Assine um plano para continuar usando todas as funcionalidades.
+                  </p>
+                  <Button
+                    onClick={() => router.push('/planos')}
+                    className="w-full"
+                  >
+                    Ver Planos Disponíveis
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Status e Plano */}
+                  <div className="bg-gradient-to-r from-primary-50 to-white rounded-lg p-4 border border-primary-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Plano Atual</p>
+                        <p className="text-lg font-semibold text-gray-900">
+                          {subscription.plan_type === 'monthly' && 'Plano Mensal'}
+                          {subscription.plan_type === 'quarterly' && 'Plano Trimestral'}
+                          {subscription.plan_type === 'annual' && 'Plano Anual'}
+                        </p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        subscription.status === 'active' 
+                          ? 'bg-green-100 text-green-800 border border-green-200'
+                          : subscription.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                          : subscription.status === 'failed'
+                          ? 'bg-red-100 text-red-800 border border-red-200'
+                          : 'bg-gray-100 text-gray-800 border border-gray-200'
+                      }`}>
+                        {subscription.status === 'active' && 'Ativa'}
+                        {subscription.status === 'pending' && 'Pendente'}
+                        {subscription.status === 'failed' && 'Falha no Pagamento'}
+                        {subscription.status === 'cancelled' && 'Cancelada'}
+                        {subscription.status === 'expired' && 'Expirada'}
+                        {subscription.status === 'suspended' && 'Suspensa'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <p className="text-xs text-gray-600 mb-1">Valor</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {new Intl.NumberFormat('pt-BR', { 
+                            style: 'currency', 
+                            currency: 'BRL' 
+                          }).format(subscription.amount || 0)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-600 mb-1">Próxima Renovação</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {subscription.current_period_end 
+                            ? new Date(subscription.current_period_end).toLocaleDateString('pt-BR')
+                            : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                    {subscription.current_period_end && subscription.status === 'active' && (
+                      <div className="mt-3 pt-3 border-t border-primary-200">
+                        <p className="text-xs text-primary-700">
+                          {(() => {
+                            const renewalDate = new Date(subscription.current_period_end)
+                            const today = new Date()
+                            const daysUntilRenewal = Math.ceil((renewalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+                            if (daysUntilRenewal > 0) {
+                              return `Renovação automática em ${daysUntilRenewal} ${daysUntilRenewal === 1 ? 'dia' : 'dias'}`
+                            } else if (daysUntilRenewal === 0) {
+                              return 'Renovação automática hoje'
+                            } else {
+                              return 'Período vencido'
+                            }
+                          })()}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Informações sobre mudança de plano pendente */}
+                  {subscription.pending_plan_type && subscription.pending_plan_change_at && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-start">
+                        <Clock className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-blue-800 mb-1">
+                            Mudança de Plano Agendada
+                          </p>
+                          <p className="text-xs text-blue-700 mb-2">
+                            Seu plano será alterado para <strong>{PLAN_NAMES[subscription.pending_plan_type]}</strong> em{' '}
+                            {new Date(subscription.pending_plan_change_at).toLocaleDateString('pt-BR')}.
+                            Você continuará com o plano atual até então.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ações */}
+                  {subscription.status === 'active' && (
+                    <div className="space-y-2">
+                      <Button
+                        onClick={() => setShowChangePlanModal(true)}
+                        disabled={isChangingPlan}
+                        className="w-full bg-primary-600 hover:bg-primary-700"
+                      >
+                        {isChangingPlan ? 'Agendando...' : 'Trocar Plano'}
+                      </Button>
+                      {refundEligibility?.eligible && !subscription.refund_processed_at && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowRefundModal(true)}
+                          disabled={isProcessingRefund}
+                          className="w-full border-orange-300 text-orange-600 hover:bg-orange-50"
+                        >
+                          {isProcessingRefund ? 'Processando...' : 'Solicitar Reembolso'}
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (confirm('Tem certeza que deseja cancelar sua assinatura? Ela será cancelada ao fim do período atual e você manterá o acesso até então.')) {
+                            handleCancelSubscription(false)
+                          }
+                        }}
+                        disabled={isCancelling || subscription.status === 'cancelled' || subscription.status === 'expired'}
+                        className="w-full border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isCancelling ? 'Cancelando...' : 'Cancelar Assinatura'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {(subscription.status === 'cancelled' || subscription.status === 'expired') && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <p className="text-sm font-semibold text-gray-900 mb-2">
+                        Assinatura Cancelada
+                      </p>
+                      {subscription.cancelled_at && (
+                        <p className="text-xs text-gray-600 mb-3">
+                          Cancelada em {new Date(subscription.cancelled_at).toLocaleDateString('pt-BR')}
+                        </p>
+                      )}
+                      <Button
+                        onClick={() => router.push('/planos')}
+                        className="w-full bg-primary-600 hover:bg-primary-700"
+                      >
+                        Assinar Novo Plano
+                      </Button>
+                    </div>
+                  )}
+
+                  {subscription.status === 'failed' && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                      <div className="flex items-start">
+                        <AlertTriangle className="w-5 h-5 text-red-600 mr-2 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-red-800 mb-1">
+                            Falha no Pagamento
+                          </p>
+                          <p className="text-xs text-red-700 mb-3">
+                            Houve um problema com o pagamento da sua assinatura. Atualize seus dados de pagamento.
+                          </p>
+                          <Button
+                            size="sm"
+                            onClick={() => router.push('/planos')}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Atualizar Pagamento
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </Card>
+
           {/* Data Management */}
           <Card>
             <CardHeader>
@@ -1020,6 +1616,116 @@ export default function Configuracoes() {
           </Card>
         </div>
       </div>
+
+      {/* Modal de Troca de Plano */}
+      {showChangePlanModal && subscription && (
+        <Modal
+          isOpen={showChangePlanModal}
+          onClose={() => setShowChangePlanModal(false)}
+          title="Trocar Plano"
+        >
+          <div className="space-y-4">
+            <p className="text-gray-600 text-sm">
+              Você continuará com seu plano atual até o fim do período ({subscription.current_period_end ? new Date(subscription.current_period_end).toLocaleDateString('pt-BR') : 'fim do período'}). 
+              A mudança será aplicada automaticamente na próxima renovação.
+            </p>
+            <div className="space-y-3">
+              {getAvailablePlansForChange().map((planType) => (
+                <button
+                  key={planType}
+                  onClick={() => handleChangePlan(planType)}
+                  disabled={isChangingPlan}
+                  className="w-full p-4 border-2 border-primary-200 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-semibold text-gray-900">
+                        {PLAN_NAMES[planType]}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {planType === 'monthly' && 'Renovação mensal'}
+                        {planType === 'quarterly' && 'Renovação trimestral'}
+                        {planType === 'annual' && 'Renovação anual'}
+                      </p>
+                    </div>
+                    <p className="text-lg font-bold text-primary-600">
+                      {new Intl.NumberFormat('pt-BR', { 
+                        style: 'currency', 
+                        currency: 'BRL' 
+                      }).format(PLAN_PRICES[planType] || 0)}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal de Reembolso */}
+      {showRefundModal && (
+        <Modal
+          isOpen={showRefundModal}
+          onClose={() => setShowRefundModal(false)}
+          title="Solicitar Reembolso"
+        >
+          <div className="space-y-4">
+            {refundEligibility?.eligible ? (
+              <>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-sm text-green-800 mb-2">
+                    <strong>Você é elegível para reembolso!</strong>
+                  </p>
+                  <p className="text-xs text-green-700">
+                    Você utilizou a plataforma por <strong>{refundEligibility.daysUsed} dias</strong> (menos de 8 dias).
+                    O valor completo da assinatura será reembolsado.
+                  </p>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <p className="text-xs text-yellow-800">
+                    <strong>⚠️ Atenção:</strong> Após o reembolso, sua assinatura será cancelada e você perderá o acesso à plataforma.
+                    O reembolso será processado em até 5 dias úteis.
+                  </p>
+                </div>
+                <div className="flex space-x-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowRefundModal(false)}
+                    disabled={isProcessingRefund}
+                    className="flex-1"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleRequestRefund}
+                    disabled={isProcessingRefund}
+                    className="flex-1 bg-orange-600 hover:bg-orange-700"
+                  >
+                    {isProcessingRefund ? 'Processando...' : 'Confirmar Reembolso'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-sm text-red-800 mb-2">
+                    <strong>Reembolso não disponível</strong>
+                  </p>
+                  <p className="text-xs text-red-700">
+                    {refundEligibility?.reason || 'Você utilizou a plataforma por mais de 8 dias. Reembolsos são permitidos apenas para usuários com menos de 8 dias de uso.'}
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setShowRefundModal(false)}
+                  className="w-full"
+                >
+                  Fechar
+                </Button>
+              </>
+            )}
+          </div>
+        </Modal>
+      )}
 
       {/* Modal de Alteração de Senha */}
       {showPasswordModal && (
@@ -1240,5 +1946,13 @@ export default function Configuracoes() {
         </div>
       </Modal>
     </Layout>
+  )
+}
+
+export default function Configuracoes() {
+  return (
+    <ProtectedRoute>
+      <ConfiguracoesContent />
+    </ProtectedRoute>
   )
 }

@@ -122,6 +122,21 @@ export const reportService = {
   // Gerar HTML do relatório
   generateReportHTML(reportData: ReportData): string {
     const { procedures, stats, period } = reportData
+    
+    // Calcular estatísticas baseadas nos procedimentos filtrados (não nas stats gerais)
+    const filteredStats = {
+      total: procedures.length,
+      completed: procedures.filter(p => p.payment_status === 'paid').length,
+      pending: procedures.filter(p => p.payment_status === 'pending').length,
+      cancelled: procedures.filter(p => p.payment_status === 'cancelled').length,
+      totalValue: procedures.reduce((sum, p) => sum + (p.procedure_value || 0), 0),
+      completedValue: procedures
+        .filter(p => p.payment_status === 'paid')
+        .reduce((sum, p) => sum + (p.procedure_value || 0), 0),
+      pendingValue: procedures
+        .filter(p => p.payment_status === 'pending')
+        .reduce((sum, p) => sum + (p.procedure_value || 0), 0)
+    }
 
     return `
       <div class="header">
@@ -132,19 +147,19 @@ export const reportService = {
 
       <div class="stats">
         <div class="stat-item">
-          <h3>${stats.total}</h3>
+          <h3>${filteredStats.total}</h3>
           <p>Total de Procedimentos</p>
         </div>
         <div class="stat-item">
-          <h3>${stats.completed}</h3>
+          <h3>${filteredStats.completed}</h3>
           <p>Concluídos</p>
         </div>
         <div class="stat-item">
-          <h3>${stats.pending}</h3>
+          <h3>${filteredStats.pending}</h3>
           <p>Pendentes</p>
         </div>
         <div class="stat-item">
-          <h3>${formatCurrency(stats.totalValue)}</h3>
+          <h3>${formatCurrency(filteredStats.totalValue)}</h3>
           <p>Receita Total</p>
         </div>
       </div>
@@ -160,16 +175,22 @@ export const reportService = {
           </tr>
         </thead>
         <tbody>
-          ${procedures.map(procedure => `
+          ${procedures.length > 0 ? procedures.map(procedure => `
             <tr>
-              <td>${procedure.patient_name}</td>
-              <td>${procedure.procedure_type}</td>
+              <td>${procedure.patient_name || 'N/A'}</td>
+              <td>${procedure.procedure_type || procedure.procedure_name || 'N/A'}</td>
               <td>${formatDate(procedure.procedure_date)}</td>
-              <td>${formatCurrency(procedure.procedure_value)}</td>
+              <td>${formatCurrency(procedure.procedure_value || 0)}</td>
               <td>${procedure.payment_status === 'paid' ? 'Concluído' : 
                    procedure.payment_status === 'pending' ? 'Pendente' : 'Cancelado'}</td>
             </tr>
-          `).join('')}
+          `).join('') : `
+            <tr>
+              <td colspan="5" style="text-align: center; padding: 20px; color: #666;">
+                Nenhum procedimento encontrado no período selecionado.
+              </td>
+            </tr>
+          `}
         </tbody>
       </table>
 

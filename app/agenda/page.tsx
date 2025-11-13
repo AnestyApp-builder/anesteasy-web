@@ -16,6 +16,7 @@ import {
   Menu
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -24,7 +25,7 @@ import { shiftService, Shift } from '@/lib/shifts'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatDate, formatTime, formatShiftDates } from '@/lib/utils'
 
-export default function Agenda() {
+function AgendaContent() {
   const { user } = useAuth()
   const [shifts, setShifts] = useState<Shift[]>([])
   const [loading, setLoading] = useState(true)
@@ -1145,5 +1146,13 @@ export default function Agenda() {
 
       </div>
     </Layout>
+  )
+}
+
+export default function Agenda() {
+  return (
+    <ProtectedRoute>
+      <AgendaContent />
+    </ProtectedRoute>
   )
 }

@@ -18,7 +18,6 @@ import {
   CreditCard,
   Stethoscope,
   UserCheck,
-  MapPin,
   FileImage,
   Search,
   ChevronDown,
@@ -27,6 +26,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { Layout } from '@/components/layout/Layout'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -54,7 +54,8 @@ interface FormData {
   nomeEquipe: string
   hospital: string
   patientGender: 'M' | 'F' | 'Other' | ''
-  roomNumber: string
+  horario: string
+  duracaoMinutos: string
   
   // 2. Dados do Procedimento
   // Campos para procedimentos não-obstétricos
@@ -164,7 +165,7 @@ const TIPOS_ANESTESIA = [
   { codigo: '30701206', nome: 'Raquianestesia contínua' }
 ]
 
-export default function NovoProcedimento() {
+function NovoProcedimentoContent() {
   const { user } = useAuth()
   const { secretaria, linkSecretaria } = useSecretaria()
   const [formData, setFormData] = useState<FormData>({
@@ -180,7 +181,8 @@ export default function NovoProcedimento() {
     nomeEquipe: '',
     hospital: '',
     patientGender: '',
-    roomNumber: '',
+    horario: '',
+    duracaoMinutos: '',
     // Campos para procedimentos não-obstétricos
     sangramento: '',
     nauseaVomito: '',
@@ -354,6 +356,13 @@ export default function NovoProcedimento() {
   // Função para filtrar anestesias baseado na busca
   const filtrarAnestesias = (termo: string) => {
     setBuscaAnestesia(termo)
+    
+    // Atualizar formData em tempo real para permitir texto livre
+    // Isso permite que o usuário digite uma técnica que não está na lista
+    if (termo !== '') {
+      updateFormData('tecnicaAnestesica', termo)
+    }
+    
     if (!termo) {
       setAnestesiasFiltradas(TIPOS_ANESTESIA)
     } else {
@@ -369,6 +378,29 @@ export default function NovoProcedimento() {
   const selecionarAnestesia = (anestesia: { codigo: string; nome: string }) => {
     updateFormData('tecnicaAnestesica', anestesia.nome)
     updateFormData('codigoTSSU', anestesia.codigo)
+    setBuscaAnestesia('')
+    setAnestesiasFiltradas(TIPOS_ANESTESIA)
+  }
+  
+  // Função para quando o campo perde o foco - validar se o texto digitado corresponde a uma anestesia
+  const handleAnestesiaBlur = () => {
+    const termo = buscaAnestesia || formData.tecnicaAnestesica
+    if (termo) {
+      // Tentar encontrar correspondência exata (case-insensitive)
+      const correspondenciaExata = TIPOS_ANESTESIA.find(anestesia =>
+        anestesia.nome.toLowerCase() === termo.toLowerCase()
+      )
+      
+      if (correspondenciaExata) {
+        // Se encontrou correspondência exata, usar ela (com código TSSU)
+        updateFormData('tecnicaAnestesica', correspondenciaExata.nome)
+        updateFormData('codigoTSSU', correspondenciaExata.codigo)
+      } else {
+        // Se não encontrou, manter o texto digitado (permite texto livre)
+        updateFormData('tecnicaAnestesica', termo)
+        // Não limpar código TSSU se já houver um definido
+      }
+    }
     setBuscaAnestesia('')
     setAnestesiasFiltradas(TIPOS_ANESTESIA)
   }
@@ -399,6 +431,25 @@ export default function NovoProcedimento() {
     return obstetricTerms.some(term => 
       procedimento.toLowerCase().includes(term.toLowerCase())
     )
+  }
+
+  // Verificar se é parto normal/parto/parto natural
+  const isPartoNormal = (procedimento: string) => {
+    const partoNormalTerms = ['parto normal', 'parto natural', 'parto']
+    const lowerProcedimento = procedimento.toLowerCase()
+    // Se contém cesariana, não é parto normal
+    if (lowerProcedimento.includes('cesariana') || lowerProcedimento.includes('cesária') || 
+        lowerProcedimento.includes('cesaria') || lowerProcedimento.includes('cesárea')) {
+      return false
+    }
+    return partoNormalTerms.some(term => lowerProcedimento.includes(term.toLowerCase()))
+  }
+
+  // Verificar se é cesariana direta
+  const isCesarianaDireta = (procedimento: string) => {
+    const cesarianaTerms = ['cesariana', 'cesária', 'cesaria', 'cesárea', 'cesarea']
+    const lowerProcedimento = procedimento.toLowerCase()
+    return cesarianaTerms.some(term => lowerProcedimento.includes(term.toLowerCase()))
   }
 
 
@@ -499,23 +550,42 @@ export default function NovoProcedimento() {
 
     // Validar campos específicos do tipo de procedimento
     if (isObstetricProcedure(formData.tipoProcedimento)) {
-      const camposObstetricia = {
-        'Tipo de Parto': formData.tipoParto
+      // Validação para parto normal
+      if (isPartoNormal(formData.tipoProcedimento)) {
+        const camposObstetricia = {
+          'Tipo de Parto': formData.tipoParto
+        }
+
+        const camposObstetriciaPendentes = Object.entries(camposObstetricia)
+          .filter(([_, value]) => !value)
+          .map(([key]) => key)
+
+        if (camposObstetriciaPendentes.length > 0) {
+          showFeedback('error', `⚠️ Campos obrigatórios para procedimento obstétrico não preenchidos: ${camposObstetriciaPendentes.join(', ')}`)
+          return
+        }
+
+        // Validações específicas para cesariana quando selecionada em parto normal
+        if (formData.tipoParto === 'Cesariana') {
+          if (!formData.tipoCesariana) {
+            showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo de anestesia (Nova Ráqui, Geral ou Complementação pelo Cateter)')
+            return
+          }
+          if (!formData.indicacaoCesariana) {
+            showFeedback('error', '⚠️ Para cesariana, é necessário informar se há indicação')
+            return
+          }
+          if (formData.indicacaoCesariana === 'Sim' && !formData.descricaoIndicacaoCesariana) {
+            showFeedback('error', '⚠️ É necessário descrever a indicação da cesariana')
+            return
+          }
+        }
       }
 
-      const camposObstetriciaPendentes = Object.entries(camposObstetricia)
-        .filter(([_, value]) => !value)
-        .map(([key]) => key)
-
-      if (camposObstetriciaPendentes.length > 0) {
-        showFeedback('error', `⚠️ Campos obrigatórios para procedimento obstétrico não preenchidos: ${camposObstetriciaPendentes.join(', ')}`)
-        return
-      }
-
-      // Validações específicas para cesariana
-      if (formData.tipoParto === 'Cesariana') {
+      // Validação para cesariana direta
+      if (isCesarianaDireta(formData.tipoProcedimento)) {
         if (!formData.tipoCesariana) {
-          showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo (Nova Ráqui, Geral ou Complementação pelo Cateter)')
+          showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo de anestesia (Geral ou Complementação pelo Cateter)')
           return
         }
         if (!formData.indicacaoCesariana) {
@@ -592,7 +662,11 @@ export default function NovoProcedimento() {
         especialidade_cirurgiao: formData.especialidadeCirurgiao,
         nome_equipe: formData.nomeEquipe,
         hospital_clinic: formData.hospital,
-        room_number: formData.roomNumber,
+        
+        // Campos de horário e duração
+        horario: formData.horario || undefined,
+        // Converter horas para minutos (multiplicar por 60)
+        duracao_minutos: formData.duracaoMinutos ? Math.round(parseFloat(formData.duracaoMinutos) * 60) : undefined,
         
         // Campos de anestesia
         tecnica_anestesica: formData.tecnicaAnestesica,
@@ -1001,8 +1075,8 @@ export default function NovoProcedimento() {
                     onChange={(e) => updateFormData('convenio', e.target.value)}
               />
               <Input
-                    label="Carteirinha"
-                    placeholder="Número da carteirinha"
+                    label="Carterinha/Prontuário"
+                    placeholder="Número da carteirinha ou prontuário"
                     icon={<CreditCard className="w-5 h-5" />}
                     value={formData.carteirinha}
                     onChange={(e) => updateFormData('carteirinha', e.target.value)}
@@ -1022,13 +1096,6 @@ export default function NovoProcedimento() {
                   <option value="Other">Outro</option>
                 </select>
               </div>
-              <Input
-                    label="Número da Sala"
-                    placeholder="Ex: Sala 1, Centro Cirúrgico A"
-                    icon={<MapPin className="w-5 h-5" />}
-                    value={formData.roomNumber}
-                    onChange={(e) => updateFormData('roomNumber', e.target.value)}
-              />
             </div>
 
 
@@ -1052,10 +1119,11 @@ export default function NovoProcedimento() {
                   <input
                     type="text"
                     className="w-full px-4 py-3 pl-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                    placeholder="Digite para buscar anestesia..."
-                    value={buscaAnestesia || formData.tecnicaAnestesica}
+                    placeholder="Digite para buscar anestesia ou digite livremente..."
+                    value={buscaAnestesia !== '' ? buscaAnestesia : formData.tecnicaAnestesica}
                     onChange={(e) => filtrarAnestesias(e.target.value)}
-                    onFocus={() => setBuscaAnestesia(formData.tecnicaAnestesica)}
+                    onFocus={() => setBuscaAnestesia(formData.tecnicaAnestesica || '')}
+                    onBlur={handleAnestesiaBlur}
                     required
                   />
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1113,7 +1181,29 @@ export default function NovoProcedimento() {
                     value={formData.hospital}
                     onChange={(e) => updateFormData('hospital', e.target.value)}
                   />
-                </div>
+            </div>
+
+            {/* Horário e Duração */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Input
+                label="Horário"
+                placeholder="Ex: 14:30"
+                type="time"
+                icon={<Clock className="w-5 h-5" />}
+                value={formData.horario}
+                onChange={(e) => updateFormData('horario', e.target.value)}
+              />
+              <Input
+                label="Duração (horas)"
+                placeholder="Ex: 2 ou 2.5"
+                type="number"
+                icon={<Clock className="w-5 h-5" />}
+                value={formData.duracaoMinutos}
+                onChange={(e) => updateFormData('duracaoMinutos', e.target.value)}
+                min="0"
+                step="0.5"
+              />
+            </div>
 
             {/* Observações */}
             <div>
@@ -1559,8 +1649,11 @@ export default function NovoProcedimento() {
                     </div>
                   </div>
 
-                  {/* Tipo de Parto */}
-                  <div className="space-y-4">
+                  {/* Campos específicos baseados no tipo de procedimento */}
+                  {isPartoNormal(formData.tipoProcedimento) && (
+                    <>
+                      {/* Tipo de Parto - apenas para parto normal */}
+                      <div className="space-y-4">
                         <label className="block text-sm font-medium text-gray-700">
                           Parto instrumentalizado, vaginal ou cesariana?
                         </label>
@@ -1596,15 +1689,15 @@ export default function NovoProcedimento() {
                             <span className="text-sm text-gray-700">Cesariana</span>
                           </label>
                         </div>
-                </div>
+                      </div>
 
-                      {/* Campo condicional para Cesariana */}
+                      {/* Campo condicional para Cesariana quando selecionada em parto normal */}
                       {formData.tipoParto === 'Cesariana' && (
                         <div className="space-y-4 mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                              Tipo de Cesariana
-                      </label>
+                          <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Tipo de Anestesia
+                            </label>
                             <div className="flex items-center space-x-6">
                               <label className="flex items-center space-x-2">
                                 <input
@@ -1636,8 +1729,8 @@ export default function NovoProcedimento() {
                                 />
                                 <span className="text-sm text-gray-700">Complementação pelo Cateter</span>
                               </label>
-                  </div>
-                    </div>
+                            </div>
+                          </div>
 
                           {/* Indicação de Cesariana */}
                           <div className="space-y-2 mt-4">
@@ -1666,14 +1759,14 @@ export default function NovoProcedimento() {
                                 <span className="text-sm text-gray-700">Não</span>
                               </label>
                             </div>
-                </div>
+                          </div>
 
                           {/* Campo de texto para descrição da indicação */}
                           {formData.indicacaoCesariana === 'Sim' && (
                             <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Descreva a Indicação
-                  </label>
+                              </label>
                               <textarea
                                 className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                                 rows={3}
@@ -1681,10 +1774,91 @@ export default function NovoProcedimento() {
                                 value={formData.descricaoIndicacaoCesariana}
                                 onChange={(e) => updateFormData('descricaoIndicacaoCesariana', e.target.value)}
                               />
-                  </div>
+                            </div>
                           )}
-                </div>
+                        </div>
                       )}
+                    </>
+                  )}
+
+                  {/* Campos específicos para cesariana direta */}
+                  {isCesarianaDireta(formData.tipoProcedimento) && (
+                    <div className="space-y-4">
+                      {/* Tipo de Anestesia - apenas para cesariana direta */}
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Tipo de Anestesia
+                        </label>
+                        <div className="flex items-center space-x-6">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Geral"
+                              checked={formData.tipoCesariana === 'Geral'}
+                              onChange={(e) => updateFormData('tipoCesariana', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Geral</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Complementação pelo Cateter"
+                              checked={formData.tipoCesariana === 'Complementação pelo Cateter'}
+                              onChange={(e) => updateFormData('tipoCesariana', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Complementação pelo Cateter</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Indicação de Cesariana */}
+                      <div className="space-y-2 mt-4">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Indicação de Cesariana?
+                        </label>
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Sim"
+                              checked={formData.indicacaoCesariana === 'Sim'}
+                              onChange={(e) => updateFormData('indicacaoCesariana', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Sim</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Não"
+                              checked={formData.indicacaoCesariana === 'Não'}
+                              onChange={(e) => updateFormData('indicacaoCesariana', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Não</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Campo de texto para descrição da indicação */}
+                      {formData.indicacaoCesariana === 'Sim' && (
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Descreva a Indicação
+                          </label>
+                          <textarea
+                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            rows={3}
+                            placeholder="Descreva a indicação da cesariana..."
+                            value={formData.descricaoIndicacaoCesariana}
+                            onChange={(e) => updateFormData('descricaoIndicacaoCesariana', e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                       </div>
                     </div>
                   </>
@@ -2348,5 +2522,13 @@ export default function NovoProcedimento() {
         </div>
       )}
     </Layout>
+  )
+}
+
+export default function NovoProcedimento() {
+  return (
+    <ProtectedRoute>
+      <NovoProcedimentoContent />
+    </ProtectedRoute>
   )
 }

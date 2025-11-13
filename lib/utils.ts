@@ -124,3 +124,55 @@ export function handleCardPress(callback?: () => void): void {
     callback()
   }
 }
+
+// Função para validar CPF
+export function validateCPF(cpf: string): boolean {
+  // Remove caracteres não numéricos
+  const cleanCPF = cpf.replace(/\D/g, '')
+  
+  // Verifica se tem 11 dígitos
+  if (cleanCPF.length !== 11) {
+    return false
+  }
+  
+  // Verifica se todos os dígitos são iguais (CPF inválido)
+  if (/^(\d)\1{10}$/.test(cleanCPF)) {
+    return false
+  }
+  
+  // Validação dos dígitos verificadores
+  let sum = 0
+  let remainder
+  
+  // Valida primeiro dígito verificador
+  for (let i = 1; i <= 9; i++) {
+    sum += parseInt(cleanCPF.substring(i - 1, i)) * (11 - i)
+  }
+  remainder = (sum * 10) % 11
+  if (remainder === 10 || remainder === 11) remainder = 0
+  if (remainder !== parseInt(cleanCPF.substring(9, 10))) {
+    return false
+  }
+  
+  // Valida segundo dígito verificador
+  sum = 0
+  for (let i = 1; i <= 10; i++) {
+    sum += parseInt(cleanCPF.substring(i - 1, i)) * (12 - i)
+  }
+  remainder = (sum * 10) % 11
+  if (remainder === 10 || remainder === 11) remainder = 0
+  if (remainder !== parseInt(cleanCPF.substring(10, 11))) {
+    return false
+  }
+  
+  return true
+}
+
+// Função para formatar CPF (XXX.XXX.XXX-XX)
+export function formatCPF(cpf: string): string {
+  const cleanCPF = cpf.replace(/\D/g, '')
+  if (cleanCPF.length !== 11) {
+    return cpf // Retorna o valor original se não tiver 11 dígitos
+  }
+  return cleanCPF.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+}

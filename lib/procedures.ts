@@ -114,6 +114,10 @@ export const procedureService = {
         hospital_clinic: procedure.hospital_clinic || null,
         nome_equipe: procedure.nome_equipe || null,
         
+        // Campos de horário e duração
+        horario: procedure.horario || null,
+        duracao_minutos: procedure.duracao_minutos || null,
+        
         // Campos de anestesia
         tipo_anestesia: procedure.tecnica_anestesica || null,
         tecnica_anestesica: procedure.tecnica_anestesica || null,
