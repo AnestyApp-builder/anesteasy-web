@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { CheckCircle, Loader2, ArrowRight } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import Link from 'next/link'
 
-export default function CheckoutSuccessPage() {
+function CheckoutSuccessPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const plan = searchParams.get('plan')
@@ -149,5 +149,22 @@ export default function CheckoutSuccessPage() {
         </div>
       </div>
     </Layout>
+  )
+}
+
+export default function CheckoutSuccessPage() {
+  return (
+    <Suspense fallback={
+      <Layout>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
+            <p className="text-gray-600">Carregando...</p>
+          </div>
+        </div>
+      </Layout>
+    }>
+      <CheckoutSuccessPageContent />
+    </Suspense>
   )
 }
