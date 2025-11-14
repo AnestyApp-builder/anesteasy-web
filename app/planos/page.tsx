@@ -118,8 +118,8 @@ function PlanosContent() {
     console.log('🔘 handleSelectPlan chamado para plano:', plan.id)
     
     if (!isAuthenticated || !user) {
-      console.log('⚠️ Usuário não autenticado, redirecionando...')
-      router.push('/login?redirect=/planos')
+      console.log('⚠️ Usuário não autenticado, redirecionando para login...')
+      router.push('/login')
       return
     }
 
@@ -164,7 +164,7 @@ function PlanosContent() {
       
       if (!session?.access_token) {
         alert('Sessão expirada. Por favor, faça login novamente.')
-        router.push('/login?redirect=/planos')
+        router.push('/login')
         return
       }
 
@@ -260,7 +260,7 @@ function PlanosContent() {
               <p className="text-gray-600">
                 Faça login para continuar com a assinatura
               </p>
-              <Link href="/login?redirect=/planos">
+              <Link href="/login">
                 <Button className="mt-4">
                   Fazer Login
                 </Button>
