@@ -87,11 +87,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     const checkUser = async () => {
+      const TIMEOUT = 8000 // 8 segundos timeout para mobile
+      
       try {
+        // Criar timeout para evitar travamento no mobile
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout na verificação de usuário')), TIMEOUT)
+        })
         
-        
-        // Verificar sessão atual primeiro
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        // Verificar sessão atual primeiro - com timeout
+        const sessionPromise = supabase.auth.getSession()
+        const { data: { session }, error: sessionError } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]) as any
         
         if (sessionError) {
           // Se o erro for relacionado a refresh token inválido, limpar dados
@@ -119,9 +128,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         
         if (session?.user) {
-          // IMPORTANTE: Verificar se é secretária ANTES de qualquer coisa
+          // IMPORTANTE: Verificar se é secretária ANTES de qualquer coisa - com timeout
           // Secretárias NÃO devem usar o AuthContext de anestesistas
-          const secretaria = await isSecretaria(session.user.id)
+          let secretaria = false
+          try {
+            const secretariaPromise = isSecretaria(session.user.id)
+            secretaria = await Promise.race([
+              secretariaPromise,
+              timeoutPromise
+            ]) as boolean
+          } catch (secretariaError) {
+            // Se timeout, assumir que não é secretária
+            console.warn('⚠️ [AUTH CONTEXT] Timeout ao verificar secretária, continuando verificação...')
+          }
+          
           if (secretaria) {
             // É secretária, limpar dados e NÃO fazer login automático
             console.log('👩‍💼 [AUTH CONTEXT] Sessão detectada é de secretária, ignorando...')
@@ -137,12 +157,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           
           
-          // Buscar dados do usuário na tabela users (apenas para anestesistas)
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle()
+          // Buscar dados do usuário na tabela users (apenas para anestesistas) - com timeout
+          let userData = null
+          let userError = null
+          try {
+            const userPromise = supabase
+              .from('users')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle()
+            
+            const result = await Promise.race([
+              userPromise,
+              timeoutPromise
+            ]) as any
+            
+            userData = result.data
+            userError = result.error
+          } catch (queryError: any) {
+            // Timeout ou erro na query
+            console.warn('⚠️ [AUTH CONTEXT] Timeout ou erro ao buscar usuário:', queryError.message || queryError)
+            userError = queryError
+          }
 
           if (userError) {
             
@@ -251,14 +287,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.removeItem('isEmailConfirmed')
           localStorage.removeItem('supabase.auth.token')
         }
-      } catch (error) {
+      } catch (error: any) {
+        // Timeout ou erro - finalizar loading para não travar no mobile
+        console.warn('⚠️ [AUTH CONTEXT] Erro ou timeout no checkUser:', error.message || error)
         
         // Limpar dados em caso de erro
-        setUser(null)
-        setIsEmailConfirmed(false)
-        localStorage.removeItem('currentUser')
-        localStorage.removeItem('isEmailConfirmed')
-        localStorage.removeItem('supabase.auth.token')
+        if (mounted) {
+          setUser(null)
+          setIsEmailConfirmed(false)
+          localStorage.removeItem('currentUser')
+          localStorage.removeItem('isEmailConfirmed')
+          localStorage.removeItem('supabase.auth.token')
+          setIsLoading(false) // Garantir que loading seja finalizado
+        }
       } finally {
         if (mounted) {
           setIsLoading(false)
@@ -266,22 +307,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Verificar sessão inicial apenas se não for secretária
+    // Verificar sessão inicial apenas se não for secretária - com timeout para mobile
     const checkInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        const isSec = await isSecretaria(session.user.id)
-        if (!isSec) {
-          // Só verificar se não for secretária
-          checkUser()
-        } else {
-          // É secretária, não fazer nada - deixar o SecretariaAuthContext lidar
+      const TIMEOUT = 10000 // 10 segundos timeout para mobile
+      
+      try {
+        // Criar timeout para evitar travamento no mobile
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout na verificação de autenticação')), TIMEOUT)
+        })
+
+        const sessionPromise = supabase.auth.getSession()
+        
+        // Race entre timeout e verificação de sessão
+        const { data: { session } } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]) as any
+
+        if (session?.user && mounted) {
+          // Verificar se é secretária com timeout também
+          try {
+            const isSecretariaPromise = isSecretaria(session.user.id)
+            const isSec = await Promise.race([
+              isSecretariaPromise,
+              timeoutPromise
+            ]) as boolean
+
+            if (!isSec && mounted) {
+              // Só verificar se não for secretária
+              checkUser()
+            } else if (mounted) {
+              // É secretária, não fazer nada - deixar o SecretariaAuthContext lidar
+              setUser(null)
+              setIsEmailConfirmed(false)
+              setIsLoading(false)
+            }
+          } catch (secretariaError: any) {
+            // Se timeout ou erro, assumir que não é secretária e tentar checkUser
+            if (mounted && secretariaError.message?.includes('Timeout')) {
+              console.warn('⚠️ [AUTH CONTEXT] Timeout ao verificar secretária, tentando checkUser...')
+              checkUser()
+            } else if (mounted) {
+              setIsLoading(false)
+            }
+          }
+        } else if (mounted) {
+          setIsLoading(false)
+        }
+      } catch (error: any) {
+        // Timeout ou erro - finalizar loading para não travar
+        console.warn('⚠️ [AUTH CONTEXT] Erro ou timeout na verificação inicial:', error.message || error)
+        if (mounted) {
           setUser(null)
           setIsEmailConfirmed(false)
           setIsLoading(false)
         }
-      } else {
-        setIsLoading(false)
       }
     }
 

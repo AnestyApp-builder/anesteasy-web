@@ -33,6 +33,59 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true
+    const TIMEOUT = 8000 // 8 segundos timeout para mobile
+
+    // Verificar sessão inicial com timeout
+    const checkInitialSession = async () => {
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout na verificação de secretária')), TIMEOUT)
+        })
+
+        const sessionPromise = supabase.auth.getSession()
+        const { data: { session } } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]) as any
+
+        if (session?.user && mounted) {
+          try {
+            const secretariaPromise = supabase
+              .from('secretarias')
+              .select('*')
+              .eq('email', session.user.email)
+              .single()
+
+            const { data: secretariaData, error: secretariaError } = await Promise.race([
+              secretariaPromise,
+              timeoutPromise
+            ]) as any
+
+            if (secretariaData && !secretariaError && mounted) {
+              setSecretaria(secretariaData)
+            } else if (mounted) {
+              setSecretaria(null)
+            }
+          } catch (queryError: any) {
+            console.warn('⚠️ [SECRETARIA] Timeout ou erro ao buscar secretária:', queryError.message || queryError)
+            if (mounted) {
+              setSecretaria(null)
+            }
+          }
+        } else if (mounted) {
+          setSecretaria(null)
+        }
+      } catch (error: any) {
+        console.warn('⚠️ [SECRETARIA] Erro ou timeout na verificação inicial:', error.message || error)
+        if (mounted) {
+          setSecretaria(null)
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false)
+        }
+      }
+    }
 
     // Escutar mudanças de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -49,25 +102,46 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      if (session?.user) {
-        // Buscar dados da secretaria
-        const { data: secretariaData, error: secretariaError } = await supabase
-          .from('secretarias')
-          .select('*')
-          .eq('email', session.user.email)
-          .single()
+      if (session?.user && mounted) {
+        try {
+          // Buscar dados da secretaria com timeout
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout ao buscar secretária')), TIMEOUT)
+          })
 
-        if (secretariaData && !secretariaError) {
-          setSecretaria(secretariaData)
-        } else {
-          setSecretaria(null)
+          const secretariaPromise = supabase
+            .from('secretarias')
+            .select('*')
+            .eq('email', session.user.email)
+            .single()
+
+          const { data: secretariaData, error: secretariaError } = await Promise.race([
+            secretariaPromise,
+            timeoutPromise
+          ]) as any
+
+          if (secretariaData && !secretariaError && mounted) {
+            setSecretaria(secretariaData)
+          } else if (mounted) {
+            setSecretaria(null)
+          }
+        } catch (queryError: any) {
+          console.warn('⚠️ [SECRETARIA] Timeout ou erro ao buscar secretária:', queryError.message || queryError)
+          if (mounted) {
+            setSecretaria(null)
+          }
         }
-      } else if (event === 'SIGNED_OUT') {
+      } else if (event === 'SIGNED_OUT' && mounted) {
         setSecretaria(null)
       }
       
-      setIsLoading(false)
+      if (mounted) {
+        setIsLoading(false)
+      }
     })
+
+    // Verificar sessão inicial
+    checkInitialSession()
 
     return () => {
       mounted = false
