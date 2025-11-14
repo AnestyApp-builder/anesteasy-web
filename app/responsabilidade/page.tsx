@@ -3,15 +3,14 @@
 import React from 'react'
 import Link from 'next/link'
 import { ArrowLeft, AlertTriangle, Shield, FileText, Users, Scale, Heart, Stethoscope } from 'lucide-react'
-import { Layout } from '@/components/layout/Layout'
+import { PublicLayout } from '@/components/layout/PublicLayout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 
 export default function Responsabilidade() {
   return (
-    <Layout>
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50">
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
+    <PublicLayout>
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
           {/* Header */}
           <div className="mb-8">
             <Link href="/" className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-4 transition-colors">
@@ -329,6 +328,6 @@ export default function Responsabilidade() {
           </div>
         </div>
       </div>
-    </Layout>
+    </PublicLayout>
   )
 }
