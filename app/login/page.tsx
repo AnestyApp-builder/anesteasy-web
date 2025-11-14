@@ -99,14 +99,22 @@ export default function Login() {
         return
       }
 
-      console.log('✅ Login bem-sucedido, redirecionando...')
+      console.log('✅ Login bem-sucedido')
       
-      // O AuthContext vai detectar a mudança de sessão e atualizar o estado
-      // Aguardar um momento para o contexto processar
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      // Redirecionar para dashboard - o middleware vai lidar com secretarias
-      router.replace('/dashboard')
+      // Verificar se é secretária ou anestesista
+      const { data: secretariaData } = await supabase
+        .from('secretarias')
+        .select('id')
+        .eq('id', data.user.id)
+        .maybeSingle()
+
+      if (secretariaData) {
+        console.log('👩‍💼 É secretária, redirecionando para dashboard de secretária')
+        router.replace('/secretaria/dashboard')
+      } else {
+        console.log('👨‍⚕️ É anestesista, redirecionando para dashboard de anestesista')
+        router.replace('/dashboard')
+      }
       
     } catch (error: any) {
       console.error('❌ Erro no login:', error)
