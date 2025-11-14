@@ -74,6 +74,10 @@ export default function Login() {
     e.preventDefault()
     e.stopPropagation()
     
+    await performLogin()
+  }
+
+  const performLogin = async () => {
     // Prevenir múltiplos submits
     if (isSubmitting || isLoading) {
       console.log('⚠️ [LOGIN] Submit já em andamento, ignorando...')
@@ -257,7 +261,11 @@ export default function Login() {
             </p>
           </CardHeader>
           
-          <form onSubmit={handleSubmit} className="space-y-6 p-6 pt-0">
+          <form 
+            onSubmit={handleSubmit} 
+            className="space-y-6 p-6 pt-0"
+            noValidate
+          >
             {error && (
               <div className="flex items-center space-x-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                 <AlertCircle className="w-5 h-5 text-red-600" />
@@ -318,14 +326,36 @@ export default function Login() {
 
             <Button 
               type="submit" 
-              className="w-full py-4 text-lg font-medium" 
+              className="w-full py-4 text-lg font-medium relative z-10" 
               disabled={isLoading || isSubmitting}
-              onClick={(e) => {
-                // Fallback para mobile - garantir que o submit funcione
-                if (!formData.email || !formData.password) {
+              onTouchStart={(e) => {
+                // Handler específico para mobile - prevenir comportamento padrão do toque
+                // e garantir que o submit funcione
+                if (!isLoading && !isSubmitting && formData.email && formData.password) {
+                  // Não prevenir padrão aqui - deixar o evento fluir para o submit
+                  e.stopPropagation()
+                }
+              }}
+              onTouchEnd={(e) => {
+                // Handler específico para mobile - garantir que o submit funcione no toque
+                if (!isLoading && !isSubmitting) {
+                  // Se campos estão preenchidos, disparar submit
+                  if (formData.email && formData.password) {
+                    const form = e.currentTarget.closest('form')
+                    if (form) {
+                      // Usar setTimeout para garantir que o evento de toque seja processado
+                      setTimeout(() => {
+                        form.requestSubmit()
+                      }, 0)
+                    } else {
+                      performLogin()
+                    }
+                  } else {
+                    e.preventDefault()
+                    setError('Por favor, preencha todos os campos')
+                  }
+                } else {
                   e.preventDefault()
-                  setError('Por favor, preencha todos os campos')
-                  return
                 }
               }}
             >
