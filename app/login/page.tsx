@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabase'
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -71,15 +72,26 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    
+    // Prevenir múltiplos submits
+    if (isSubmitting || isLoading) {
+      console.log('⚠️ [LOGIN] Submit já em andamento, ignorando...')
+      return
+    }
+    
     setError('')
+    setIsSubmitting(true)
     
     if (!formData.email || !formData.password) {
       setError('Por favor, preencha todos os campos')
+      setIsSubmitting(false)
       return
     }
 
     if (formData.password.length < 6) {
       setError('A senha deve ter pelo menos 6 caracteres')
+      setIsSubmitting(false)
       return
     }
 
@@ -94,6 +106,7 @@ export default function Login() {
 
       if (authError) {
         console.error('❌ [LOGIN] Erro Supabase Auth:', authError)
+        setIsSubmitting(false)
         if (authError.message?.includes('Invalid login credentials')) {
           setError('Email ou senha incorretos. Verifique se você digitou corretamente ou use "Esqueceu a senha?" para redefinir.')
         } else if (authError.message?.includes('Email not confirmed') || authError.message?.includes('email_confirmed_at')) {
@@ -110,20 +123,39 @@ export default function Login() {
 
       if (!authData?.user) {
         setError('Erro ao fazer login. Tente novamente.')
+        setIsSubmitting(false)
         return
       }
 
       console.log('✅ [LOGIN] Login Supabase Auth bem-sucedido. User ID:', authData.user.id)
 
-      // Verificar se é secretária ANTES de tentar usar o contexto de anestesistas
-      const { data: secretaria, error: secretariaError } = await supabase
-        .from('secretarias')
-        .select('id')
-        .eq('id', authData.user.id)
-        .maybeSingle()
+      // Verificar se é secretária ANTES de tentar usar o contexto de anestesistas - com timeout
+      let secretaria = null
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout ao verificar secretária')), 5000)
+        })
+        
+        const secretariaPromise = supabase
+          .from('secretarias')
+          .select('id')
+          .eq('id', authData.user.id)
+          .maybeSingle()
+        
+        const result = await Promise.race([
+          secretariaPromise,
+          timeoutPromise
+        ]) as any
+        
+        secretaria = result.data
+      } catch (secretariaError: any) {
+        console.warn('⚠️ [LOGIN] Timeout ou erro ao verificar secretária:', secretariaError.message || secretariaError)
+        // Continuar como anestesista se der timeout
+      }
 
-      if (secretaria && !secretariaError) {
+      if (secretaria) {
         console.log('👩‍💼 [LOGIN] É secretária, redirecionando...')
+        setIsSubmitting(false)
         router.push('/secretaria/dashboard')
         return
       }
@@ -134,36 +166,57 @@ export default function Login() {
       
       if (loginSuccess) {
         console.log('✅ [LOGIN] Login bem-sucedido via contexto')
+        setIsSubmitting(false)
         router.push('/dashboard')
       } else {
         console.error('❌ [LOGIN] Login falhou via contexto para anestesista')
+        setIsSubmitting(false)
         
-        // Verificar qual foi o problema específico
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('id, email, name, subscription_status')
-          .eq('id', authData.user.id)
-          .maybeSingle()
-        
-        console.log('🔍 [LOGIN] Dados do usuário na tabela:', { userData, userError })
-        
-        if (userError) {
-          console.error('❌ [LOGIN] Erro ao buscar usuário:', userError)
-          setError('Erro ao buscar dados do usuário. Tente novamente ou entre em contato com o suporte.')
-        } else if (!userData) {
-          console.error('❌ [LOGIN] Usuário não encontrado na tabela users')
-          setError('Usuário não encontrado no sistema. Entre em contato com o suporte para verificar sua conta.')
-        } else {
-          console.error('❌ [LOGIN] Usuário encontrado mas login falhou. Status:', userData.subscription_status)
-          setError('Erro ao carregar dados do usuário. Tente novamente ou entre em contato com o suporte.')
+        // Verificar qual foi o problema específico - com timeout
+        try {
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout ao buscar usuário')), 5000)
+          })
+          
+          const userPromise = supabase
+            .from('users')
+            .select('id, email, name, subscription_status')
+            .eq('id', authData.user.id)
+            .maybeSingle()
+          
+          const { data: userData, error: userError } = await Promise.race([
+            userPromise,
+            timeoutPromise
+          ]) as any
+          
+          console.log('🔍 [LOGIN] Dados do usuário na tabela:', { userData, userError })
+          
+          if (userError) {
+            console.error('❌ [LOGIN] Erro ao buscar usuário:', userError)
+            setError('Erro ao buscar dados do usuário. Tente novamente ou entre em contato com o suporte.')
+          } else if (!userData) {
+            console.error('❌ [LOGIN] Usuário não encontrado na tabela users')
+            setError('Usuário não encontrado no sistema. Entre em contato com o suporte para verificar sua conta.')
+          } else {
+            console.error('❌ [LOGIN] Usuário encontrado mas login falhou. Status:', userData.subscription_status)
+            setError('Erro ao carregar dados do usuário. Tente novamente ou entre em contato com o suporte.')
+          }
+        } catch (queryError: any) {
+          console.warn('⚠️ [LOGIN] Timeout ou erro ao buscar usuário:', queryError.message || queryError)
+          setError('Erro ao verificar dados do usuário. Tente novamente.')
         }
         
         // Fazer logout para limpar sessão
-        await supabase.auth.signOut()
+        try {
+          await supabase.auth.signOut()
+        } catch (logoutError) {
+          console.warn('⚠️ [LOGIN] Erro ao fazer logout:', logoutError)
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ [LOGIN] Erro geral no login:', error)
-      setError('Erro interno. Tente novamente.')
+      setIsSubmitting(false)
+      setError(error.message || 'Erro interno. Tente novamente.')
     }
   }
 
@@ -266,9 +319,17 @@ export default function Login() {
             <Button 
               type="submit" 
               className="w-full py-4 text-lg font-medium" 
-              disabled={isLoading}
+              disabled={isLoading || isSubmitting}
+              onClick={(e) => {
+                // Fallback para mobile - garantir que o submit funcione
+                if (!formData.email || !formData.password) {
+                  e.preventDefault()
+                  setError('Por favor, preencha todos os campos')
+                  return
+                }
+              }}
             >
-              {isLoading ? 'Entrando...' : 'Entrar'}
+              {isLoading || isSubmitting ? 'Entrando...' : 'Entrar'}
             </Button>
           </form>
 
