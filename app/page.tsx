@@ -152,7 +152,7 @@ export default function Home() {
                 // Usuário não logado
                 <>
                   <Link href="/login">
-                    <Button variant="ghost" className="text-white hover:text-emerald-300 hover:bg-white/20 border border-white/40 min-h-[44px] px-3 sm:px-4 font-medium">
+                    <Button variant="ghost" className="text-white hover:text-emerald-300 hover:bg-white/20 border border-white/40 min-h-[44px] px-3 sm:px-4 py-2 sm:py-3 font-medium">
                       <span className="hidden sm:inline">Entrar</span>
                       <span className="sm:hidden">Login</span>
                     </Button>

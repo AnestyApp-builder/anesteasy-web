@@ -13,6 +13,7 @@ function ConfirmEmailContent() {
   const [canResend, setCanResend] = useState(false)
   const [isResending, setIsResending] = useState(false)
   const [resendMessage, setResendMessage] = useState('')
+  const [isChecking, setIsChecking] = useState(false)
   
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -28,49 +29,123 @@ function ConfirmEmailContent() {
     }
   }, [countdown])
 
-  // Verificação automática a cada 5 segundos
+  // Verificação automática com backoff exponencial para mobile
   useEffect(() => {
+    let checkInterval = 3000 // Começar com 3 segundos
+    let maxInterval = 15000 // Máximo de 15 segundos
+    let attemptCount = 0
+    let timeoutId: NodeJS.Timeout | null = null
+    let intervalId: NodeJS.Timeout | null = null
+    let isChecking = false // Evitar requisições simultâneas
+
     const checkConfirmation = async () => {
+      // Evitar requisições simultâneas
+      if (isChecking) return
+      
+      isChecking = true
+      
       try {
+        // Adicionar timeout na requisição fetch para mobile (8 segundos)
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 8000)
+
         const response = await fetch('/api/check-email-confirmation', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ email }),
+          signal: controller.signal
         })
+
+        clearTimeout(timeout)
+
+        if (!response.ok) {
+          throw new Error('Erro na resposta')
+        }
 
         const result = await response.json()
         
         if (result.confirmed) {
           // Email confirmado, redirecionar para dashboard
+          // Limpar intervalos antes de redirecionar
+          if (intervalId) clearInterval(intervalId)
+          if (timeoutId) clearTimeout(timeoutId)
           window.location.href = '/dashboard'
+          return
         }
-      } catch (error) {
-        // Silenciar erros para não poluir o console
+
+        // Incrementar contador e ajustar intervalo (backoff exponencial)
+        attemptCount++
+        // Aumentar intervalo gradualmente: 3s, 5s, 8s, 12s, 15s (max)
+        if (attemptCount <= 3) {
+          checkInterval = Math.min(checkInterval * 1.5, maxInterval)
+        } else if (attemptCount <= 10) {
+          checkInterval = maxInterval // Manter em 15s após algumas tentativas
+        }
+
+        // Reconfigurar intervalo com novo tempo
+        if (intervalId) clearInterval(intervalId)
+        intervalId = setTimeout(() => {
+          checkConfirmation()
+        }, checkInterval)
+
+      } catch (error: any) {
+        // Se timeout ou erro, aumentar intervalo mais rápido
+        if (error.name === 'AbortError' || error.message?.includes('timeout')) {
+          checkInterval = Math.min(checkInterval * 2, maxInterval)
+        }
+        
+        // Reconfigurar intervalo mesmo em caso de erro
+        if (intervalId) clearInterval(intervalId)
+        intervalId = setTimeout(() => {
+          checkConfirmation()
+        }, checkInterval)
+      } finally {
+        isChecking = false
       }
     }
 
     // Verificar imediatamente
     checkConfirmation()
 
-    // Configurar verificação a cada 5 segundos
-    const interval = setInterval(checkConfirmation, 5000)
+    // Configurar primeira verificação após intervalo inicial
+    intervalId = setTimeout(() => {
+      checkConfirmation()
+    }, checkInterval)
 
-    // Limpar intervalo quando componente for desmontado
-    return () => clearInterval(interval)
+    // Limpar intervalos quando componente for desmontado
+    return () => {
+      if (intervalId) clearInterval(intervalId)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
   }, [email])
 
-  // Verificação manual de confirmação (removida verificação automática para evitar loops)
+  // Verificação manual de confirmação
   const handleCheckConfirmation = async () => {
+    if (isChecking) return // Evitar múltiplas verificações simultâneas
+    
+    setIsChecking(true)
+    
     try {
+      // Adicionar timeout para evitar travamentos no mobile
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 8000)
+
       const response = await fetch('/api/check-email-confirmation', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email }),
+        signal: controller.signal
       })
+
+      clearTimeout(timeout)
+
+      if (!response.ok) {
+        throw new Error('Erro na resposta')
+      }
 
       const result = await response.json()
       
@@ -80,8 +155,14 @@ function ConfirmEmailContent() {
       } else {
         alert('Email ainda não foi confirmado. Verifique sua caixa de entrada.')
       }
-    } catch (error) {
-      alert('Erro ao verificar confirmação. Tente novamente.')
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        alert('Verificação demorou muito. Verifique sua conexão e tente novamente.')
+      } else {
+        alert('Erro ao verificar confirmação. Tente novamente.')
+      }
+    } finally {
+      setIsChecking(false)
     }
   }
 
@@ -198,9 +279,19 @@ function ConfirmEmailContent() {
                 onClick={handleCheckConfirmation}
                 variant="outline"
                 className="w-full mb-3"
+                disabled={isChecking}
               >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Verificar Confirmação
+                {isChecking ? (
+                  <>
+                    <Clock className="w-4 h-4 mr-2 animate-spin" />
+                    Verificando...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Verificar Confirmação
+                  </>
+                )}
               </Button>
 
               <Button
@@ -221,7 +312,7 @@ function ConfirmEmailContent() {
                       <div className="mt-4 p-3 bg-teal-50 border border-teal-200 rounded-lg">
                         <p className="text-xs text-teal-700">
                           <strong>💡 Dica:</strong> Após confirmar o email, você será redirecionado automaticamente 
-                          para o dashboard em até 5 segundos. Ou clique em "Verificar Confirmação" para verificar imediatamente.
+                          para o dashboard. A verificação ocorre automaticamente a cada 3-15 segundos. Ou clique em "Verificar Confirmação" para verificar imediatamente.
                         </p>
                       </div>
             </div>

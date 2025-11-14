@@ -362,17 +362,20 @@ export default function Register() {
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">
                       Sexo *
                     </label>
                     <select
                       value={anestesistaForm.gender}
                       onChange={(e) => setAnestesistaForm({ ...anestesistaForm, gender: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white text-gray-900"
                       required
+                      style={{
+                        color: anestesistaForm.gender ? '#111827' : '#9CA3AF'
+                      }}
                     >
-                      <option value="">Selecione o sexo</option>
+                      <option value="" disabled hidden>Selecione o sexo</option>
                       <option value="M">Masculino</option>
                       <option value="F">Feminino</option>
                       <option value="Other">Outro</option>
@@ -393,62 +396,77 @@ export default function Register() {
             {/* Campos específicos para secretaria */}
             {activeTab === 'secretaria' && (
               <Input
-                label="Telefone (opcional)"
+                label="Telefone"
                 type="tel"
                 placeholder="(11) 99999-9999"
                 value={secretariaForm.phone}
                 onChange={(e) => setSecretariaForm({ ...secretariaForm, phone: e.target.value })}
+                required
               />
             )}
             
             <div className="relative">
-              <Input
-                label="Senha"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Mínimo 6 caracteres"
-                icon={<Lock className="w-5 h-5" />}
-                value={activeTab === 'anestesista' ? anestesistaForm.password : secretariaForm.password}
-                onChange={(e) => {
-                  if (activeTab === 'anestesista') {
-                    setAnestesistaForm({ ...anestesistaForm, password: e.target.value })
-                  } else {
-                    setSecretariaForm({ ...secretariaForm, password: e.target.value })
-                  }
-                }}
-                required
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-9 text-gray-400 hover:text-gray-600"
-                onClick={() => setShowPassword(!showPassword)}
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Senha <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Mínimo 6 caracteres"
+                    icon={<Lock className="w-5 h-5" />}
+                    value={activeTab === 'anestesista' ? anestesistaForm.password : secretariaForm.password}
+                    onChange={(e) => {
+                      if (activeTab === 'anestesista') {
+                        setAnestesistaForm({ ...anestesistaForm, password: e.target.value })
+                      } else {
+                        setSecretariaForm({ ...secretariaForm, password: e.target.value })
+                      }
+                    }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 flex items-center justify-center w-5 h-5 z-10"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="relative">
-              <Input
-                label="Confirmar senha"
-                type={showConfirmPassword ? 'text' : 'password'}
-                placeholder="Digite a senha novamente"
-                icon={<Lock className="w-5 h-5" />}
-                value={activeTab === 'anestesista' ? anestesistaForm.confirmPassword : secretariaForm.confirmPassword}
-                onChange={(e) => {
-                  if (activeTab === 'anestesista') {
-                    setAnestesistaForm({ ...anestesistaForm, confirmPassword: e.target.value })
-                  } else {
-                    setSecretariaForm({ ...secretariaForm, confirmPassword: e.target.value })
-                  }
-                }}
-                required
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-9 text-gray-400 hover:text-gray-600"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              >
-                {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Confirmar senha <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    placeholder="Digite a senha novamente"
+                    icon={<Lock className="w-5 h-5" />}
+                    value={activeTab === 'anestesista' ? anestesistaForm.confirmPassword : secretariaForm.confirmPassword}
+                    onChange={(e) => {
+                      if (activeTab === 'anestesista') {
+                        setAnestesistaForm({ ...anestesistaForm, confirmPassword: e.target.value })
+                      } else {
+                        setSecretariaForm({ ...secretariaForm, confirmPassword: e.target.value })
+                      }
+                    }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 flex items-center justify-center w-5 h-5 z-10"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    aria-label={showConfirmPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex items-start">
@@ -478,6 +496,10 @@ export default function Register() {
             <Button type="submit" className="w-full" disabled={isRegistering}>
               {isRegistering ? 'Criando conta...' : `Criar conta de ${activeTab === 'anestesista' ? 'Anestesista' : 'Secretaria'}`}
             </Button>
+            
+            <p className="text-xs text-gray-500 text-center mt-4">
+              Campos marcados com <span className="text-red-500">*</span> são obrigatórios
+            </p>
           </form>
 
           <div className="px-6 pb-6">

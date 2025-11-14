@@ -1081,16 +1081,19 @@ function NovoProcedimentoContent() {
                     value={formData.carteirinha}
                     onChange={(e) => updateFormData('carteirinha', e.target.value)}
               />
-              <div className="relative">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
                   Sexo do Paciente
                 </label>
                 <select
                   value={formData.patientGender}
                   onChange={(e) => updateFormData('patientGender', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-colors"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white text-gray-900"
+                  style={{
+                    color: formData.patientGender ? '#111827' : '#9CA3AF'
+                  }}
                 >
-                  <option value="">Selecione...</option>
+                  <option value="" disabled hidden>Selecione o sexo</option>
                   <option value="M">Masculino</option>
                   <option value="F">Feminino</option>
                   <option value="Other">Outro</option>

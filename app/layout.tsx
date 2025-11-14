@@ -40,9 +40,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5, // Permitir zoom para acessibilidade (WCAG)
+  userScalable: true, // Permitir zoom para acessibilidade
   themeColor: '#14b8a6',
+  viewportFit: 'cover', // Suporte para safe areas do iPhone X+
 }
 
 export default function RootLayout({

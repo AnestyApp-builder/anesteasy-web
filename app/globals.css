@@ -278,10 +278,44 @@ a:has(.logo-icon):visited {
     grid-template-columns: 1fr;
   }
   
-  /* Touch-friendly buttons */
+  /* Touch-friendly buttons - padrão Apple/Google (44x44px mínimo) */
   .mobile-touch {
     min-height: 44px;
     min-width: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Botões devem ter área de toque adequada */
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+  
+  /* Inputs e selects devem ser fáceis de tocar - mínimo 16px para evitar zoom automático no iOS */
+  /* Nota: padding é aplicado via classes Tailwind, não via CSS global para permitir controle individual */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="tel"],
+  input[type="url"],
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px !important;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  
+  /* Garantir que inputs com ícone tenham padding-left adequado */
+  input[type="text"].pl-11,
+  input[type="email"].pl-11,
+  input[type="password"].pl-11 {
+    padding-left: 2.75rem !important;
   }
   
   /* Mobile-optimized spacing */
@@ -289,9 +323,27 @@ a:has(.logo-icon):visited {
     margin-top: 1rem;
   }
   
-  /* Prevent zoom on input focus */
-  input, select, textarea {
-    font-size: 16px;
+  /* Otimização de performance para mobile */
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+  
+  /* Melhorar scroll no mobile */
+  body {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+  
+  /* Otimização de animações para mobile */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
   
   /* Mobile-friendly cards */
@@ -325,7 +377,18 @@ a:has(.logo-icon):visited {
   100% { transform: rotate(360deg); }
 }
 
+/* Otimização de fontes para mobile - usar font-display: swap */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* Preload de fontes críticas */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiA.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
   /* Cores primárias - Teal/Verde médico */
