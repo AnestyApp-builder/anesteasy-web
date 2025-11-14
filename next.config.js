@@ -19,10 +19,6 @@ const nextConfig = {
   // Compressão e otimização
   compress: true,
   poweredByHeader: false,
-  // Otimizações de performance
-  experimental: {
-    optimizeCss: true,
-  },
   webpack: (config, { isServer }) => {
     if (isServer) {
       // Garantir que pagarme seja resolvido corretamente no servidor
