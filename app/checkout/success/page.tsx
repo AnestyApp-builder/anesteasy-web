@@ -16,16 +16,99 @@ function CheckoutSuccessPageContent() {
   const userId = searchParams.get('user_id')
   const [loading, setLoading] = useState(true)
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('pending')
+  const [processingWebhook, setProcessingWebhook] = useState(false)
 
   useEffect(() => {
     // Verificar status da sessão se session_id estiver presente
     if (sessionId) {
-      // O webhook já deve ter processado, mas podemos verificar
-      const timer = setTimeout(() => {
-        setLoading(false)
-        setSubscriptionStatus('active')
-      }, 2000)
-      return () => clearTimeout(timer)
+      let mounted = true
+      let attempts = 0
+      const maxAttempts = 5
+      
+      const syncSubscription = async () => {
+        if (!mounted || attempts >= maxAttempts) {
+          if (mounted) {
+            setLoading(false)
+          }
+          return
+        }
+
+        try {
+          attempts++
+          console.log(`🔄 Sincronizando assinatura automaticamente... (tentativa ${attempts}/${maxAttempts})`)
+          
+          const response = await fetch('/api/stripe/test-webhook', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              session_id: sessionId
+            })
+          })
+
+          const data = await response.json()
+
+          if (response.ok && data.success) {
+            console.log('✅ Assinatura sincronizada automaticamente!')
+            setSubscriptionStatus('active')
+            setLoading(false)
+            
+            // Redirecionar para /assinatura após 1 segundo
+            setTimeout(() => {
+              if (mounted) {
+                router.push('/assinatura')
+              }
+            }, 1000)
+            return
+          } else {
+            console.warn(`⚠️ Tentativa ${attempts} falhou:`, data.error || 'Erro desconhecido')
+            
+            // Tentar novamente após 2 segundos
+            if (attempts < maxAttempts) {
+              setTimeout(() => {
+                if (mounted) {
+                  syncSubscription()
+                }
+              }, 2000)
+            } else {
+              // Todas as tentativas falharam
+              console.warn('⚠️ Não foi possível sincronizar automaticamente após todas as tentativas')
+              if (mounted) {
+                setLoading(false)
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ Erro na tentativa ${attempts}:`, error)
+          
+          // Tentar novamente após 2 segundos
+          if (attempts < maxAttempts) {
+            setTimeout(() => {
+              if (mounted) {
+                syncSubscription()
+              }
+            }, 2000)
+          } else {
+            // Todas as tentativas falharam
+            if (mounted) {
+              setLoading(false)
+            }
+          }
+        }
+      }
+
+      // Iniciar sincronização após 1 segundo
+      const initialTimer = setTimeout(() => {
+        if (mounted) {
+          syncSubscription()
+        }
+      }, 1000)
+      
+      return () => {
+        mounted = false
+        clearTimeout(initialTimer)
+      }
     } else {
       // Fallback para modo antigo (Pagar.me)
       const timer = setTimeout(() => {
@@ -33,7 +116,45 @@ function CheckoutSuccessPageContent() {
       }, 2000)
       return () => clearTimeout(timer)
     }
-  }, [sessionId])
+  }, [sessionId, router])
+
+  const processWebhookManually = async () => {
+    if (!sessionId) {
+      alert('Session ID não encontrado')
+      return
+    }
+
+    try {
+      setProcessingWebhook(true)
+      
+      const response = await fetch('/api/stripe/test-webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          session_id: sessionId
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert('✅ Assinatura processada com sucesso! Agora você pode acessar a página de assinatura.')
+        // Aguardar um pouco e redirecionar
+        setTimeout(() => {
+          router.push('/assinatura')
+        }, 1000)
+      } else {
+        alert(`❌ Erro: ${data.error || 'Erro desconhecido'}`)
+      }
+    } catch (error: any) {
+      console.error('Erro ao processar webhook:', error)
+      alert(`❌ Erro ao processar: ${error.message || 'Erro desconhecido'}`)
+    } finally {
+      setProcessingWebhook(false)
+    }
+  }
 
   const planNames: Record<string, string> = {
     monthly: 'Plano Mensal',
@@ -136,18 +257,42 @@ function CheckoutSuccessPageContent() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link href="/dashboard" className="flex-1">
+                <Link href="/assinatura" className="flex-1">
                   <Button className="w-full">
-                    Ir para Dashboard
+                    Ver Minha Assinatura
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </Link>
-                <Link href="/planos" className="flex-1">
+                <Link href="/dashboard" className="flex-1">
                   <Button variant="outline" className="w-full">
-                    Ver Planos
+                    Ir para Dashboard
                   </Button>
                 </Link>
               </div>
+
+              {/* Botão para processar webhook manualmente se necessário */}
+              {sessionId && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <p className="text-xs text-gray-500 mb-2 text-center">
+                    Se a assinatura não aparecer, clique abaixo para processar manualmente:
+                  </p>
+                  <Button
+                    onClick={processWebhookManually}
+                    disabled={processingWebhook}
+                    variant="outline"
+                    className="w-full text-sm"
+                  >
+                    {processingWebhook ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processando...
+                      </>
+                    ) : (
+                      'Processar Assinatura Manualmente'
+                    )}
+                  </Button>
+                </div>
+              )}
 
               <div className="text-center text-sm text-gray-500 pt-4 border-t">
                 <p>

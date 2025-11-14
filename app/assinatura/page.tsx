@@ -65,7 +65,12 @@ export default function AssinaturaPage() {
       setLoading(true)
       setError(null)
 
-      const { supabase } = await import('@/lib/supabase')
+      const supabaseModule = await import('@/lib/supabase')
+      const supabase = supabaseModule.supabase
+      
+      if (!supabase) {
+        throw new Error('Supabase não está disponível no cliente')
+      }
       
       // Obter sessão atual
       let { data: { session }, error: sessionError } = await supabase.auth.getSession()
@@ -223,7 +228,13 @@ export default function AssinaturaPage() {
       setIsCancelling(true)
       setError(null)
 
-      const { supabase } = await import('@/lib/supabase')
+      const supabaseModule = await import('@/lib/supabase')
+      const supabase = supabaseModule.supabase
+      
+      if (!supabase) {
+        throw new Error('Supabase não está disponível no cliente')
+      }
+      
       const { data: { session } } = await supabase.auth.getSession()
       
       if (!session?.access_token) {
@@ -289,7 +300,13 @@ export default function AssinaturaPage() {
       setIsUpgrading(true)
       setError(null)
 
-      const { supabase } = await import('@/lib/supabase')
+      const supabaseModule = await import('@/lib/supabase')
+      const supabase = supabaseModule.supabase
+      
+      if (!supabase) {
+        throw new Error('Supabase não está disponível no cliente')
+      }
+      
       const { data: { session } } = await supabase.auth.getSession()
       
       if (!session?.access_token) {
@@ -386,32 +403,107 @@ export default function AssinaturaPage() {
             </Card>
           ) : (
             <div className="space-y-6">
-              {/* Status da Assinatura */}
-              <Card>
+              {/* Status da Assinatura - Destaque */}
+              <Card className={`border-2 ${
+                subscription.status === 'active' 
+                  ? 'border-green-500 bg-green-50' 
+                  : subscription.status === 'pending'
+                    ? 'border-yellow-500 bg-yellow-50'
+                    : subscription.status === 'cancelled' || subscription.status === 'expired'
+                      ? 'border-red-500 bg-red-50'
+                      : 'border-gray-300 bg-gray-50'
+              }`}>
                 <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>Status da Assinatura</span>
-                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border flex items-center gap-2 ${getStatusColor(subscription.status)}`}>
+                  <CardTitle className="flex items-center justify-between flex-wrap gap-4">
+                    <div className="flex items-center gap-3">
+                      {getStatusIcon(subscription.status)}
+                      <span className="text-2xl font-bold text-gray-900">
+                        Status da Assinatura
+                      </span>
+                    </div>
+                    <span className={`px-4 py-2 rounded-full text-base font-bold border-2 flex items-center gap-2 ${getStatusColor(subscription.status)}`}>
                       {getStatusIcon(subscription.status)}
                       {getStatusLabel(subscription.status)}
                     </span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Valor</p>
-                    <p className="text-lg font-semibold text-gray-900">
-                      {new Intl.NumberFormat('pt-BR', { 
-                        style: 'currency', 
-                        currency: 'BRL' 
-                      }).format(subscription.amount || PLAN_PRICES[subscription.plan_type] || 0)}
-                      <span className="text-sm font-normal text-gray-600 ml-1">
-                        {subscription.plan_type === 'monthly' && '/mês'}
-                        {subscription.plan_type === 'quarterly' && '/trimestre'}
-                        {subscription.plan_type === 'annual' && '/ano'}
-                      </span>
-                    </p>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Plano</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {PLAN_NAMES[subscription.plan_type] || subscription.plan_type}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Valor</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {new Intl.NumberFormat('pt-BR', { 
+                          style: 'currency', 
+                          currency: 'BRL' 
+                        }).format(subscription.amount || PLAN_PRICES[subscription.plan_type] || 0)}
+                        <span className="text-sm font-normal text-gray-600 ml-1">
+                          {subscription.plan_type === 'monthly' && '/mês'}
+                          {subscription.plan_type === 'quarterly' && '/trimestre'}
+                          {subscription.plan_type === 'annual' && '/ano'}
+                        </span>
+                      </p>
+                    </div>
                   </div>
+                  
+                  {subscription.status === 'active' && subscription.current_period_end && (
+                    <div className="bg-white border-2 border-primary-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-700 mb-1">Dias Restantes</p>
+                          <p className="text-3xl font-bold text-primary-600">
+                            {(() => {
+                              const renewalDate = new Date(subscription.current_period_end)
+                              const today = new Date()
+                              const daysUntilRenewal = Math.ceil((renewalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+                              return daysUntilRenewal > 0 ? daysUntilRenewal : 0
+                            })()}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            até a próxima renovação
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-gray-700 mb-1">Próxima Renovação</p>
+                          <p className="text-lg font-bold text-gray-900">
+                            {formatDate(subscription.current_period_end)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {subscription.status === 'pending' && (
+                    <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-4">
+                      <p className="text-sm text-yellow-800">
+                        <strong>⏳ Aguardando confirmação:</strong> Sua assinatura está sendo processada. 
+                        Você receberá um email quando a assinatura for ativada.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {subscription.status === 'cancelled' && (
+                    <div className="bg-red-100 border border-red-300 rounded-lg p-4">
+                      <p className="text-sm text-red-800">
+                        <strong>❌ Assinatura Cancelada:</strong> Sua assinatura foi cancelada.
+                        {subscription.cancelled_at && ` Cancelada em ${formatDate(subscription.cancelled_at)}.`}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {subscription.status === 'expired' && (
+                    <div className="bg-red-100 border border-red-300 rounded-lg p-4">
+                      <p className="text-sm text-red-800">
+                        <strong>⏰ Assinatura Expirada:</strong> Sua assinatura expirou. 
+                        Renove sua assinatura para continuar usando o serviço.
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

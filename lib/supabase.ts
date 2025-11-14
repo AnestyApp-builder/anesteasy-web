@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl = 'https://zmtwwajyhusyrugobxur.supabase.co'
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptdHd3YWp5aHVzeXJ1Z29ieHVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczMzYzNzAsImV4cCI6MjA3MjkxMjM3MH0.NC6t2w_jFWTMJjVv5FmPLouVyOVgCTBReCr0zOA2dx8'
@@ -25,7 +25,19 @@ export const supabaseOptions = {
   }
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, supabaseOptions)
+// Função para criar o cliente Supabase
+function createSupabaseClient(): SupabaseClient {
+  return createClient(supabaseUrl, supabaseAnonKey, supabaseOptions)
+}
+
+// Criar cliente apenas no cliente (browser)
+let supabase: SupabaseClient | null = null
+
+if (typeof window !== 'undefined') {
+  supabase = createSupabaseClient()
+}
+
+export { supabase }
 
 export type Json =
   | string

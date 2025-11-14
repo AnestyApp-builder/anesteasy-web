@@ -15,8 +15,15 @@ export async function POST(request: NextRequest) {
     const body = await request.text()
     const signature = request.headers.get('stripe-signature')
 
+    console.log('📥 Webhook recebido - Headers:', {
+      'stripe-signature': signature ? 'presente' : 'ausente',
+      'content-type': request.headers.get('content-type'),
+      'user-agent': request.headers.get('user-agent')
+    })
+
     if (!signature) {
       console.error('❌ Assinatura do webhook não encontrada')
+      console.error('📋 Headers recebidos:', Object.fromEntries(request.headers.entries()))
       return NextResponse.json(
         { error: 'Assinatura do webhook ausente' },
         { status: 400 }
@@ -32,9 +39,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Validar assinatura do webhook
-    const event = constructWebhookEvent(body, signature, webhookSecret)
+    let event: Stripe.Event
+    try {
+      event = constructWebhookEvent(body, signature, webhookSecret)
+      console.log('✅ Assinatura do webhook validada com sucesso')
+    } catch (error: any) {
+      console.error('❌ Erro ao validar assinatura do webhook:', error.message)
+      return NextResponse.json(
+        { error: `Assinatura inválida: ${error.message}` },
+        { status: 400 }
+      )
+    }
 
     console.log('🔔 Webhook Stripe recebido:', event.type, 'ID:', event.id)
+    console.log('📋 Dados do evento:', JSON.stringify(event.data.object, null, 2))
 
     // Processar diferentes tipos de eventos
     switch (event.type) {
@@ -82,6 +100,16 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   console.log('📋 Metadata da sessão:', JSON.stringify(session.metadata, null, 2))
   console.log('👤 Customer ID:', session.customer)
   console.log('📝 Subscription ID:', session.subscription)
+  console.log('💳 Payment Status:', session.payment_status)
+
+  // ⚠️ VALIDAÇÃO DE SEGURANÇA: Verificar se o pagamento foi realmente pago
+  if (session.payment_status !== 'paid') {
+    console.error('❌ SEGURANÇA: Checkout concluído mas pagamento não confirmado')
+    console.error('📋 Payment Status:', session.payment_status)
+    console.error('⏳ Aguardando confirmação do pagamento via invoice.paid')
+    // Não criar assinatura ainda - aguardar invoice.paid
+    return
+  }
 
   const userId = session.metadata?.user_id
   const planType = session.metadata?.plan_type
@@ -105,6 +133,24 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   }
 
   console.log('📝 Subscription ID encontrado:', subscriptionId)
+
+  // ⚠️ VALIDAÇÃO DE SEGURANÇA: Verificar status da subscription no Stripe
+  try {
+    if (stripe) {
+      const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId)
+      if (stripeSubscription.status !== 'active' && stripeSubscription.status !== 'trialing') {
+        console.error('❌ SEGURANÇA: Subscription não está ativa')
+        console.error('📋 Subscription Status:', stripeSubscription.status)
+        // Não criar assinatura se não estiver ativa
+        return
+      }
+      console.log('✅ Subscription Status verificado:', stripeSubscription.status)
+    }
+  } catch (error) {
+    console.error('❌ Erro ao verificar subscription no Stripe:', error)
+    // Em caso de erro, não criar assinatura por segurança
+    return
+  }
 
   // Buscar assinatura existente (pode ser pending ou já active)
   const { data: existingSubscription, error: existingError } = await supabase
