@@ -10,7 +10,8 @@ import {
   Shield, 
   Zap,
   ArrowLeft,
-  Loader2
+  Loader2,
+  CheckCircle
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -85,21 +86,23 @@ const PLANS: Plan[] = [
   }
 ]
 
+interface ActiveSubscription {
+  id: string
+  plan_type: 'monthly' | 'quarterly' | 'annual'
+  status: string
+  current_period_end: string
+  amount: number
+}
+
 function PlanosContent() {
   const { user, isAuthenticated } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
-  const [showCardModal, setShowCardModal] = useState(false)
-  const [cardData, setCardData] = useState({
-    number: '',
-    holder_name: '',
-    exp_month: '',
-    exp_year: '',
-    cvv: '',
-    document: ''
-  })
+  const [activeSubscription, setActiveSubscription] = useState<ActiveSubscription | null>(null)
+  const [loadingSubscription, setLoadingSubscription] = useState(true)
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     // Redirecionar secretárias - elas não precisam pagar
@@ -108,13 +111,97 @@ function PlanosContent() {
         const isSec = await isSecretaria(user.id)
         if (isSec) {
           router.push('/secretaria/dashboard')
+        } else {
+          // Buscar assinatura ativa
+          fetchActiveSubscription()
         }
       }
       checkSecretaria()
     }
   }, [isAuthenticated, user, router])
 
-  const handleSelectPlan = (plan: Plan) => {
+  const fetchActiveSubscription = async () => {
+    if (!user) return
+
+    try {
+      setLoadingSubscription(true)
+      const { supabase } = await import('@/lib/supabase')
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        setLoadingSubscription(false)
+        return
+      }
+
+      const response = await fetch('/api/stripe/subscription', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.subscription) {
+          setActiveSubscription(data.subscription)
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao buscar assinatura:', error)
+    } finally {
+      setLoadingSubscription(false)
+    }
+  }
+
+  const calculateDaysRemaining = (endDate: string): number => {
+    const end = new Date(endDate)
+    const now = new Date()
+    const diff = end.getTime() - now.getTime()
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+    return days > 0 ? days : 0
+  }
+
+  const getPlanName = (planType: string): string => {
+    return PLANS.find(p => p.id === planType)?.name || planType
+  }
+
+  const syncSubscription = async () => {
+    if (!user?.email) return
+
+    try {
+      setSyncing(true)
+      const response = await fetch('/api/stripe/sync-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: user.email
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.subscription) {
+          setActiveSubscription(data.subscription)
+          alert('Assinatura sincronizada com sucesso!')
+        } else {
+          alert('Nenhuma assinatura ativa encontrada na Stripe.')
+        }
+      } else {
+        const error = await response.json()
+        alert(`Erro ao sincronizar: ${error.error || 'Erro desconhecido'}`)
+      }
+    } catch (error: any) {
+      console.error('Erro ao sincronizar:', error)
+      alert(`Erro ao sincronizar assinatura: ${error.message || 'Erro desconhecido'}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const handleSelectPlan = async (plan: Plan) => {
     console.log('🔘 handleSelectPlan chamado para plano:', plan.id)
     
     if (!isAuthenticated || !user) {
@@ -123,38 +210,7 @@ function PlanosContent() {
       return
     }
 
-    console.log('✅ Abrindo modal de cartão para plano:', plan.name)
     setSelectedPlan(plan)
-    setShowCardModal(true)
-    console.log('✅ Modal deve estar visível agora')
-  }
-
-  const handleCardSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    console.log('📝 handleCardSubmit chamado')
-    console.log('📋 Dados do cartão:', { 
-      hasNumber: !!cardData.number,
-      hasHolderName: !!cardData.holder_name,
-      hasExpMonth: !!cardData.exp_month,
-      hasExpYear: !!cardData.exp_year,
-      hasCvv: !!cardData.cvv,
-      hasDocument: !!cardData.document
-    })
-    
-    if (!selectedPlan || !isAuthenticated || !user) {
-      console.error('❌ Dados faltando:', { selectedPlan: !!selectedPlan, isAuthenticated, user: !!user })
-      return
-    }
-
-    // Validação básica
-    if (!cardData.number || !cardData.holder_name || !cardData.exp_month || !cardData.exp_year || !cardData.cvv) {
-      console.error('❌ Dados do cartão incompletos')
-      alert('Por favor, preencha todos os dados do cartão')
-      return
-    }
-    
-    console.log('✅ Validação passou, criando assinatura...')
-
     setLoading(true)
 
     try {
@@ -168,25 +224,30 @@ function PlanosContent() {
         return
       }
 
-      // Criar assinatura direta com dados do cartão
-      const response = await fetch('/api/pagarme/subscription', {
+      console.log('📤 Criando Checkout Session na Stripe para plano:', plan.name)
+      console.log('📋 Dados enviados:', { plan_id: plan.id, user_id: user.id })
+
+      // Criar Checkout Session na Stripe (checkout hospedado)
+      const response = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          plan_id: selectedPlan.id,
-          cardData: {
-            number: cardData.number.replace(/\s/g, ''),
-            holder_name: cardData.holder_name,
-            exp_month: cardData.exp_month,
-            exp_year: cardData.exp_year,
-            cvv: cardData.cvv,
-            document: cardData.document.replace(/\D/g, '')
-          }
+          plan_id: plan.id
         })
       })
+
+      console.log('📥 Resposta recebida, status:', response.status, response.statusText)
+
+      // Verificar se a resposta é JSON
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text()
+        console.error('❌ Resposta não é JSON:', text.substring(0, 500))
+        throw new Error('Resposta inválida do servidor. Verifique os logs do servidor.')
+      }
 
       const data = await response.json()
 
@@ -194,7 +255,7 @@ function PlanosContent() {
         console.error('❌ Erro na resposta:', JSON.stringify(data, null, 2))
         
         // Tratar diferentes formatos de erro
-        let errorMessage = 'Erro ao criar assinatura'
+        let errorMessage = 'Erro ao criar checkout'
         if (typeof data.error === 'string') {
           errorMessage = data.error
         } else if (data.error && typeof data.error === 'object') {
@@ -206,16 +267,24 @@ function PlanosContent() {
         throw new Error(errorMessage)
       }
 
-      // Assinatura criada com sucesso
-      console.log('✅ Assinatura criada com sucesso:', data.subscription?.id)
-      setShowCardModal(false)
-      router.push(`/checkout/success?plan=${selectedPlan.id}&status=${data.status || 'active'}`)
+      // Checkout Session criada com sucesso
+      console.log('✅ Checkout Session criada:', data.session_id)
+      console.log('🔗 URL do checkout:', data.checkout_url)
+
+      // Redirecionar para o checkout hospedado da Stripe
+      if (data.checkout_url) {
+        console.log('🔄 Redirecionando para checkout da Stripe...')
+        window.location.href = data.checkout_url
+      } else {
+        console.error('❌ URL do checkout não retornada na resposta:', data)
+        throw new Error('URL do checkout não retornada')
+      }
 
     } catch (error: any) {
       console.error('Erro ao processar:', error)
       
       // Tratar diferentes formatos de erro
-      let errorMessage = 'Erro ao processar assinatura. Tente novamente.'
+      let errorMessage = 'Erro ao processar checkout. Tente novamente.'
       if (error.message) {
         errorMessage = typeof error.message === 'string' ? error.message : JSON.stringify(error.message)
       } else if (typeof error === 'string') {
@@ -228,17 +297,6 @@ function PlanosContent() {
       alert(`Erro: ${errorMessage}\n\nVerifique os logs do servidor para mais detalhes.`)
       setLoading(false)
     }
-  }
-
-  const fillTestData = () => {
-    setCardData({
-      number: '4111 1111 1111 1111',
-      holder_name: 'TESTE APROVADO',
-      exp_month: '12',
-      exp_year: '25',
-      cvv: '123',
-      document: '12345678900'
-    })
   }
 
   const formatCurrency = (value: number) => {
@@ -290,18 +348,107 @@ function PlanosContent() {
             </p>
           </div>
 
+          {/* Assinatura Ativa */}
+          {loadingSubscription ? (
+            <div className="mb-8 flex justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+            </div>
+          ) : activeSubscription && activeSubscription.status === 'active' ? (
+            <Card className="mb-8 bg-gradient-to-r from-primary-50 to-primary-100 border-primary-300">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-primary-500 rounded-lg">
+                      <CheckCircle className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900 mb-1">
+                        Assinatura Ativa: {getPlanName(activeSubscription.plan_type)}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        {formatCurrency(activeSubscription.amount)} por {activeSubscription.plan_type === 'monthly' ? 'mês' : activeSubscription.plan_type === 'quarterly' ? 'trimestre' : 'ano'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-primary-600 mb-1">
+                      {calculateDaysRemaining(activeSubscription.current_period_end)} {calculateDaysRemaining(activeSubscription.current_period_end) === 1 ? 'dia' : 'dias'}
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      restantes no período atual
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-primary-200">
+                  <Link href="/assinatura">
+                    <Button variant="outline" className="w-full sm:w-auto">
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Gerenciar Assinatura
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          ) : isAuthenticated ? (
+            <Card className="mb-8 bg-yellow-50 border-yellow-200">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-yellow-900 mb-1">
+                      Nenhuma assinatura ativa encontrada
+                    </h3>
+                    <p className="text-sm text-yellow-800">
+                      Se você acabou de fazer um pagamento, clique no botão abaixo para sincronizar sua assinatura.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={syncSubscription}
+                    disabled={syncing}
+                    variant="outline"
+                    className="bg-yellow-100 border-yellow-300 hover:bg-yellow-200"
+                  >
+                    {syncing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Sincronizando...
+                      </>
+                    ) : (
+                      <>
+                        <Calendar className="w-4 h-4 mr-2" />
+                        Sincronizar Assinatura
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           {/* Planos */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-            {PLANS.map((plan) => (
-              <Card 
-                key={plan.id}
+            {PLANS.map((plan) => {
+              const isActivePlan = activeSubscription?.plan_type === plan.id && activeSubscription?.status === 'active'
+              
+              return (
+                <Card 
+                  key={plan.id}
                 className={`relative transition-all duration-300 hover:shadow-xl ${
-                  plan.popular 
-                    ? 'border-2 border-primary-500 shadow-lg scale-105' 
-                    : 'border border-gray-200'
+                  isActivePlan
+                    ? 'border-2 border-green-500 shadow-lg bg-green-50'
+                    : plan.popular 
+                      ? 'border-2 border-primary-500 shadow-lg scale-105' 
+                      : 'border border-gray-200'
                 }`}
               >
-                {plan.popular && (
+                {isActivePlan && (
+                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10">
+                    <span className="bg-green-500 text-white px-4 py-1 rounded-full text-sm font-semibold flex items-center gap-1">
+                      <CheckCircle className="w-4 h-4" />
+                      Plano Ativo
+                    </span>
+                  </div>
+                )}
+                {!isActivePlan && plan.popular && (
                   <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
                     <span className="bg-primary-500 text-white px-4 py-1 rounded-full text-sm font-semibold">
                       Mais Popular
@@ -355,17 +502,24 @@ function PlanosContent() {
 
                   <Button
                     onClick={() => handleSelectPlan(plan)}
-                    disabled={loading}
+                    disabled={loading || isActivePlan}
                     className={`w-full ${
-                      plan.popular 
-                        ? 'bg-primary-600 hover:bg-primary-700' 
-                        : 'bg-gray-800 hover:bg-gray-900'
+                      isActivePlan
+                        ? 'bg-green-600 hover:bg-green-700 cursor-not-allowed'
+                        : plan.popular 
+                          ? 'bg-primary-600 hover:bg-primary-700' 
+                          : 'bg-gray-800 hover:bg-gray-900'
                     }`}
                   >
                     {loading && selectedPlan?.id === plan.id ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Processando...
+                        Redirecionando...
+                      </>
+                    ) : isActivePlan ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Plano Ativo
                       </>
                     ) : (
                       <>
@@ -376,40 +530,41 @@ function PlanosContent() {
                   </Button>
                 </CardContent>
               </Card>
-            ))}
-              </div>
+              )
+            })}
+          </div>
 
-              {/* Mensagem de cancelamento */}
-              {searchParams.get('checkout') === 'cancelled' && (
-                <div className="mb-8">
-                  <Card className="bg-yellow-50 border-yellow-200">
-                    <CardContent className="p-6">
-                      <div className="flex items-start">
-                        <div className="p-2 bg-yellow-100 rounded-lg mr-4">
-                          <Calendar className="w-6 h-6 text-yellow-600" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-yellow-900 mb-2">
-                            Checkout cancelado
-                          </h3>
-                          <p className="text-sm text-yellow-800">
-                            O processo de pagamento foi cancelado. Você pode tentar novamente quando quiser.
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
+          {/* Mensagem de cancelamento */}
+          {searchParams.get('checkout') === 'cancelled' && (
+            <div className="mb-8">
+              <Card className="bg-yellow-50 border-yellow-200">
+                <CardContent className="p-6">
+                  <div className="flex items-start">
+                    <div className="p-2 bg-yellow-100 rounded-lg mr-4">
+                      <Calendar className="w-6 h-6 text-yellow-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-yellow-900 mb-2">
+                        Checkout cancelado
+                      </h3>
+                      <p className="text-sm text-yellow-800">
+                        O processo de pagamento foi cancelado. Você pode tentar novamente quando quiser.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
-              {/* Informações Adicionais */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          {/* Informações Adicionais */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <Card className="border border-gray-200">
               <CardContent className="p-6 text-center">
                 <Shield className="w-8 h-8 text-primary-500 mx-auto mb-3" />
                 <h3 className="font-semibold text-gray-900 mb-2">Pagamento Seguro</h3>
                 <p className="text-sm text-gray-600">
-                  Processado pela Pagar.me com criptografia SSL
+                  Processado pela Stripe com criptografia SSL
                 </p>
               </CardContent>
             </Card>
@@ -457,206 +612,6 @@ function PlanosContent() {
         </div>
       </div>
 
-      {/* Modal de Cartão */}
-      {showCardModal && selectedPlan && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={(e) => {
-            // Fechar modal ao clicar fora
-            if (e.target === e.currentTarget) {
-              setShowCardModal(false)
-              setSelectedPlan(null)
-              setLoading(false)
-            }
-          }}
-        >
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Dados do Cartão - {selectedPlan.name}</span>
-                <button
-                  onClick={() => {
-                    setShowCardModal(false)
-                    setSelectedPlan(null)
-                    setLoading(false)
-                  }}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  ✕
-                </button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleCardSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Número do Cartão
-                  </label>
-                  <input
-                    type="text"
-                    value={cardData.number}
-                    onChange={(e) => {
-                      let value = e.target.value.replace(/\D/g, '')
-                      // Formatar com espaços a cada 4 dígitos
-                      value = value.replace(/(\d{4})(?=\d)/g, '$1 ')
-                      if (value.length <= 19) {
-                        setCardData({ ...cardData, number: value })
-                      }
-                    }}
-                    placeholder="4111 1111 1111 1111"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    required
-                    maxLength={19}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nome no Cartão
-                  </label>
-                  <input
-                    type="text"
-                    value={cardData.holder_name}
-                    onChange={(e) => setCardData({ ...cardData, holder_name: e.target.value.toUpperCase() })}
-                    placeholder="NOME COMPLETO"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Mês
-                    </label>
-                    <input
-                      type="text"
-                      value={cardData.exp_month}
-                      onChange={(e) => {
-                        let value = e.target.value.replace(/\D/g, '')
-                        if (value.length <= 2 && (value === '' || (parseInt(value) >= 1 && parseInt(value) <= 12))) {
-                          setCardData({ ...cardData, exp_month: value })
-                        }
-                      }}
-                      placeholder="12"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      required
-                      maxLength={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Ano
-                    </label>
-                    <input
-                      type="text"
-                      value={cardData.exp_year}
-                      onChange={(e) => {
-                        let value = e.target.value.replace(/\D/g, '')
-                        if (value.length <= 2) {
-                          setCardData({ ...cardData, exp_year: value })
-                        }
-                      }}
-                      placeholder="25"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      required
-                      maxLength={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      CVV
-                    </label>
-                    <input
-                      type="text"
-                      value={cardData.cvv}
-                      onChange={(e) => {
-                        let value = e.target.value.replace(/\D/g, '')
-                        if (value.length <= 4) {
-                          setCardData({ ...cardData, cvv: value })
-                        }
-                      }}
-                      placeholder="123"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      required
-                      maxLength={4}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    CPF
-                  </label>
-                  <input
-                    type="text"
-                    value={cardData.document}
-                    onChange={(e) => {
-                      let value = e.target.value.replace(/\D/g, '')
-                      // Formatar CPF
-                      if (value.length <= 11) {
-                        value = value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
-                        setCardData({ ...cardData, document: value })
-                      }
-                    }}
-                    placeholder="000.000.000-00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    required
-                    maxLength={14}
-                  />
-                </div>
-
-                {/* Notificação sobre renovação automática */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-start">
-                    <div className="flex-shrink-0">
-                      <CreditCard className="w-5 h-5 text-blue-600 mt-0.5" />
-                    </div>
-                    <div className="ml-3">
-                      <h3 className="text-sm font-semibold text-blue-900 mb-1">
-                        Renovação Automática
-                      </h3>
-                      <p className="text-sm text-blue-800">
-                        Esta assinatura será renovada automaticamente no final de cada período ({selectedPlan.period === 'mensal' ? 'mensalmente' : selectedPlan.period === 'trimestral' ? 'trimestralmente' : 'anualmente'}). 
-                        Você pode cancelar a qualquer momento sem taxas ou multas.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={fillTestData}
-                    className="flex-1 bg-yellow-500 hover:bg-yellow-600"
-                  >
-                    🧪 Preencher Dados de Teste
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Processando...
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard className="w-4 h-4 mr-2" />
-                        Finalizar Pagamento
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </Layout>
   )
 }

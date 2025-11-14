@@ -28,42 +28,111 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true
+    let loadingTimeout: NodeJS.Timeout | null = null
+
+    // Timeout de segurança - sempre finalizar loading após 5 segundos
+    loadingTimeout = setTimeout(() => {
+      if (mounted) {
+        console.warn('⚠️ [AUTH] Timeout de segurança - finalizando loading')
+        setIsLoading(false)
+      }
+    }, 5000)
 
     // Função para carregar dados do usuário
     const loadUser = async (session: any) => {
       if (!mounted || !session?.user) {
-        if (mounted) setIsLoading(false)
+        if (mounted) {
+          setIsLoading(false)
+          if (loadingTimeout) clearTimeout(loadingTimeout)
+        }
         return
       }
 
       try {
         console.log('👤 [AUTH] Carregando usuário:', session.user.id)
         
-        // Verificar se é secretária - se for, ignorar
-        const isSec = await isSecretaria(session.user.id)
-        if (isSec) {
-          console.log('👩‍💼 [AUTH] É secretária, ignorando')
-          if (mounted) {
-            setUser(null)
-            setIsEmailConfirmed(false)
-            setIsLoading(false)
+        // Verificar se é secretária - se for, ignorar (com timeout muito curto)
+        // Secretárias usam SecretariaAuthContext, não este contexto
+        try {
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout')), 1000) // Timeout muito curto
+          })
+          
+          // Tentar verificar por ID primeiro
+          let isSec = false
+          try {
+            const isSecPromise = isSecretaria(session.user.id)
+            isSec = await Promise.race([isSecPromise, timeoutPromise]) as boolean
+          } catch (e) {
+            // Se der timeout, tentar por email (mais rápido às vezes)
+            try {
+              const { data } = await supabase
+                .from('secretarias')
+                .select('id')
+                .eq('email', session.user.email)
+                .maybeSingle()
+              isSec = !!data
+            } catch (emailError) {
+              // Se ainda der erro, continuar como anestesista
+            }
           }
-          return
+          
+          if (isSec) {
+            console.log('👩‍💼 [AUTH] É secretária, ignorando (usa SecretariaAuthContext)')
+            if (mounted) {
+              setUser(null)
+              setIsEmailConfirmed(false)
+              setIsLoading(false)
+              if (loadingTimeout) clearTimeout(loadingTimeout)
+            }
+            return
+          }
+        } catch (error) {
+          // Silenciar erro - continuar normalmente como anestesista
         }
 
-        // Buscar dados do usuário
-        const { data: userData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle()
+        // Buscar dados do usuário (com timeout curto)
+        let userData = null
+        try {
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout')), 2000) // Timeout curto
+          })
+          const userDataPromise = supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle()
+          
+          const result = await Promise.race([userDataPromise, timeoutPromise]) as any
+          if (result && !result.error && result.data) {
+            userData = result.data
+          }
+        } catch (error) {
+          // Se der timeout, continuar sem dados - vamos criar dados básicos
+          console.warn('⚠️ [AUTH] Timeout ao buscar dados do usuário, usando dados básicos')
+        }
 
         if (!userData) {
-          console.log('⚠️ [AUTH] Usuário não encontrado na tabela')
+          console.log('⚠️ [AUTH] Usuário não encontrado na tabela, criando dados básicos')
+          // Se o usuário está autenticado mas não existe na tabela, criar dados básicos
+          const basicUser = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
+            specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
+            crm: session.user.user_metadata?.crm || '000000',
+            gender: session.user.user_metadata?.gender || null,
+            phone: session.user.user_metadata?.phone || null
+          }
+          
           if (mounted) {
-            setUser(null)
-            setIsEmailConfirmed(false)
+            setUser(basicUser)
+            setIsEmailConfirmed(!!session.user.email_confirmed_at)
+            localStorage.setItem('currentUser', JSON.stringify(basicUser))
+            localStorage.setItem('isEmailConfirmed', (!!session.user.email_confirmed_at).toString())
+            console.log('✅ [AUTH] Usuário básico criado')
             setIsLoading(false)
+            if (loadingTimeout) clearTimeout(loadingTimeout)
           }
           return
         }
@@ -87,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('isEmailConfirmed', emailConfirmed.toString())
           console.log('✅ [AUTH] Usuário carregado')
           setIsLoading(false)
+          if (loadingTimeout) clearTimeout(loadingTimeout)
         }
       } catch (error) {
         console.error('❌ [AUTH] Erro ao carregar usuário:', error)
@@ -94,6 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null)
           setIsEmailConfirmed(false)
           setIsLoading(false)
+          if (loadingTimeout) clearTimeout(loadingTimeout)
         }
       }
     }
@@ -117,10 +188,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })
 
-    // Verificar sessão inicial
+    // Verificar sessão inicial com timeout
     const init = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        // Timeout de 3 segundos para evitar travamento
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout na verificação de autenticação')), 3000)
+        })
+
+        const sessionPromise = supabase.auth.getSession()
+        let session = null
+        
+        try {
+          const result = await Promise.race([
+            sessionPromise,
+            timeoutPromise
+          ]) as any
+          session = result?.data?.session || null
+        } catch (error) {
+          // Se der timeout, continuar sem sessão
+          console.warn('⚠️ [AUTH] Timeout ao buscar sessão, continuando sem autenticação')
+          session = null
+        }
+
         await loadUser(session)
       } catch (error) {
         console.error('❌ [AUTH] Erro na inicialização:', error)
@@ -136,6 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false
+      if (loadingTimeout) clearTimeout(loadingTimeout)
       subscription.unsubscribe()
     }
   }, [])

@@ -1,10 +1,17 @@
 /** @type {import('next').NextConfig} */
+const path = require('path')
+
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
   eslint: {
     ignoreDuringBuilds: true,
+  },
+  // ⚡ CACHE BUSTING: Gerar buildId único a cada deploy
+  generateBuildId: async () => {
+    // Usar timestamp + random para garantir uniqueness em cada build
+    return `build-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
   },
   // Otimizações para mobile
   images: {
@@ -21,13 +28,25 @@ const nextConfig = {
   poweredByHeader: false,
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // Garantir que pagarme seja resolvido corretamente no servidor
+      // Configurações do webpack para o servidor
       config.resolve = config.resolve || {}
       config.resolve.alias = config.resolve.alias || {}
-      // Não fazer bundle do pagarme, usar require nativo do Node.js
-      config.externals = config.externals || []
-      if (Array.isArray(config.externals)) {
-        config.externals.push('pagarme')
+      // Garantir resolução correta de módulos
+      config.resolve.fallback = config.resolve.fallback || {}
+      // Garantir que node_modules seja resolvido corretamente
+      config.resolve.modules = [
+        ...(config.resolve.modules || []),
+        'node_modules',
+        path.resolve(__dirname, 'node_modules'),
+      ]
+    } else {
+      // No cliente, garantir que stripe não seja incluído (é apenas server-side)
+      config.resolve = config.resolve || {}
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
       }
     }
     
@@ -65,9 +84,10 @@ const nextConfig = {
     
     return config
   },
-  // Headers para otimização mobile
+  // Headers para otimização mobile e CACHE BUSTING
   async headers() {
     return [
+      // Assets estáticos (vídeos, imagens) - cache longo
       {
         source: '/videos/:path*',
         headers: [
@@ -77,9 +97,32 @@ const nextConfig = {
           },
         ],
       },
+      // Assets do Next.js (_next/static) - cache longo com hash automático
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      // ⚡ CACHE BUSTING: HTML pages - NUNCA fazer cache
       {
         source: '/:path*',
         headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-cache, no-store, must-revalidate, max-age=0',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+          {
+            key: 'Expires',
+            value: '0',
+          },
           {
             key: 'X-DNS-Prefetch-Control',
             value: 'on',

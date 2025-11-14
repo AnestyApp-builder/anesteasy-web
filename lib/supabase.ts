@@ -754,8 +754,8 @@ export type Database = {
           plan_type: 'monthly' | 'quarterly' | 'annual'
           amount: number
           status: 'pending' | 'active' | 'cancelled' | 'expired' | 'suspended'
-          pagarme_subscription_id: string | null
-          pagarme_customer_id: string | null
+          stripe_subscription_id: string | null
+          stripe_customer_id: string | null
           current_period_start: string
           current_period_end: string
           cancel_at_period_end: boolean
@@ -808,7 +808,7 @@ export type Database = {
           id: string
           subscription_id: string | null
           user_id: string
-          pagarme_transaction_id: string
+          stripe_transaction_id: string
           amount: number
           status: 'pending' | 'paid' | 'refused' | 'refunded' | 'cancelled'
           payment_method: 'credit_card' | 'boleto' | 'pix'
@@ -825,7 +825,7 @@ export type Database = {
           id?: string
           subscription_id?: string | null
           user_id: string
-          pagarme_transaction_id: string
+          stripe_transaction_id: string
           amount: number
           status?: 'pending' | 'paid' | 'refused' | 'refunded' | 'cancelled'
           payment_method: 'credit_card' | 'boleto' | 'pix'

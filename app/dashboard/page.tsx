@@ -73,11 +73,24 @@ export default function Dashboard() {
   useEffect(() => {
     const checkIfSecretaria = async () => {
       if (user?.id) {
-        const secretaria = await isSecretaria(user.id)
-        if (secretaria) {
-          router.push('/secretaria/dashboard')
-          return
+        try {
+          // Timeout de 2 segundos para evitar travamento
+          const timeoutPromise = new Promise<boolean>((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout')), 2000)
+          })
+          
+          const secretariaPromise = isSecretaria(user.id)
+          const secretaria = await Promise.race([secretariaPromise, timeoutPromise]) as boolean
+          
+          if (secretaria) {
+            router.push('/secretaria/dashboard')
+            return
+          }
+        } catch (error) {
+          // Se der timeout, continuar como anestesista
+          console.warn('⚠️ Erro ao verificar secretária no dashboard, continuando:', error)
         }
+        
         // Só carregar dados se não for secretária
         loadDashboardData()
         loadMonthlyGoal()
@@ -108,10 +121,17 @@ export default function Dashboard() {
     
     setLoading(true)
     try {
-      const [statsData, proceduresData] = await Promise.all([
+      // Timeout de 10 segundos para evitar travamento
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout ao carregar dados do dashboard')), 10000)
+      })
+      
+      const dataPromise = Promise.all([
         procedureService.getProcedureStats(user.id),
         procedureService.getProcedures(user.id)
       ])
+      
+      const [statsData, proceduresData] = await Promise.race([dataPromise, timeoutPromise])
       
       setStats(statsData)
       setRecentProcedures(proceduresData.slice(0, 5))
@@ -130,19 +150,42 @@ export default function Dashboard() {
       })
       setMonthlyProcedures(monthlyProcs)
       
-      // Carregar anexos para os procedimentos recentes
+      // Carregar anexos para os procedimentos recentes (com timeout individual)
       const attachmentsMap: Record<string, ProcedureAttachment[]> = {}
       for (const procedure of proceduresData.slice(0, 5)) {
-        const procedureAttachments = await procedureService.getAttachments(procedure.id)
-        attachmentsMap[procedure.id] = procedureAttachments
+        try {
+          const attachmentTimeout = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout')), 3000)
+          })
+          const procedureAttachments = await Promise.race([
+            procedureService.getAttachments(procedure.id),
+            attachmentTimeout
+          ]) as ProcedureAttachment[]
+          attachmentsMap[procedure.id] = procedureAttachments
+        } catch (error) {
+          console.warn(`⚠️ Erro ao carregar anexos do procedimento ${procedure.id}:`, error)
+          attachmentsMap[procedure.id] = []
+        }
       }
       setProcedureAttachments(attachmentsMap)
       
       // Calcular receita mensal dos últimos 6 meses
       const monthlyData = await calculateMonthlyRevenue(proceduresData)
       setMonthlyRevenue(monthlyData)
-    } catch (error) {
-      
+    } catch (error: any) {
+      console.error('❌ Erro ao carregar dados do dashboard:', error)
+      // Em caso de erro, manter dados vazios mas não travar
+      setStats({
+        total: 0,
+        completed: 0,
+        pending: 0,
+        cancelled: 0,
+        totalValue: 0,
+        completedValue: 0,
+        pendingValue: 0
+      })
+      setRecentProcedures([])
+      setMonthlyRevenue([])
     } finally {
       setLoading(false)
     }

@@ -101,20 +101,49 @@ export default function Login() {
 
       console.log('✅ Login bem-sucedido')
       
-      // Verificar se é secretária ou anestesista
-      const { data: secretariaData } = await supabase
-        .from('secretarias')
-        .select('id')
-        .eq('id', data.user.id)
-        .maybeSingle()
+      // Verificar se é secretária ou anestesista (com timeout muito curto)
+      let isSecretaria = false
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout')), 1000) // Timeout muito curto
+        })
+        
+        // Tentar verificar por email primeiro (mais rápido)
+        const emailCheckPromise = supabase
+          .from('secretarias')
+          .select('id')
+          .eq('email', data.user.email)
+          .maybeSingle()
+        
+        const emailResult = await Promise.race([emailCheckPromise, timeoutPromise]) as any
+        if (emailResult?.data) {
+          isSecretaria = true
+        } else {
+          // Se não encontrou por email, tentar por ID
+          const idCheckPromise = supabase
+            .from('secretarias')
+            .select('id')
+            .eq('id', data.user.id)
+            .maybeSingle()
+          const idResult = await Promise.race([idCheckPromise, timeoutPromise]) as any
+          isSecretaria = !!idResult?.data
+        }
+      } catch (error) {
+        // Se der timeout, assumir anestesista
+        console.warn('⚠️ Timeout ao verificar tipo de usuário, assumindo anestesista')
+        isSecretaria = false
+      }
 
-      if (secretariaData) {
+      // Redirecionar baseado no tipo imediatamente
+      if (isSecretaria) {
         console.log('👩‍💼 É secretária, redirecionando para dashboard de secretária')
         router.replace('/secretaria/dashboard')
       } else {
         console.log('👨‍⚕️ É anestesista, redirecionando para dashboard de anestesista')
         router.replace('/dashboard')
       }
+      
+      // Não resetar isSubmitting - o redirecionamento vai acontecer
       
     } catch (error: any) {
       console.error('❌ Erro no login:', error)

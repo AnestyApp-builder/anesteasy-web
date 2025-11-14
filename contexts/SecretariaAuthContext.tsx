@@ -152,38 +152,75 @@ export function SecretariaAuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true)
     try {
+      console.log('🔐 [SECRETARIA] Iniciando login para:', email)
+      
       // Fazer login com Supabase Auth
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password
       })
 
       if (authError) {
+        console.error('❌ [SECRETARIA] Erro no login:', authError.message)
         return false
       }
 
-      if (data.user) {
-        // Verificar se é uma secretaria
-        const { data: secretariaData, error: secretariaError } = await supabase
+      if (!data?.user) {
+        console.error('❌ [SECRETARIA] Usuário não retornado')
+        return false
+      }
+
+      console.log('✅ [SECRETARIA] Login Supabase bem-sucedido')
+
+      // Verificar se é uma secretaria (com timeout)
+      let secretariaData = null
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout')), 2000)
+        })
+        
+        // Tentar por email primeiro (mais rápido)
+        const secretariaPromise = supabase
           .from('secretarias')
           .select('*')
-          .eq('email', email)
-          .single()
-
-        if (secretariaError || !secretariaData) {
-          return false
+          .eq('email', email.trim().toLowerCase())
+          .maybeSingle()
+        
+        const result = await Promise.race([secretariaPromise, timeoutPromise]) as any
+        if (result && !result.error && result.data) {
+          secretariaData = result.data
+        } else {
+          // Se não encontrou por email, tentar por ID
+          const idResult = await supabase
+            .from('secretarias')
+            .select('*')
+            .eq('id', data.user.id)
+            .maybeSingle()
+          if (idResult.data && !idResult.error) {
+            secretariaData = idResult.data
+          }
         }
-
-        setSecretaria(secretariaData)
-        
-        // Redirecionar para dashboard
-        router.push('/secretaria/dashboard')
-        
-        return true
+      } catch (error) {
+        console.warn('⚠️ [SECRETARIA] Timeout ao verificar secretária:', error)
+        return false
       }
-      return false
-    } catch (error) {
+
+      if (!secretariaData) {
+        console.error('❌ [SECRETARIA] Usuário não é uma secretária válida')
+        // Fazer logout se não for secretária
+        await supabase.auth.signOut()
+        return false
+      }
+
+      console.log('✅ [SECRETARIA] Secretária encontrada:', secretariaData.id)
+      setSecretaria(secretariaData)
       
+      // Redirecionar para dashboard
+      router.push('/secretaria/dashboard')
+      
+      return true
+    } catch (error: any) {
+      console.error('❌ [SECRETARIA] Erro no login:', error)
       return false
     } finally {
       setIsLoading(false)

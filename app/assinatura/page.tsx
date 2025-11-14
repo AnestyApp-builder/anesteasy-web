@@ -16,7 +16,7 @@ interface Subscription {
   plan_type: 'monthly' | 'quarterly' | 'annual'
   status: 'active' | 'pending' | 'cancelled' | 'expired' | 'failed' | 'suspended'
   amount: number
-  pagarme_subscription_id: string
+  stripe_subscription_id: string
   current_period_start: string
   current_period_end: string | null
   created_at: string
@@ -43,7 +43,6 @@ export default function AssinaturaPage() {
   const [error, setError] = useState<string | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
   const [isUpgrading, setIsUpgrading] = useState(false)
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -51,8 +50,13 @@ export default function AssinaturaPage() {
       return
     }
 
+    // Aguardar um pouco para garantir que a sessão está totalmente carregada
     if (user) {
-      fetchSubscription()
+      const timer = setTimeout(() => {
+        fetchSubscription()
+      }, 500) // Aguardar 500ms para garantir que a sessão está pronta
+      
+      return () => clearTimeout(timer)
     }
   }, [isAuthenticated, user, router])
 
@@ -62,18 +66,59 @@ export default function AssinaturaPage() {
       setError(null)
 
       const { supabase } = await import('@/lib/supabase')
-      const { data: { session } } = await supabase.auth.getSession()
       
-      if (!session?.access_token) {
+      // Obter sessão atual
+      let { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError) {
+        console.error('❌ Erro ao obter sessão:', sessionError)
+        throw new Error('Erro ao verificar sessão. Por favor, faça login novamente.')
+      }
+      
+      // Se não tem sessão, tentar obter do usuário atual
+      if (!session) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          // Tentar renovar a sessão
+          const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession()
+          if (!refreshError && newSession) {
+            session = newSession
+          }
+        }
+      }
+      
+      if (!session) {
+        console.error('❌ Sessão não encontrada')
         throw new Error('Sessão expirada. Por favor, faça login novamente.')
       }
 
-      const response = await fetch('/api/pagarme/subscription', {
+      if (!session.access_token) {
+        console.error('❌ Access token não encontrado na sessão')
+        throw new Error('Token de acesso não encontrado. Por favor, faça login novamente.')
+      }
+
+      console.log('📤 Buscando assinatura... (token presente, primeiros 20 chars):', session.access_token.substring(0, 20) + '...')
+
+      const response = await fetch('/api/stripe/subscription', {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
         }
       })
+
+      // Verificar se a resposta é JSON
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text()
+        console.error('❌ Resposta não é JSON:', text.substring(0, 200))
+        if (response.status === 404) {
+          setSubscription(null)
+          setError(null) // Não é erro, apenas não tem assinatura
+          return
+        }
+        throw new Error('Resposta inválida do servidor')
+      }
 
       const data = await response.json()
 
@@ -185,14 +230,14 @@ export default function AssinaturaPage() {
         throw new Error('Sessão expirada. Por favor, faça login novamente.')
       }
 
-      const response = await fetch('/api/pagarme/subscription/cancel', {
+      const response = await fetch('/api/stripe/subscription/cancel', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          subscription_id: subscription.pagarme_subscription_id,
+          subscription_id: subscription.stripe_subscription_id,
           cancel_immediately: cancelImmediately
         })
       })
@@ -237,7 +282,7 @@ export default function AssinaturaPage() {
     }
   }
 
-  const handleUpgrade = async (newPlanType: string) => {
+  const handleManageSubscription = async () => {
     if (!subscription) return
 
     try {
@@ -251,46 +296,36 @@ export default function AssinaturaPage() {
         throw new Error('Sessão expirada. Por favor, faça login novamente.')
       }
 
-      const response = await fetch('/api/pagarme/subscription/upgrade', {
+      console.log('📤 Criando Customer Portal Session...')
+
+      const response = await fetch('/api/stripe/portal', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          subscription_id: subscription.pagarme_subscription_id,
-          new_plan_id: newPlanType
-        })
+        }
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Erro ao atualizar plano')
+        throw new Error(data.error || 'Erro ao acessar portal de gerenciamento')
       }
 
-      alert('Plano atualizado com sucesso!')
-      setShowUpgradeModal(false)
+      console.log('✅ Customer Portal URL:', data.portal_url)
 
-      // Recarregar dados da assinatura
-      await fetchSubscription()
+      // Redirecionar para o Customer Portal da Stripe
+      if (data.portal_url) {
+        window.location.href = data.portal_url
+      } else {
+        throw new Error('URL do portal não retornada')
+      }
 
     } catch (err: any) {
-      console.error('Erro ao fazer upgrade:', err)
-      setError(err.message || 'Erro ao atualizar plano')
-    } finally {
+      console.error('Erro ao acessar portal:', err)
+      setError(err.message || 'Erro ao acessar portal de gerenciamento')
       setIsUpgrading(false)
     }
-  }
-
-  const getAvailablePlansForUpgrade = () => {
-    if (!subscription) return []
-    
-    const currentPlanIndex = ['monthly', 'quarterly', 'annual'].indexOf(subscription.plan_type)
-    const allPlans = ['monthly', 'quarterly', 'annual']
-    
-    // Retornar todos os planos exceto o atual
-    return allPlans.filter((plan, index) => index !== currentPlanIndex)
   }
 
   if (!isAuthenticated) {
@@ -438,11 +473,11 @@ export default function AssinaturaPage() {
                   <div className="flex flex-col sm:flex-row gap-4">
                     <Button 
                       className="flex-1 bg-primary-600 hover:bg-primary-700"
-                      onClick={() => setShowUpgradeModal(true)}
+                      onClick={handleManageSubscription}
                       disabled={isUpgrading}
                     >
                       <TrendingUp className="w-4 h-4 mr-2" />
-                      {isUpgrading ? 'Atualizando...' : 'Alterar Plano'}
+                      {isUpgrading ? 'Carregando...' : 'Gerenciar Assinatura'}
                     </Button>
                     <Button 
                       variant="outline" 
@@ -509,54 +544,6 @@ export default function AssinaturaPage() {
                 </div>
               </div>
 
-              {/* Modal de Upgrade */}
-              {showUpgradeModal && (
-                <Modal
-                  isOpen={showUpgradeModal}
-                  onClose={() => setShowUpgradeModal(false)}
-                  title="Alterar Plano"
-                >
-                  <div className="space-y-4">
-                    <p className="text-gray-600">
-                      Escolha o novo plano para sua assinatura:
-                    </p>
-                    <div className="space-y-3">
-                      {getAvailablePlansForUpgrade().map((planType) => (
-                        <button
-                          key={planType}
-                          onClick={() => handleUpgrade(planType)}
-                          disabled={isUpgrading}
-                          className="w-full p-4 border-2 border-primary-200 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="font-semibold text-gray-900">
-                                {PLAN_NAMES[planType]}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                {planType === 'monthly' && 'Renovação mensal'}
-                                {planType === 'quarterly' && 'Renovação trimestral'}
-                                {planType === 'annual' && 'Renovação anual'}
-                              </p>
-                            </div>
-                            <p className="text-lg font-bold text-primary-600">
-                              {new Intl.NumberFormat('pt-BR', { 
-                                style: 'currency', 
-                                currency: 'BRL' 
-                              }).format(PLAN_PRICES[planType] || 0)}
-                            </p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                    {error && (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-sm text-red-800">{error}</p>
-                      </div>
-                    )}
-                  </div>
-                </Modal>
-              )}
             </div>
           )}
         </div>

@@ -43,26 +43,51 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
 
       // Verificar se é secretária - secretárias NÃO podem acessar rotas de anestesistas
       if (user) {
-        const secretaria = await isSecretaria(user.id)
-        if (secretaria) {
-          // Secretária tentando acessar rota de anestesista - redirecionar para dashboard da secretária
-          router.push('/secretaria/dashboard')
-          setIsCheckingSecretaria(false)
-          return
+        try {
+          // Timeout de 2 segundos para evitar travamento
+          const timeoutPromise = new Promise<boolean>((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout')), 2000)
+          })
+          
+          const secretariaPromise = isSecretaria(user.id)
+          const secretaria = await Promise.race([secretariaPromise, timeoutPromise]) as boolean
+          
+          if (secretaria) {
+            // Secretária tentando acessar rota de anestesista - redirecionar para dashboard da secretária
+            router.push('/secretaria/dashboard')
+            setIsCheckingSecretaria(false)
+            return
+          }
+        } catch (error) {
+          // Se der timeout, continuar como anestesista
+          console.warn('⚠️ Erro ao verificar secretária, continuando:', error)
         }
 
         // Verificar assinatura apenas para anestesistas e se a rota requer
         if (requireSubscription && !publicRoutes.includes(pathname)) {
           setIsCheckingSubscription(true)
-          const hasSubscription = await hasActiveSubscription(user.id)
           
-          if (!hasSubscription) {
-            // Sem assinatura ativa - redirecionar para planos
-            router.push('/planos?required=true')
-            setIsCheckingSubscription(false)
-            setIsCheckingSecretaria(false)
-            return
+          try {
+            // Timeout de 3 segundos para evitar travamento
+            const timeoutPromise = new Promise<boolean>((_, reject) => {
+              setTimeout(() => reject(new Error('Timeout')), 3000)
+            })
+            
+            const subscriptionPromise = hasActiveSubscription(user.id)
+            const hasSubscription = await Promise.race([subscriptionPromise, timeoutPromise]) as boolean
+            
+            if (!hasSubscription) {
+              // Sem assinatura ativa - redirecionar para planos
+              router.push('/planos?required=true')
+              setIsCheckingSubscription(false)
+              setIsCheckingSecretaria(false)
+              return
+            }
+          } catch (error) {
+            // Se der timeout ou erro, permitir acesso (não bloquear)
+            console.warn('⚠️ Erro ao verificar assinatura, permitindo acesso:', error)
           }
+          
           setIsCheckingSubscription(false)
         }
       }

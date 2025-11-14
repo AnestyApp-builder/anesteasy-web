@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { SecretariaProvider } from '@/contexts/SecretariaContext'
+import { VersionInfo } from '@/components/VersionInfo'
 
 export const metadata: Metadata = {
   title: 'AnestEasy - Gestão Financeira para Anestesistas',
@@ -53,10 +54,54 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR" className="h-full">
+      <head>
+        {/* Cache Busting Meta Tags */}
+        <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta httpEquiv="Pragma" content="no-cache" />
+        <meta httpEquiv="Expires" content="0" />
+        
+        {/* Service Worker Registration */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(
+                    function(registration) {
+                      console.log('[SW] Registrado com sucesso:', registration.scope);
+                      
+                      // Verificar por atualizações a cada 30 segundos
+                      setInterval(() => {
+                        registration.update();
+                      }, 30000);
+                      
+                      // Detectar quando há uma nova versão esperando
+                      registration.addEventListener('updatefound', () => {
+                        const newWorker = registration.installing;
+                        newWorker.addEventListener('statechange', () => {
+                          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            // Nova versão disponível!
+                            console.log('[SW] Nova versão disponível! Recarregando...');
+                            window.location.reload();
+                          }
+                        });
+                      });
+                    },
+                    function(err) {
+                      console.log('[SW] Falha ao registrar:', err);
+                    }
+                  );
+                });
+              }
+            `,
+          }}
+        />
+      </head>
       <body className="h-full font-sans antialiased">
         <AuthProvider>
           <SecretariaProvider>
             {children}
+            <VersionInfo />
           </SecretariaProvider>
         </AuthProvider>
       </body>

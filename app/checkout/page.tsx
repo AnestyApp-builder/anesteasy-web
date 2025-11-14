@@ -190,7 +190,7 @@ function CheckoutPageContent() {
       console.log('📤 Criando assinatura recorrente...')
 
       // Enviar para o endpoint de subscription
-      const response = await fetch('/api/pagarme/subscription', {
+      const response = await fetch('/api/stripe/subscription', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

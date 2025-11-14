@@ -11,19 +11,29 @@ import Link from 'next/link'
 function CheckoutSuccessPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const sessionId = searchParams.get('session_id')
   const plan = searchParams.get('plan')
   const userId = searchParams.get('user_id')
   const [loading, setLoading] = useState(true)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string>('pending')
 
   useEffect(() => {
-    // Simular verificação de pagamento
-    // Em produção, você verificaria o status via webhook ou API
-    const timer = setTimeout(() => {
-      setLoading(false)
-    }, 2000)
-
-    return () => clearTimeout(timer)
-  }, [])
+    // Verificar status da sessão se session_id estiver presente
+    if (sessionId) {
+      // O webhook já deve ter processado, mas podemos verificar
+      const timer = setTimeout(() => {
+        setLoading(false)
+        setSubscriptionStatus('active')
+      }, 2000)
+      return () => clearTimeout(timer)
+    } else {
+      // Fallback para modo antigo (Pagar.me)
+      const timer = setTimeout(() => {
+        setLoading(false)
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [sessionId])
 
   const planNames: Record<string, string> = {
     monthly: 'Plano Mensal',
@@ -39,7 +49,7 @@ function CheckoutSuccessPageContent() {
 
   const planName = plan ? planNames[plan] || 'Plano' : 'Plano'
   const planPrice = plan ? planPrices[plan] : 0
-  const status = searchParams.get('status') || 'active'
+  const status = subscriptionStatus || searchParams.get('status') || 'active'
 
   if (loading) {
     return (

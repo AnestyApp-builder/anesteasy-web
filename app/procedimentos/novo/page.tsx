@@ -526,6 +526,13 @@ function NovoProcedimentoContent() {
       return
     }
 
+    // Timeout de segurança para garantir que o loading nunca fique travado por mais de 60 segundos
+    const safetyTimeout = setTimeout(() => {
+      console.error('⏱️ Timeout de segurança atingido - resetando loading state')
+      setLoading(false)
+      showFeedback('error', '❌ Operação demorou muito tempo. Por favor, verifique sua conexão e tente novamente.')
+    }, 60000) // 60 segundos
+
     // Validações básicas com mensagens específicas
     const camposObrigatorios = {
       'Nome do Paciente': formData.nomePaciente,
@@ -886,8 +893,12 @@ function NovoProcedimentoContent() {
       
       // Mostrar modal de sucesso
       console.log('✅ Procedimento salvo com sucesso! Mostrando modal...')
+      clearTimeout(safetyTimeout) // Cancelar timeout de segurança
       setShowSuccessModal(true)
+      setLoading(false) // CRÍTICO: Desativar loading após sucesso
+      showFeedback('success', '✅ Procedimento salvo com sucesso!')
     } catch (error: any) {
+      clearTimeout(safetyTimeout) // Cancelar timeout de segurança
       console.error('❌ ERRO AO SALVAR PROCEDIMENTO:', error)
       console.error('📋 Detalhes do erro:', {
         message: error?.message,
@@ -1141,8 +1152,15 @@ function NovoProcedimentoContent() {
                       <button
                         key={anestesia.codigo}
                         type="button"
-                        className="w-full px-4 py-3 text-left hover:bg-teal-50 focus:bg-teal-50 focus:outline-none border-b border-gray-100 last:border-b-0"
-                        onClick={() => selecionarAnestesia(anestesia)}
+                        className="w-full px-4 py-3 text-left hover:bg-teal-50 focus:bg-teal-50 focus:outline-none border-b border-gray-100 last:border-b-0 touch-manipulation"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          selecionarAnestesia(anestesia)
+                        }}
+                        onTouchEnd={(e) => {
+                          e.preventDefault()
+                          selecionarAnestesia(anestesia)
+                        }}
                       >
                         <div className="flex justify-between items-center">
                           <span className="text-gray-900 font-medium">{anestesia.nome}</span>
@@ -1503,25 +1521,25 @@ function NovoProcedimentoContent() {
                       {/* Grau de Laceração (condicional) */}
                       {formData.laceracaoPresente === 'Sim' && (
                         <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
                             Grau da Laceração
                           </label>
-                          <div className="flex items-center space-x-6">
+                          <div className="grid grid-cols-2 sm:flex sm:items-center gap-3 sm:gap-6">
                             {['1', '2', '3', '4'].map((grau) => (
-                              <label key={grau} className="flex items-center space-x-2">
+                              <label key={grau} className="flex items-center space-x-2 min-w-0">
                                 <input
                                   type="radio"
                                   value={grau}
                                   checked={formData.grauLaceracao === grau}
                                   onChange={(e) => updateFormData('grauLaceracao', e.target.value)}
-                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500 flex-shrink-0"
                                 />
-                                <span className="text-sm text-gray-700">Grau {grau}</span>
+                                <span className="text-sm text-gray-700 whitespace-nowrap">Grau {grau}</span>
                               </label>
                             ))}
-                      </div>
-                    </div>
-                  )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Hemorragia Puerperal */}
                     <div className="space-y-2">
@@ -1657,37 +1675,37 @@ function NovoProcedimentoContent() {
                     <>
                       {/* Tipo de Parto - apenas para parto normal */}
                       <div className="space-y-4">
-                        <label className="block text-sm font-medium text-gray-700">
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
                           Parto instrumentalizado, vaginal ou cesariana?
                         </label>
-                        <div className="flex items-center space-x-6">
-                          <label className="flex items-center space-x-2">
+                        <div className="grid grid-cols-1 sm:flex sm:items-center gap-3 sm:gap-6">
+                          <label className="flex items-center space-x-2 min-w-0">
                             <input
                               type="radio"
                               value="Instrumentalizado"
                               checked={formData.tipoParto === 'Instrumentalizado'}
                               onChange={(e) => updateFormData('tipoParto', e.target.value)}
-                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500 flex-shrink-0"
                             />
                             <span className="text-sm text-gray-700">Instrumentalizado</span>
                           </label>
-                          <label className="flex items-center space-x-2">
+                          <label className="flex items-center space-x-2 min-w-0">
                             <input
                               type="radio"
                               value="Vaginal"
                               checked={formData.tipoParto === 'Vaginal'}
                               onChange={(e) => updateFormData('tipoParto', e.target.value)}
-                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500 flex-shrink-0"
                             />
                             <span className="text-sm text-gray-700">Vaginal</span>
                           </label>
-                          <label className="flex items-center space-x-2">
+                          <label className="flex items-center space-x-2 min-w-0">
                             <input
                               type="radio"
                               value="Cesariana"
                               checked={formData.tipoParto === 'Cesariana'}
                               onChange={(e) => updateFormData('tipoParto', e.target.value)}
-                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500 flex-shrink-0"
                             />
                             <span className="text-sm text-gray-700">Cesariana</span>
                           </label>

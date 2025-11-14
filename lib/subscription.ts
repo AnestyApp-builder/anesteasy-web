@@ -7,8 +7,8 @@ export interface Subscription {
   plan_type: 'monthly' | 'quarterly' | 'annual'
   amount: number
   status: 'pending' | 'active' | 'cancelled' | 'expired' | 'suspended'
-  pagarme_subscription_id: string | null
-  pagarme_customer_id: string | null
+  stripe_subscription_id: string | null
+  stripe_customer_id: string | null
   current_period_start: string
   current_period_end: string
   cancel_at_period_end: boolean

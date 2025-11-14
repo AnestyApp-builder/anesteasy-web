@@ -148,7 +148,7 @@ function ConfiguracoesContent() {
           return
         }
 
-        const response = await fetch('/api/pagarme/subscription', {
+        const response = await fetch('/api/stripe/subscription', {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${session.access_token}`
@@ -729,14 +729,14 @@ function ConfiguracoesContent() {
         return
       }
 
-      const response = await fetch('/api/pagarme/subscription/change-plan', {
+      const response = await fetch('/api/stripe/subscription/change-plan', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          subscription_id: subscription.pagarme_subscription_id,
+          subscription_id: subscription.stripe_subscription_id,
           new_plan_type: newPlanType
         })
       })
@@ -752,7 +752,7 @@ function ConfiguracoesContent() {
       setShowChangePlanModal(false)
 
       // Recarregar assinatura
-      const reloadResponse = await fetch('/api/pagarme/subscription', {
+      const reloadResponse = await fetch('/api/stripe/subscription', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`
@@ -804,14 +804,14 @@ function ConfiguracoesContent() {
         return
       }
 
-      const response = await fetch('/api/pagarme/subscription/refund', {
+      const response = await fetch('/api/stripe/subscription/refund', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          subscription_id: subscription.pagarme_subscription_id
+          subscription_id: subscription.stripe_subscription_id
         })
       })
 
@@ -826,7 +826,7 @@ function ConfiguracoesContent() {
       setShowRefundModal(false)
 
       // Recarregar assinatura
-      const reloadResponse = await fetch('/api/pagarme/subscription', {
+      const reloadResponse = await fetch('/api/stripe/subscription', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`
@@ -896,14 +896,14 @@ function ConfiguracoesContent() {
         return
       }
 
-      const response = await fetch('/api/pagarme/subscription/cancel', {
+      const response = await fetch('/api/stripe/subscription/cancel', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          subscription_id: subscription.pagarme_subscription_id,
+          subscription_id: subscription.stripe_subscription_id,
           cancel_immediately: cancelImmediately
         })
       })
@@ -915,7 +915,7 @@ function ConfiguracoesContent() {
         const errorMessage = data.error || 'Erro ao cancelar assinatura'
         if (errorMessage.toLowerCase().includes('canceled') || errorMessage.toLowerCase().includes('cancelada')) {
           // Assinatura já estava cancelada, apenas atualizar dados
-          const reloadResponse = await fetch('/api/pagarme/subscription', {
+          const reloadResponse = await fetch('/api/stripe/subscription', {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${session.access_token}`
@@ -947,7 +947,7 @@ function ConfiguracoesContent() {
       }
 
       // Recarregar assinatura
-      const reloadResponse = await fetch('/api/pagarme/subscription', {
+      const reloadResponse = await fetch('/api/stripe/subscription', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`
@@ -971,7 +971,7 @@ function ConfiguracoesContent() {
         const { supabase } = await import('@/lib/supabase')
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.access_token) {
-          const reloadResponse = await fetch('/api/pagarme/subscription', {
+          const reloadResponse = await fetch('/api/stripe/subscription', {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${session.access_token}`
