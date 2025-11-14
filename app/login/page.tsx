@@ -87,19 +87,28 @@ export default function Login() {
     setError('')
     setIsSubmitting(true)
     
-    if (!formData.email || !formData.password) {
-      setError('Por favor, preencha todos os campos')
+    // Timeout de segurança para garantir que isSubmitting seja resetado
+    const timeoutId = setTimeout(() => {
+      console.warn('⚠️ [LOGIN] Timeout de segurança - resetando estado')
       setIsSubmitting(false)
-      return
-    }
-
-    if (formData.password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres')
-      setIsSubmitting(false)
-      return
-    }
-
+      setError('O login está demorando muito. Verifique sua conexão e tente novamente.')
+    }, 30000) // 30 segundos
+    
     try {
+      if (!formData.email || !formData.password) {
+        clearTimeout(timeoutId)
+        setError('Por favor, preencha todos os campos')
+        setIsSubmitting(false)
+        return
+      }
+
+      if (formData.password.length < 6) {
+        clearTimeout(timeoutId)
+        setError('A senha deve ter pelo menos 6 caracteres')
+        setIsSubmitting(false)
+        return
+      }
+
       console.log('🔐 [LOGIN] Iniciando processo de login para:', formData.email)
       
       // Primeiro, fazer login direto com Supabase Auth para verificar credenciais
@@ -109,6 +118,7 @@ export default function Login() {
       })
 
       if (authError) {
+        clearTimeout(timeoutId)
         console.error('❌ [LOGIN] Erro Supabase Auth:', authError)
         setIsSubmitting(false)
         if (authError.message?.includes('Invalid login credentials')) {
@@ -126,6 +136,7 @@ export default function Login() {
       }
 
       if (!authData?.user) {
+        clearTimeout(timeoutId)
         setError('Erro ao fazer login. Tente novamente.')
         setIsSubmitting(false)
         return
@@ -158,22 +169,41 @@ export default function Login() {
       }
 
       if (secretaria) {
+        clearTimeout(timeoutId)
         console.log('👩‍💼 [LOGIN] É secretária, redirecionando...')
         setIsSubmitting(false)
-        router.push('/secretaria/dashboard')
+        // Usar setTimeout para garantir que o estado seja atualizado antes do redirect
+        setTimeout(() => {
+          router.push('/secretaria/dashboard')
+        }, 100)
         return
       }
 
       // Se não é secretária, é anestesista - usar o contexto de auth para carregar dados
       console.log('👨‍⚕️ [LOGIN] É anestesista, carregando dados do usuário...')
-      const loginSuccess = await login(formData.email, formData.password)
+      
+      // Timeout para o login do contexto (10 segundos)
+      const loginContextPromise = login(formData.email, formData.password)
+      const loginContextTimeout = new Promise<false>((resolve) => {
+        setTimeout(() => resolve(false), 10000)
+      })
+      
+      const loginSuccess = await Promise.race([
+        loginContextPromise,
+        loginContextTimeout
+      ])
       
       if (loginSuccess) {
+        clearTimeout(timeoutId)
         console.log('✅ [LOGIN] Login bem-sucedido via contexto')
         setIsSubmitting(false)
-        router.push('/dashboard')
+        // Usar setTimeout para garantir que o estado seja atualizado antes do redirect
+        setTimeout(() => {
+          router.push('/dashboard')
+        }, 100)
       } else {
-        console.error('❌ [LOGIN] Login falhou via contexto para anestesista')
+        clearTimeout(timeoutId)
+        console.error('❌ [LOGIN] Login falhou via contexto para anestesista (ou timeout)')
         setIsSubmitting(false)
         
         // Verificar qual foi o problema específico - com timeout
@@ -218,6 +248,7 @@ export default function Login() {
         }
       }
     } catch (error: any) {
+      clearTimeout(timeoutId)
       console.error('❌ [LOGIN] Erro geral no login:', error)
       setIsSubmitting(false)
       setError(error.message || 'Erro interno. Tente novamente.')
@@ -328,36 +359,6 @@ export default function Login() {
               type="submit" 
               className="w-full py-4 text-lg font-medium relative z-10" 
               disabled={isLoading || isSubmitting}
-              onTouchStart={(e) => {
-                // Handler específico para mobile - prevenir comportamento padrão do toque
-                // e garantir que o submit funcione
-                if (!isLoading && !isSubmitting && formData.email && formData.password) {
-                  // Não prevenir padrão aqui - deixar o evento fluir para o submit
-                  e.stopPropagation()
-                }
-              }}
-              onTouchEnd={(e) => {
-                // Handler específico para mobile - garantir que o submit funcione no toque
-                if (!isLoading && !isSubmitting) {
-                  // Se campos estão preenchidos, disparar submit
-                  if (formData.email && formData.password) {
-                    const form = e.currentTarget.closest('form')
-                    if (form) {
-                      // Usar setTimeout para garantir que o evento de toque seja processado
-                      setTimeout(() => {
-                        form.requestSubmit()
-                      }, 0)
-                    } else {
-                      performLogin()
-                    }
-                  } else {
-                    e.preventDefault()
-                    setError('Por favor, preencha todos os campos')
-                  }
-                } else {
-                  e.preventDefault()
-                }
-              }}
             >
               {isLoading || isSubmitting ? 'Entrando...' : 'Entrar'}
             </Button>
