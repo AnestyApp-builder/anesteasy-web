@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button'
 export default function PoliticaPrivacidade() {
   return (
     <PublicLayout>
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="container mx-auto max-w-4xl">
           {/* Header */}
           <div className="mb-8">
             <Link href="/" className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-4 transition-colors">
@@ -362,7 +362,6 @@ export default function PoliticaPrivacidade() {
             </div>
           </div>
         </div>
-      </div>
     </PublicLayout>
   )
 }
