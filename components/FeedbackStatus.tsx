@@ -129,7 +129,7 @@ export function FeedbackStatus({ procedureId }: FeedbackStatusProps) {
         </div>
 
         {feedback && (
-          <div className="space-y-4 border-t pt-4">
+          <div className="space-y-4 border-t border-teal-500 pt-4">
             <h3 className="text-lg font-medium">Respostas do Cirurgião</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>

@@ -101,49 +101,41 @@ export default function Login() {
 
       console.log('✅ Login bem-sucedido')
       
-      // Verificar se é secretária ou anestesista (com timeout muito curto)
+      // Verificar se é secretária ou anestesista
       let isSecretaria = false
       try {
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Timeout')), 1000) // Timeout muito curto
-        })
-        
         // Tentar verificar por email primeiro (mais rápido)
-        const emailCheckPromise = supabase
+        const emailResult = await supabase
           .from('secretarias')
           .select('id')
           .eq('email', data.user.email)
           .maybeSingle()
         
-        const emailResult = await Promise.race([emailCheckPromise, timeoutPromise]) as any
         if (emailResult?.data) {
           isSecretaria = true
         } else {
           // Se não encontrou por email, tentar por ID
-          const idCheckPromise = supabase
+          const idResult = await supabase
             .from('secretarias')
             .select('id')
             .eq('id', data.user.id)
             .maybeSingle()
-          const idResult = await Promise.race([idCheckPromise, timeoutPromise]) as any
           isSecretaria = !!idResult?.data
         }
       } catch (error) {
-        // Se der timeout, assumir anestesista
-        console.warn('⚠️ Timeout ao verificar tipo de usuário, assumindo anestesista')
+        // Se der erro, assumir anestesista
+        console.warn('⚠️ Erro ao verificar tipo de usuário, assumindo anestesista')
         isSecretaria = false
       }
 
-      // Redirecionar baseado no tipo imediatamente
+      // Redirecionar baseado no tipo imediatamente usando window.location para forçar reload
       if (isSecretaria) {
         console.log('👩‍💼 É secretária, redirecionando para dashboard de secretária')
-        router.replace('/secretaria/dashboard')
+        window.location.href = '/secretaria/dashboard'
       } else {
         console.log('👨‍⚕️ É anestesista, redirecionando para dashboard de anestesista')
-        router.replace('/dashboard')
+        window.location.href = '/dashboard'
       }
-      
-      // Não resetar isSubmitting - o redirecionamento vai acontecer
       
     } catch (error: any) {
       console.error('❌ Erro no login:', error)
@@ -166,7 +158,9 @@ export default function Login() {
 
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
-          <Logo size="lg" className="mx-auto mb-4" />
+          <div className="flex justify-center mb-4">
+            <Logo size="lg" showText={false} />
+          </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Bem-vindo de volta
           </h1>

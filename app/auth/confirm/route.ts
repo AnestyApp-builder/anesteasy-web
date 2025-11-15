@@ -119,7 +119,23 @@ async function handleSuccessfulConfirmation(user: any, next: string, baseUrl: st
       }
       
       // Se NÃO for secretária, criar registro na tabela users
-      // Verificar se já existe para evitar duplicação
+      // CRÍTICO: Verificar se NÃO existe na tabela secretarias (anestesista não pode estar lá)
+      const { data: existingSecretaria } = await supabase
+        .from('secretarias')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle()
+      
+      if (existingSecretaria) {
+        console.error('❌ [CONFIRM] ERRO CRÍTICO: Anestesista existe na tabela secretarias! Removendo...')
+        await supabase
+          .from('secretarias')
+          .delete()
+          .eq('id', user.id)
+        console.log('✅ [CONFIRM] Registro incorreto removido da tabela secretarias')
+      }
+      
+      // Verificar se já existe na tabela users para evitar duplicação
       const { data: existingUser } = await supabase
         .from('users')
         .select('id')
@@ -156,7 +172,7 @@ async function handleSuccessfulConfirmation(user: any, next: string, baseUrl: st
           cpf: user.user_metadata?.cpf || null,
           password_hash: '', // Não armazenar senha na tabela users
           subscription_plan: 'premium',
-          subscription_status: 'trial', // Status de teste durante os 7 dias
+          subscription_status: 'active', // Status ativo (período de trial é controlado por trial_ends_at)
           trial_ends_at: trialEndsAt.toISOString() // 7 dias a partir de agora
         })
         .select()
@@ -169,16 +185,22 @@ async function handleSuccessfulConfirmation(user: any, next: string, baseUrl: st
           details: insertError.details,
           hint: insertError.hint
         })
-        // Não redirecionar se houver erro - deixar o usuário ver o erro
-        // Mas ainda redirecionar para login para não travar
+        // Se houver erro, redirecionar para login mesmo assim
+        // O usuário poderá tentar fazer login e o sistema criará dados básicos
+        return NextResponse.redirect(new URL('/login?error=creation_failed', baseUrl))
       } else {
         console.log('✅ [CONFIRM] Registro criado na tabela users para anestesista:', insertData)
+        // Redirecionar para login após criação bem-sucedida
+        // O usuário poderá fazer login e acessar o dashboard com período de trial ativo
+        return NextResponse.redirect(new URL('/login?confirmed=true', baseUrl))
       }
     } catch (insertError) {
       console.error('❌ [CONFIRM] Erro ao processar confirmação de email:', insertError)
+      // Em caso de erro, redirecionar para login
+      return NextResponse.redirect(new URL('/login?error=confirmation_failed', baseUrl))
     }
   }
 
-  // Redirecionar para o próximo destino
+  // Redirecionar para o próximo destino (caso não seja signup)
   return NextResponse.redirect(new URL(next, baseUrl))
 }

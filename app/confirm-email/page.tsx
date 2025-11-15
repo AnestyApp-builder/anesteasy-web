@@ -13,7 +13,6 @@ function ConfirmEmailContent() {
   const [canResend, setCanResend] = useState(false)
   const [isResending, setIsResending] = useState(false)
   const [resendMessage, setResendMessage] = useState('')
-  const [isChecking, setIsChecking] = useState(false)
   
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -120,51 +119,6 @@ function ConfirmEmailContent() {
       if (timeoutId) clearTimeout(timeoutId)
     }
   }, [email])
-
-  // Verificação manual de confirmação
-  const handleCheckConfirmation = async () => {
-    if (isChecking) return // Evitar múltiplas verificações simultâneas
-    
-    setIsChecking(true)
-    
-    try {
-      // Adicionar timeout para evitar travamentos no mobile
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 8000)
-
-      const response = await fetch('/api/check-email-confirmation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-        signal: controller.signal
-      })
-
-      clearTimeout(timeout)
-
-      if (!response.ok) {
-        throw new Error('Erro na resposta')
-      }
-
-      const result = await response.json()
-      
-      if (result.confirmed) {
-        // Email confirmado, redirecionar para dashboard
-        window.location.href = '/dashboard'
-      } else {
-        alert('Email ainda não foi confirmado. Verifique sua caixa de entrada.')
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        alert('Verificação demorou muito. Verifique sua conexão e tente novamente.')
-      } else {
-        alert('Erro ao verificar confirmação. Tente novamente.')
-      }
-    } finally {
-      setIsChecking(false)
-    }
-  }
 
   const handleResendEmail = async () => {
     if (!canResend || isResending) return
@@ -276,25 +230,6 @@ function ConfirmEmailContent() {
               </Button>
 
               <Button
-                onClick={handleCheckConfirmation}
-                variant="outline"
-                className="w-full mb-3"
-                disabled={isChecking}
-              >
-                {isChecking ? (
-                  <>
-                    <Clock className="w-4 h-4 mr-2 animate-spin" />
-                    Verificando...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Verificar Confirmação
-                  </>
-                )}
-              </Button>
-
-              <Button
                 onClick={() => router.push('/login')}
                 variant="outline"
                 className="w-full mb-3"
@@ -312,7 +247,7 @@ function ConfirmEmailContent() {
                       <div className="mt-4 p-3 bg-teal-50 border border-teal-200 rounded-lg">
                         <p className="text-xs text-teal-700">
                           <strong>💡 Dica:</strong> Após confirmar o email, você será redirecionado automaticamente 
-                          para o dashboard. A verificação ocorre automaticamente a cada 3-15 segundos. Ou clique em "Verificar Confirmação" para verificar imediatamente.
+                          para o dashboard. A verificação ocorre automaticamente a cada 3-15 segundos.
                         </p>
                       </div>
             </div>

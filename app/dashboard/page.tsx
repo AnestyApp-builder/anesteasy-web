@@ -14,11 +14,14 @@ import {
   Plus,
   Target,
   X,
-  Paperclip
+  Paperclip,
+  Settings,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { procedureService, ProcedureAttachment } from '@/lib/procedures'
 import { goalService } from '@/lib/goals'
@@ -57,6 +60,8 @@ export default function Dashboard() {
   })
   const [showGoalModal, setShowGoalModal] = useState(false)
   const [showCalculationModal, setShowCalculationModal] = useState(false)
+  const [isSavingGoal, setIsSavingGoal] = useState(false)
+  const [goalError, setGoalError] = useState<string | null>(null)
   const [calculationDetails, setCalculationDetails] = useState<{
     title: string
     description: string
@@ -233,9 +238,33 @@ export default function Dashboard() {
   }
 
   const saveMonthlyGoal = async (goal: any) => {
-    if (!user?.id) return
+    if (!user?.id) {
+      setGoalError('Usuário não identificado. Por favor, faça login novamente.')
+      return
+    }
+
+    // Validação básica
+    if (goal.isEnabled && goal.targetValue <= 0) {
+      setGoalError('Por favor, informe um valor maior que zero para a meta.')
+      return
+    }
+
+    if (goal.resetDay < 1 || goal.resetDay > 31) {
+      setGoalError('O dia de reinício deve estar entre 1 e 31.')
+      return
+    }
+    
+    setIsSavingGoal(true)
+    setGoalError(null)
     
     try {
+      console.log('💾 [GOAL] Salvando meta:', {
+        user_id: user.id,
+        target_value: goal.targetValue,
+        reset_day: goal.resetDay,
+        is_enabled: goal.isEnabled
+      })
+
       // Salvar no Supabase
       const goalData = {
         user_id: user.id,
@@ -247,13 +276,23 @@ export default function Dashboard() {
       const savedGoal = await goalService.saveGoal(goalData)
       
       if (savedGoal) {
+        console.log('✅ [GOAL] Meta salva com sucesso:', savedGoal)
         setMonthlyGoal(goal)
+        // Recalcular progresso após salvar
+        if (goal.isEnabled) {
+          calculateProgress(goal)
+        }
         setShowGoalModal(false)
+        setGoalError(null)
       } else {
-        
+        console.error('❌ [GOAL] Erro ao salvar meta: saveGoal retornou null')
+        setGoalError('Erro ao salvar meta. Por favor, tente novamente.')
       }
-    } catch (error) {
-      
+    } catch (error: any) {
+      console.error('❌ [GOAL] Erro ao salvar meta:', error)
+      setGoalError(error?.message || 'Erro ao salvar meta. Por favor, tente novamente.')
+    } finally {
+      setIsSavingGoal(false)
     }
   }
 
@@ -309,47 +348,56 @@ export default function Dashboard() {
     }
 
     const now = new Date()
+    const currentDay = now.getDate()
     const currentMonth = now.getMonth()
     const currentYear = now.getFullYear()
     
-    // Calcular data de início do período atual baseado no resetDay
-    // Se o resetDay é 30, considerar como último dia do mês
-    let startDate = new Date(currentYear, currentMonth, goal.resetDay)
+    // Calcular data de fim do período (próximo reset)
+    let endDate: Date
     
-    // Ajustar para último dia do mês se resetDay for 30
     if (goal.resetDay === 30) {
-      // Último dia do mês atual
+      // Se resetDay é 30, usar o último dia do mês atual
       const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
-      startDate = new Date(currentYear, currentMonth, lastDayOfMonth)
-    }
-    
-    // Se a data de reset ainda não chegou este mês, usar o mês anterior
-    if (startDate > now) {
-      if (goal.resetDay === 30) {
-        // Último dia do mês anterior
-        const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate()
-        startDate = new Date(currentYear, currentMonth - 1, lastDayOfPrevMonth)
+      endDate = new Date(currentYear, currentMonth, lastDayOfMonth, 23, 59, 59, 999)
+    } else {
+      // Se o dia de reset já passou este mês, usar o próximo mês
+      if (currentDay >= goal.resetDay) {
+        // Próximo mês, no dia de reset
+        endDate = new Date(currentYear, currentMonth + 1, goal.resetDay, 23, 59, 59, 999)
       } else {
-        startDate = new Date(currentYear, currentMonth - 1, goal.resetDay)
+        // Ainda não passou o dia de reset, usar este mês
+        endDate = new Date(currentYear, currentMonth, goal.resetDay, 23, 59, 59, 999)
       }
     }
     
-    // Calcular data de fim do período (próximo reset)
-    const endDate = new Date(startDate)
+    // Calcular data de início do período atual (último reset)
+    let startDate: Date
+    
     if (goal.resetDay === 30) {
-      // Próximo último dia do mês
-      const nextMonth = endDate.getMonth() + 1
-      const nextYear = endDate.getFullYear()
-      const lastDayOfNextMonth = new Date(nextYear, nextMonth + 1, 0).getDate()
-      endDate.setMonth(nextMonth)
-      endDate.setDate(lastDayOfNextMonth)
+      // Se resetDay é 30, início é o último dia do mês anterior
+      const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate()
+      startDate = new Date(currentYear, currentMonth - 1, lastDayOfPrevMonth, 0, 0, 0, 0)
     } else {
-      endDate.setMonth(endDate.getMonth() + 1)
-      endDate.setDate(goal.resetDay)
+      // Se o dia de reset já passou este mês, início foi no dia de reset do mês atual
+      if (currentDay >= goal.resetDay) {
+        startDate = new Date(currentYear, currentMonth, goal.resetDay, 0, 0, 0, 0)
+      } else {
+        // Ainda não passou, início foi no dia de reset do mês anterior
+        startDate = new Date(currentYear, currentMonth - 1, goal.resetDay, 0, 0, 0, 0)
+      }
     }
     
-    // Calcular dias restantes
+    // Calcular dias restantes até o fim do período
     const daysRemaining = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+    
+    console.log(`📅 [GOAL] Cálculo de dias restantes:`, {
+      hoje: now.toLocaleDateString('pt-BR'),
+      diaAtual: currentDay,
+      resetDay: goal.resetDay,
+      inicioPeriodo: startDate.toLocaleDateString('pt-BR'),
+      fimPeriodo: endDate.toLocaleDateString('pt-BR'),
+      diasRestantes: daysRemaining
+    })
     
     // Calcular valor atual do período (apenas procedimentos pagos no período atual)
     let currentValue = 0
@@ -727,61 +775,79 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Progress Bar - Meta */}
-        {monthlyGoal.isEnabled && monthlyGoal.targetValue > 0 ? (
-          <div className="space-y-3">
-            <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">Meta Mensal</span>
-                <span className="text-sm font-semibold text-teal-600">
-                  {formatCurrency(currentProgress.currentValue || stats.completedValue)} / {formatCurrency(monthlyGoal.targetValue)}
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div 
-                  className="bg-gradient-to-r from-teal-500 to-teal-600 h-3 rounded-full transition-all duration-500 ease-out"
-                  style={{ 
-                    width: `${Math.min(((currentProgress.currentValue || stats.completedValue) / monthlyGoal.targetValue) * 100, 100)}%` 
-                  }}
-                ></div>
-              </div>
-              <div className="flex justify-between items-center mt-2">
-                <span className="text-xs text-gray-500">
-                  {Math.round(((currentProgress.currentValue || stats.completedValue) / monthlyGoal.targetValue) * 100)}% concluído
-                </span>
-                <span className="text-xs text-gray-500">
-                  {(currentProgress.currentValue || stats.completedValue) >= monthlyGoal.targetValue ? 'Meta atingida!' : 
-                   `Faltam ${formatCurrency(monthlyGoal.targetValue - (currentProgress.currentValue || stats.completedValue))}`}
-                </span>
-              </div>
-            </div>
-            <p className="text-center text-sm text-gray-500 font-medium">Meta</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="bg-gradient-to-r from-teal-50 to-teal-100 rounded-lg p-4 border border-teal-200">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
+        {/* Meta Mensal */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
                   <Target className="w-5 h-5 text-teal-600" />
-                  <span className="text-sm font-medium text-teal-800">Meta Mensal</span>
-                </div>
-                <span className="text-xs text-teal-600 font-medium">Não configurada</span>
+                  Meta Mensal
+                </CardTitle>
+                <CardDescription>Configure e acompanhe sua meta de receita mensal</CardDescription>
               </div>
-              <p className="text-sm text-teal-700 mb-3">
-                Configure uma meta mensal para acompanhar seu progresso e receber notificações de conquista.
-              </p>
               <Button 
+                variant="outline" 
                 size="sm"
-                className="bg-teal-600 hover:bg-teal-700 text-white text-xs"
                 onClick={() => handleButtonPress(() => setShowGoalModal(true), 'light')}
+                className="flex items-center gap-2"
               >
-                <Target className="w-4 h-4 mr-1" />
-                Ativar Meta
+                <Settings className="w-4 h-4" />
+                Configurar
               </Button>
             </div>
-            <p className="text-center text-sm text-gray-500 font-medium">Meta</p>
-          </div>
-        )}
+          </CardHeader>
+          <CardContent>
+            {monthlyGoal.isEnabled && monthlyGoal.targetValue > 0 ? (
+              <div className="space-y-3">
+                {/* Progress Bar */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-600">Progresso da Meta</span>
+                    <span className="font-semibold text-teal-600">
+                      {currentProgress.percentage.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div 
+                      className={`h-3 rounded-full transition-all duration-500 ${
+                        currentProgress.isCompleted 
+                          ? 'bg-green-500' 
+                          : 'bg-teal-500'
+                      }`}
+                      style={{ width: `${Math.min(100, currentProgress.percentage)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-600">
+                      {formatCurrency(currentProgress.currentValue || stats.completedValue)} de {formatCurrency(monthlyGoal.targetValue)}
+                    </span>
+                    <span className="font-medium text-teal-600">
+                      {formatCurrency(monthlyGoal.targetValue - (currentProgress.currentValue || stats.completedValue))} restante
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Nenhuma meta configurada
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  Configure uma meta mensal para acompanhar seu progresso e receber notificações de conquista.
+                </p>
+                <Button 
+                  onClick={() => handleButtonPress(() => setShowGoalModal(true), 'light')}
+                  className="bg-teal-600 hover:bg-teal-700 text-white"
+                >
+                  <Target className="w-4 h-4 mr-2" />
+                  Configurar Meta
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
 
         {/* Stats Grid - Desktop */}
@@ -1101,13 +1167,23 @@ export default function Dashboard() {
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={() => setShowGoalModal(false)}
+                onClick={() => {
+                  setShowGoalModal(false)
+                  setGoalError(null)
+                }}
               >
                 <X className="w-4 h-4" />
               </Button>
             </div>
             
             <div className="p-6 space-y-4">
+              {goalError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                  <span className="text-sm text-red-800">{goalError}</span>
+                </div>
+              )}
+              
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Valor da Meta
@@ -1183,8 +1259,9 @@ export default function Dashboard() {
               <Button 
                 onClick={() => saveMonthlyGoal(monthlyGoal)}
                 className="bg-teal-600 hover:bg-teal-700 text-white"
+                disabled={isSavingGoal}
               >
-                Salvar Meta
+                {isSavingGoal ? 'Salvando...' : 'Salvar Meta'}
               </Button>
             </div>
           </div>

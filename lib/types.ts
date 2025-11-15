@@ -43,7 +43,7 @@ export interface ProcedureInsert {
   // Campos do procedimento (obstétrico)
   acompanhamento_antes?: 'Sim' | 'Não'
   tipo_parto?: 'Instrumentalizado' | 'Vaginal' | 'Cesariana'
-  tipo_cesariana?: 'Nova Ráqui' | 'Geral' | 'Complementação pelo Cateter'
+  tipo_cesariana?: 'Nova Ráqui' | 'Geral' | 'Complementação pelo Cateter' | 'Raquianestesia'
   indicacao_cesariana?: 'Sim' | 'Não'
   descricao_indicacao_cesariana?: string
   retencao_placenta?: 'Sim' | 'Não'

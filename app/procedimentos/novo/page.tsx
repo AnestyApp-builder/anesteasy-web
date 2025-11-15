@@ -72,7 +72,7 @@ interface FormData {
   // Campos para procedimentos obstétricos
   acompanhamentoAntes: 'Sim' | 'Não' | ''
   tipoParto: 'Instrumentalizado' | 'Vaginal' | 'Cesariana' | ''
-  tipoCesariana: 'Nova Ráqui' | 'Geral' | 'Complementação pelo Cateter' | ''
+  tipoCesariana: 'Nova Ráqui' | 'Geral' | 'Complementação pelo Cateter' | 'Raquianestesia' | ''
   indicacaoCesariana: 'Sim' | 'Não' | ''
   descricaoIndicacaoCesariana: string
   retencaoPlacenta: 'Sim' | 'Não' | ''
@@ -145,6 +145,7 @@ const ESPECIALIDADES = [
 const TIPOS_ANESTESIA = [
   { codigo: '30701010', nome: 'Anestesia geral' },
   { codigo: '30701028', nome: 'Anestesia regional (raquianestesia)' },
+  { codigo: '30701029', nome: 'Raquianestesia' }, // Código único para evitar duplicação
   { codigo: '30701036', nome: 'Anestesia regional (peridural)' },
   { codigo: '30701044', nome: 'Anestesia regional (bloqueio de plexo braquial)' },
   { codigo: '30701052', nome: 'Anestesia regional (bloqueio do neuroeixo)' },
@@ -237,9 +238,15 @@ function NovoProcedimentoContent() {
 
   // Função para carregar secretárias vinculadas
   const loadSecretarias = React.useCallback(async () => {
-    if (!user?.id) return
+    if (!user?.id) {
+      console.log('⚠️ [SECRETARIAS] Usuário não disponível')
+      setSecretariasVinculadas([])
+      return
+    }
 
     try {
+      console.log('🔍 [SECRETARIAS] Carregando secretárias vinculadas para anestesista:', user.id)
+      
       const { data, error } = await supabase
         .from('anestesista_secretaria')
         .select(`
@@ -252,25 +259,34 @@ function NovoProcedimentoContent() {
         .eq('anestesista_id', user.id)
 
       if (error) {
-        console.error('Erro ao carregar secretárias:', error)
+        console.error('❌ [SECRETARIAS] Erro ao carregar secretárias:', error)
+        console.error('   Detalhes:', JSON.stringify(error, null, 2))
+        setSecretariasVinculadas([])
         return
       }
+
+      console.log('📦 [SECRETARIAS] Dados recebidos:', data)
 
       const secretarias = (data || [])
         .map(item => item.secretarias)
         .filter(Boolean) as Array<{ id: string; nome: string; email: string }>
       
+      console.log('✅ [SECRETARIAS] Secretárias encontradas:', secretarias.length)
+      console.log('   Lista:', secretarias.map(s => `${s.nome} (${s.email})`))
+      
       setSecretariasVinculadas(secretarias)
 
       // Se houver apenas uma secretária vinculada, selecionar automaticamente
       if (secretarias.length === 1 && !formData.secretariaId) {
+        console.log('🔄 [SECRETARIAS] Selecionando automaticamente a única secretária vinculada')
         setFormData(prev => ({
           ...prev,
           secretariaId: secretarias[0].id
         }))
       }
     } catch (error) {
-      console.error('Erro ao carregar secretárias:', error)
+      console.error('❌ [SECRETARIAS] Erro inesperado ao carregar secretárias:', error)
+      setSecretariasVinculadas([])
     }
   }, [user?.id, formData.secretariaId])
 
@@ -416,6 +432,79 @@ function NovoProcedimentoContent() {
   const [previewFiles, setPreviewFiles] = useState<string[]>([])
   const router = useRouter()
 
+  // Função para preencher todos os campos com dados de teste
+  const preencherDadosTeste = () => {
+    const hoje = new Date().toISOString().split('T')[0]
+    const dataNascimento = new Date()
+    dataNascimento.setFullYear(dataNascimento.getFullYear() - 35)
+    
+    setFormData({
+      // 1. Identificação do Procedimento
+      nomePaciente: 'Maria da Silva Teste',
+      dataNascimento: dataNascimento.toISOString().split('T')[0],
+      convenio: 'Unimed',
+      carteirinha: '123456789',
+      tipoProcedimento: 'Cesariana',
+      tecnicaAnestesica: 'Raquianestesia',
+      codigoTSSU: '30701029',
+      especialidadeCirurgiao: 'Ginecologia',
+      nomeCirurgiao: 'Dr. João Santos',
+      nomeEquipe: 'Equipe Cirúrgica A',
+      hospital: 'Hospital Santa Maria',
+      patientGender: 'F',
+      horario: '14:30',
+      duracaoMinutos: '120',
+      
+      // 2. Dados do Procedimento (não-obstétrico)
+      sangramento: 'Não',
+      nauseaVomito: 'Não',
+      dor: 'Não',
+      observacoesProcedimento: 'Procedimento realizado sem intercorrências',
+      
+      // Campos para relatório do cirurgião
+      enviarRelatorioCirurgiao: 'Sim',
+      emailCirurgiao: 'cirurgiao@teste.com',
+      telefoneCirurgiao: '11987654321',
+
+      // Campos para procedimentos obstétricos
+      acompanhamentoAntes: 'Sim',
+      tipoParto: 'Cesariana',
+      tipoCesariana: 'Raquianestesia',
+      indicacaoCesariana: 'Sim',
+      descricaoIndicacaoCesariana: 'Iteratividade (cesariana anterior)',
+      retencaoPlacenta: 'Não',
+      laceracaoPresente: 'Não',
+      grauLaceracao: '',
+      hemorragiaPuerperal: 'Não',
+      transfusaoRealizada: 'Não',
+      
+      // 3. Dados Administrativos
+      valor: '3500,00',
+      formaPagamento: 'Parcelado',
+      numero_parcelas: '3',
+      parcelas_recebidas: '1',
+      parcelas: [
+        { numero: 1, valor: 1166.67, recebida: true, data_recebimento: hoje },
+        { numero: 2, valor: 1166.67, recebida: false, data_recebimento: '' },
+        { numero: 3, valor: 1166.66, recebida: false, data_recebimento: '' }
+      ],
+      statusPagamento: 'Pendente',
+      secretariaId: formData.secretariaId || '',
+      dataPagamento: '',
+      observacoes: 'Primeira parcela recebida',
+      
+      // 4. Upload de Fichas
+      fichas: [],
+    })
+
+    setSuccess('✅ Formulário preenchido com dados de teste!')
+    setFeedbackType('success')
+    setTimeout(() => {
+      setSuccess('')
+      setFeedbackType(null)
+    }, 3000)
+  }
+
 
 
   // Validar data de nascimento
@@ -526,12 +615,13 @@ function NovoProcedimentoContent() {
       return
     }
 
-    // Timeout de segurança para garantir que o loading nunca fique travado por mais de 60 segundos
+    // Timeout de segurança para garantir que o loading nunca fique travado por mais de 120 segundos
+    // Aumentado para permitir upload de múltiplos arquivos grandes
     const safetyTimeout = setTimeout(() => {
       console.error('⏱️ Timeout de segurança atingido - resetando loading state')
       setLoading(false)
       showFeedback('error', '❌ Operação demorou muito tempo. Por favor, verifique sua conexão e tente novamente.')
-    }, 60000) // 60 segundos
+    }, 120000) // 120 segundos (2 minutos)
 
     // Validações básicas com mensagens específicas
     const camposObrigatorios = {
@@ -575,7 +665,7 @@ function NovoProcedimentoContent() {
         // Validações específicas para cesariana quando selecionada em parto normal
         if (formData.tipoParto === 'Cesariana') {
           if (!formData.tipoCesariana) {
-            showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo de anestesia (Nova Ráqui, Geral ou Complementação pelo Cateter)')
+            showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo de anestesia (Nova Ráqui, Raquianestesia, Geral ou Complementação pelo Cateter)')
             return
           }
           if (!formData.indicacaoCesariana) {
@@ -592,7 +682,7 @@ function NovoProcedimentoContent() {
       // Validação para cesariana direta
       if (isCesarianaDireta(formData.tipoProcedimento)) {
         if (!formData.tipoCesariana) {
-          showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo de anestesia (Geral ou Complementação pelo Cateter)')
+          showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo de anestesia (Raquianestesia, Geral ou Complementação pelo Cateter)')
           return
         }
         if (!formData.indicacaoCesariana) {
@@ -666,14 +756,17 @@ function NovoProcedimentoContent() {
         // Campos da equipe
         anesthesiologist_name: user.name,
         nome_cirurgiao: formData.nomeCirurgiao,
+        surgeon_name: formData.nomeCirurgiao, // Sincronizar com nome_cirurgiao
         especialidade_cirurgiao: formData.especialidadeCirurgiao,
         nome_equipe: formData.nomeEquipe,
         hospital_clinic: formData.hospital,
         
         // Campos de horário e duração
         horario: formData.horario || undefined,
-        // Converter horas para minutos (multiplicar por 60)
-        duracao_minutos: formData.duracaoMinutos ? Math.round(parseFloat(formData.duracaoMinutos) * 60) : undefined,
+        procedure_time: formData.horario || undefined, // Sincronizar com horario
+        // Converter duracaoMinutos (já está em minutos, não precisa multiplicar)
+        duracao_minutos: formData.duracaoMinutos ? parseInt(formData.duracaoMinutos) : undefined,
+        duration_minutes: formData.duracaoMinutos ? parseInt(formData.duracaoMinutos) : undefined, // Sincronizar com duracao_minutos
         
         // Campos de anestesia
         tecnica_anestesica: formData.tecnicaAnestesica,
@@ -716,7 +809,17 @@ function NovoProcedimentoContent() {
       console.log('💾 Chamando procedureService.createProcedure...')
       console.log('📦 Dados enviados:', procedureData)
       
-      const result = await procedureService.createProcedure(procedureData)
+      // Adicionar timeout individual para a criação do procedimento (60 segundos)
+      // Aumentado porque a inserção no banco pode demorar com arquivos grandes
+      const createProcedurePromise = procedureService.createProcedure(procedureData)
+      const timeoutPromise = new Promise<null>((resolve) => {
+        setTimeout(() => {
+          console.error('⏱️ [TIMEOUT] createProcedure demorou mais de 60 segundos')
+          resolve(null)
+        }, 60000) // 60 segundos para criar o procedimento
+      })
+      
+      const result = await Promise.race([createProcedurePromise, timeoutPromise])
       
       console.log('✅ Resultado do createProcedure:', result)
       
@@ -724,6 +827,7 @@ function NovoProcedimentoContent() {
         console.error('❌ Erro: procedureService.createProcedure retornou null ou undefined')
         showFeedback('error', '❌ Falha ao salvar: Não foi possível criar o procedimento. Verifique sua conexão e tente novamente.')
         setLoading(false)
+        clearTimeout(safetyTimeout)
         return
       }
       
@@ -937,13 +1041,27 @@ function NovoProcedimentoContent() {
         {/* Header - Mobile Optimized */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="flex items-center space-x-4 mb-3">
-              <Link href="/procedimentos">
-                <Button variant="ghost" size="sm" className="text-sm">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Voltar
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-4">
+                <Link href="/procedimentos">
+                  <Button variant="ghost" size="sm" className="text-sm">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Voltar
+                  </Button>
+                </Link>
+              </div>
+              
+              {/* Botão de Teste - Só visível em desenvolvimento */}
+              {process.env.NODE_ENV === 'development' && (
+                <Button 
+                  onClick={preencherDadosTeste}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border-yellow-300"
+                >
+                  🧪 Preencher Teste
                 </Button>
-              </Link>
+              )}
             </div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
               Novo Procedimento Anestésico
@@ -1358,7 +1476,7 @@ function NovoProcedimentoContent() {
                                   </div>
 
                     {/* Relatório para Cirurgião */}
-                    <div className="space-y-4 border-t pt-6">
+                    <div className="space-y-4 border-t border-teal-500 pt-6">
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-gray-700">
                           Enviar relatório para Cirurgião?
@@ -1426,7 +1544,7 @@ function NovoProcedimentoContent() {
                 {/* Campos Específicos para Procedimentos Obstétricos */}
                 {isObstetricProcedure(formData.tipoProcedimento) && (
                   <>
-                    <div className="mt-8 space-y-6 border-t pt-6">
+                    <div className="mt-8 space-y-6 border-t border-teal-500 pt-6">
                       <h3 className="text-lg font-medium text-gray-900">
                         Dados Específicos do Procedimento Obstétrico
                       </h3>
@@ -1602,7 +1720,7 @@ function NovoProcedimentoContent() {
                   )}
 
                   {/* Relatório para Cirurgião */}
-                  <div className="mt-8 space-y-6 border-t pt-6">
+                  <div className="mt-8 space-y-6 border-t border-teal-500 pt-6">
                     <h3 className="text-lg font-medium text-gray-900">
                       Relatório para Cirurgião
                     </h3>
@@ -1733,6 +1851,16 @@ function NovoProcedimentoContent() {
                               <label className="flex items-center space-x-2">
                                 <input
                                   type="radio"
+                                  value="Raquianestesia"
+                                  checked={formData.tipoCesariana === 'Raquianestesia'}
+                                  onChange={(e) => updateFormData('tipoCesariana', e.target.value)}
+                                  className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                                />
+                                <span className="text-sm text-gray-700">Raquianestesia</span>
+                              </label>
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="radio"
                                   value="Geral"
                                   checked={formData.tipoCesariana === 'Geral'}
                                   onChange={(e) => updateFormData('tipoCesariana', e.target.value)}
@@ -1811,6 +1939,16 @@ function NovoProcedimentoContent() {
                           Tipo de Anestesia
                         </label>
                         <div className="flex items-center space-x-6">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              value="Raquianestesia"
+                              checked={formData.tipoCesariana === 'Raquianestesia'}
+                              onChange={(e) => updateFormData('tipoCesariana', e.target.value)}
+                              className="w-4 h-4 text-teal-600 border-gray-300 focus:ring-teal-500"
+                            />
+                            <span className="text-sm text-gray-700">Raquianestesia</span>
+                          </label>
                           <label className="flex items-center space-x-2">
                             <input
                               type="radio"

@@ -37,13 +37,13 @@ export function NotificationBell() {
   const getNotificationColor = (type: string) => {
     switch (type) {
       case 'success':
-        return 'border-green-200 bg-green-50'
+        return 'border-teal-200 bg-teal-50'
       case 'warning':
-        return 'border-orange-200 bg-orange-50'
+        return 'border-teal-300 bg-teal-50' // Mudado de amber para teal
       case 'error':
         return 'border-red-200 bg-red-50'
       default:
-        return 'border-blue-200 bg-blue-50'
+        return 'border-teal-200 bg-teal-50'
     }
   }
 
@@ -72,8 +72,8 @@ export function NotificationBell() {
           />
           
           {/* Notification Panel */}
-          <div className="fixed md:absolute right-2 md:right-0 top-16 md:top-full mt-0 md:mt-2 w-[calc(100vw-1rem)] max-w-sm md:w-80 bg-white rounded-lg shadow-lg border z-50">
-            <div className="p-4 border-b">
+          <div className="fixed md:absolute right-2 md:right-0 top-16 md:top-full mt-0 md:mt-2 w-[calc(100vw-1rem)] max-w-sm md:w-80 bg-white rounded-lg shadow-lg border border-teal-200 z-50">
+            <div className="p-4 border-b border-teal-200">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">Notificações</h3>
                 {unreadNotifications > 0 && (
@@ -98,12 +98,12 @@ export function NotificationBell() {
                   <p>Nenhuma notificação</p>
                 </div>
               ) : (
-                <div className="divide-y">
+                <div className="divide-y divide-teal-200 [&>*:not(:first-child)]:border-t [&>*:not(:first-child)]:border-teal-200">
                   {notifications.map((notification) => (
                     <div
                       key={notification.id}
-                      className={`p-4 hover:bg-gray-50 transition-colors ${
-                        !notification.is_read ? 'bg-blue-50' : ''
+                      className={`p-4 hover:bg-gray-50 transition-colors border-t-0 ${
+                        !notification.is_read ? 'bg-teal-50' : ''
                       }`}
                     >
                       <div className="flex items-start space-x-3">
@@ -118,7 +118,7 @@ export function NotificationBell() {
                               {notification.title}
                             </h4>
                             {!notification.is_read && (
-                              <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
+                              <div className="w-2 h-2 bg-teal-500 rounded-full flex-shrink-0"></div>
                             )}
                           </div>
                           <p className="text-sm text-gray-600 mt-1">

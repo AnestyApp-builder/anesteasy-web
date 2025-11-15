@@ -242,47 +242,56 @@ function FinanceiroContent() {
     if (!goal.isEnabled || goal.targetValue === 0) return
 
     const now = new Date()
+    const currentDay = now.getDate()
     const currentMonth = now.getMonth()
     const currentYear = now.getFullYear()
     
-    // Calcular data de início do período atual baseado no resetDay
-    // Se o resetDay é 30, considerar como último dia do mês
-    let startDate = new Date(currentYear, currentMonth, goal.resetDay)
+    // Calcular data de fim do período (próximo reset)
+    let endDate: Date
     
-    // Ajustar para último dia do mês se resetDay for 30
     if (goal.resetDay === 30) {
-      // Último dia do mês atual
+      // Se resetDay é 30, usar o último dia do mês atual
       const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
-      startDate = new Date(currentYear, currentMonth, lastDayOfMonth)
-    }
-    
-    // Se a data de reset ainda não chegou este mês, usar o mês anterior
-    if (startDate > now) {
-      if (goal.resetDay === 30) {
-        // Último dia do mês anterior
-        const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate()
-        startDate = new Date(currentYear, currentMonth - 1, lastDayOfPrevMonth)
+      endDate = new Date(currentYear, currentMonth, lastDayOfMonth, 23, 59, 59, 999)
+    } else {
+      // Se o dia de reset já passou este mês, usar o próximo mês
+      if (currentDay >= goal.resetDay) {
+        // Próximo mês, no dia de reset
+        endDate = new Date(currentYear, currentMonth + 1, goal.resetDay, 23, 59, 59, 999)
       } else {
-        startDate = new Date(currentYear, currentMonth - 1, goal.resetDay)
+        // Ainda não passou o dia de reset, usar este mês
+        endDate = new Date(currentYear, currentMonth, goal.resetDay, 23, 59, 59, 999)
       }
     }
     
-    // Calcular data de fim do período (próximo reset)
-    const endDate = new Date(startDate)
+    // Calcular data de início do período atual (último reset)
+    let startDate: Date
+    
     if (goal.resetDay === 30) {
-      // Próximo último dia do mês
-      const nextMonth = endDate.getMonth() + 1
-      const nextYear = endDate.getFullYear()
-      const lastDayOfNextMonth = new Date(nextYear, nextMonth + 1, 0).getDate()
-      endDate.setMonth(nextMonth)
-      endDate.setDate(lastDayOfNextMonth)
+      // Se resetDay é 30, início é o último dia do mês anterior
+      const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate()
+      startDate = new Date(currentYear, currentMonth - 1, lastDayOfPrevMonth, 0, 0, 0, 0)
     } else {
-      endDate.setMonth(endDate.getMonth() + 1)
-      endDate.setDate(goal.resetDay)
+      // Se o dia de reset já passou este mês, início foi no dia de reset do mês atual
+      if (currentDay >= goal.resetDay) {
+        startDate = new Date(currentYear, currentMonth, goal.resetDay, 0, 0, 0, 0)
+      } else {
+        // Ainda não passou, início foi no dia de reset do mês anterior
+        startDate = new Date(currentYear, currentMonth - 1, goal.resetDay, 0, 0, 0, 0)
+      }
     }
     
-    // Calcular dias restantes
+    // Calcular dias restantes até o fim do período
     const daysRemaining = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+    
+    console.log(`📅 [FINANCEIRO] Cálculo de dias restantes:`, {
+      hoje: now.toLocaleDateString('pt-BR'),
+      diaAtual: currentDay,
+      resetDay: goal.resetDay,
+      inicioPeriodo: startDate.toLocaleDateString('pt-BR'),
+      fimPeriodo: endDate.toLocaleDateString('pt-BR'),
+      diasRestantes: daysRemaining
+    })
     
     // Calcular valor atual do período (apenas procedimentos pagos no período atual)
     // Buscar procedimentos do período atual

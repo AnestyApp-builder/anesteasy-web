@@ -84,25 +84,59 @@ export const procedureService = {
   // Criar novo procedimento
   async createProcedure(procedure: ProcedureInsert): Promise<Procedure | null> {
     try {
-      // Verificar se há sessão ativa
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) {
+      console.log('🔍 [PROCEDURE SERVICE] Iniciando createProcedure...')
+      
+      // Usar user_id do procedure se disponível, senão tentar obter da sessão com timeout
+      let userId = procedure.user_id
+      
+      if (!userId) {
+        console.log('🔍 [PROCEDURE SERVICE] user_id não fornecido, tentando obter da sessão...')
         
+        // Adicionar timeout para getSession para evitar travamento
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise<{ data: { session: null }, error: { message: string } }>((resolve) => {
+          setTimeout(() => {
+            console.error('⏱️ [PROCEDURE SERVICE] Timeout ao obter sessão (5 segundos)')
+            resolve({ data: { session: null }, error: { message: 'Timeout ao obter sessão' } })
+          }, 5000) // 5 segundos para getSession
+        })
+        
+        const { data: { session }, error: sessionError } = await Promise.race([sessionPromise, timeoutPromise])
+        
+        if (sessionError) {
+          console.error('❌ [PROCEDURE SERVICE] Erro ao verificar sessão:', sessionError)
+          return null
+        }
+        
+        if (!session?.user) {
+          console.error('❌ [PROCEDURE SERVICE] Nenhuma sessão ativa')
+          return null
+        }
+
+        userId = session.user.id
+        console.log('✅ [PROCEDURE SERVICE] Sessão válida, user_id:', userId)
+      } else {
+        console.log('✅ [PROCEDURE SERVICE] Usando user_id fornecido:', userId)
+      }
+
+      // Garantir que o user_id seja válido
+      if (!userId) {
+        console.error('❌ [PROCEDURE SERVICE] user_id não disponível')
         return null
       }
 
-      // Garantir que o user_id seja o mesmo da sessão
       const procedureData = {
         // Campos básicos (obrigatórios)
         procedure_name: procedure.procedure_name,
         procedure_value: procedure.procedure_value || 0,
         procedure_date: procedure.procedure_date,
         procedure_type: procedure.procedure_type,
-        user_id: session.user.id,
+        user_id: userId,
         
         // Campos do paciente
         patient_name: procedure.patient_name,
         patient_age: procedure.patient_age || null,
+        patient_gender: procedure.patient_gender || null,
         data_nascimento: procedure.data_nascimento,
         convenio: procedure.convenio || null,
         carteirinha: procedure.carteirinha || null,
@@ -110,13 +144,16 @@ export const procedureService = {
         // Campos da equipe
         anesthesiologist_name: procedure.anesthesiologist_name || null,
         nome_cirurgiao: procedure.nome_cirurgiao || null,
+        surgeon_name: procedure.nome_cirurgiao || procedure.surgeon_name || null, // Sincronizar nome_cirurgiao e surgeon_name
         especialidade_cirurgiao: procedure.especialidade_cirurgiao || null,
         hospital_clinic: procedure.hospital_clinic || null,
         nome_equipe: procedure.nome_equipe || null,
         
         // Campos de horário e duração
         horario: procedure.horario || null,
+        procedure_time: procedure.horario || procedure.procedure_time || null, // Sincronizar horario e procedure_time
         duracao_minutos: procedure.duracao_minutos || null,
+        duration_minutes: procedure.duracao_minutos || null, // Sincronizar duracao_minutos e duration_minutes
         
         // Campos de anestesia
         tipo_anestesia: procedure.tecnica_anestesica || null,
@@ -156,29 +193,92 @@ export const procedureService = {
         // Campos de feedback
         feedback_solicitado: procedure.feedback_solicitado || false,
         email_cirurgiao: procedure.email_cirurgiao || null,
-        telefone_cirurgiao: procedure.telefone_cirurgiao || null,
-        
-        // JSON vazio (não usado mais)
-        fichas_anestesicas: {}
+        telefone_cirurgiao: procedure.telefone_cirurgiao || null
+        // Removido fichas_anestesicas - não é mais usado e pode causar problemas
       }
 
-      
+      console.log('📦 [PROCEDURE SERVICE] Dados preparados para inserção:', {
+        procedure_name: procedureData.procedure_name,
+        procedure_value: procedureData.procedure_value,
+        user_id: procedureData.user_id,
+        patient_name: procedureData.patient_name,
+        hasSecretaria: !!procedureData.secretaria_id
+      })
 
-      const { data, error } = await supabase
+      console.log('💾 [PROCEDURE SERVICE] Inserindo no banco de dados...')
+      console.log('   Tamanho dos dados:', JSON.stringify(procedureData).length, 'bytes')
+      
+      // Limpar campos undefined para evitar problemas
+      const cleanProcedureData = Object.fromEntries(
+        Object.entries(procedureData).filter(([_, value]) => value !== undefined)
+      )
+      
+      console.log('🧹 [PROCEDURE SERVICE] Dados limpos (sem undefined):', Object.keys(cleanProcedureData).length, 'campos')
+      
+      // Tentar inserção com timeout mais curto primeiro (20 segundos)
+      // Se falhar, pode ser problema de RLS ou trigger
+      const insertPromise = supabase
         .from('procedures')
-        .insert(procedureData)
+        .insert(cleanProcedureData)
         .select()
         .single()
+      
+      const insertTimeoutPromise = new Promise<{ data: null, error: { code: string, message: string, details: string, hint: string } }>((resolve) => {
+        setTimeout(() => {
+          console.error('⏱️ [PROCEDURE SERVICE] Timeout na inserção do banco (20 segundos)')
+          resolve({ 
+            data: null, 
+            error: { 
+              code: 'TIMEOUT', 
+              message: 'A inserção no banco de dados demorou mais de 20 segundos',
+              details: 'Timeout - Pode ser problema de RLS, trigger ou conexão',
+              hint: 'Verifique as políticas RLS da tabela procedures ou tente novamente'
+            } 
+          })
+        }, 20000) // 20 segundos para inserção (reduzido para detectar problema mais rápido)
+      })
+      
+      const { data, error } = await Promise.race([insertPromise, insertTimeoutPromise])
 
       if (error) {
-        console.error('Erro ao criar procedimento:', error)
+        console.error('❌ [PROCEDURE SERVICE] Erro ao criar procedimento:', error)
+        console.error('   Código:', error.code)
+        console.error('   Mensagem:', error.message)
+        console.error('   Detalhes:', error.details)
+        console.error('   Hint:', error.hint)
+        
+        // Se for timeout, dar mensagem mais específica
+        if (error.code === 'TIMEOUT') {
+          console.error('⏱️ [PROCEDURE SERVICE] A inserção no banco está demorando muito. Isso pode indicar:')
+          console.error('   1. Problema de conexão com o Supabase')
+          console.error('   2. Banco de dados sobrecarregado')
+          console.error('   3. Trigger ou função no banco demorando')
+          console.error('   4. ⚠️ PROBLEMA COM RLS (Row Level Security) - VERIFICAR POLÍTICAS DA TABELA procedures')
+          console.error('   5. ⚠️ Verificar se o user_id tem permissão para INSERT na tabela procedures')
+          console.error('')
+          console.error('🔧 SOLUÇÃO SUGERIDA:')
+          console.error('   Verifique no Supabase SQL Editor se há políticas RLS na tabela procedures')
+          console.error('   que permitam INSERT para usuários autenticados.')
+          console.error('   Exemplo de política necessária:')
+          console.error('   CREATE POLICY "Users can insert their own procedures" ON procedures')
+          console.error('   FOR INSERT WITH CHECK (auth.uid() = user_id);')
+        }
+        
         return null
       }
 
-      
+      if (!data) {
+        console.error('❌ [PROCEDURE SERVICE] Inserção retornou null sem erro')
+        return null
+      }
+
+      console.log('✅ [PROCEDURE SERVICE] Procedimento criado com sucesso! ID:', data.id)
       return data
-    } catch (error) {
-      console.error('Erro interno ao criar procedimento:', error)
+    } catch (error: any) {
+      console.error('❌ [PROCEDURE SERVICE] Erro interno ao criar procedimento:', error)
+      console.error('   Tipo:', error?.constructor?.name)
+      console.error('   Mensagem:', error?.message)
+      console.error('   Stack:', error?.stack)
       return null
     }
   },

@@ -35,30 +35,79 @@ const PLAN_PRICES: Record<string, number> = {
   annual: 850.00
 }
 
+interface TrialInfo {
+  trial_ends_at: string | null
+  free_months: number | null
+  isInTrial: boolean
+  daysRemaining: number
+}
+
 export default function AssinaturaPage() {
   const { user, isAuthenticated } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [subscription, setSubscription] = useState<Subscription | null>(null)
+  const [trialInfo, setTrialInfo] = useState<TrialInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
   const [isUpgrading, setIsUpgrading] = useState(false)
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/assinatura')
-      return
-    }
+  const fetchTrialInfo = async () => {
+    if (!user?.id) return
 
-    // Aguardar um pouco para garantir que a sessão está totalmente carregada
-    if (user) {
-      const timer = setTimeout(() => {
-        fetchSubscription()
-      }, 500) // Aguardar 500ms para garantir que a sessão está pronta
+    try {
+      const supabaseModule = await import('@/lib/supabase')
+      const supabase = supabaseModule.supabase
       
-      return () => clearTimeout(timer)
+      if (!supabase) return
+
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('trial_ends_at, free_months, created_at')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (userError || !userData) {
+        setTrialInfo(null)
+        return
+      }
+
+      const now = new Date()
+      
+      // Calcular data base do término do teste (7 dias iniciais)
+      let trialEndsAt = userData.trial_ends_at 
+        ? new Date(userData.trial_ends_at)
+        : userData.created_at 
+          ? new Date(new Date(userData.created_at).getTime() + 7 * 24 * 60 * 60 * 1000)
+          : null
+
+      // Adicionar meses grátis se houver (cada mês = 30 dias)
+      const freeMonths = userData.free_months || 0
+      if (trialEndsAt && freeMonths > 0) {
+        trialEndsAt = new Date(trialEndsAt.getTime() + (freeMonths * 30 * 24 * 60 * 60 * 1000))
+      }
+
+      if (trialEndsAt && now <= trialEndsAt) {
+        const daysRemaining = Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        setTrialInfo({
+          trial_ends_at: trialEndsAt.toISOString(),
+          free_months: freeMonths,
+          isInTrial: true,
+          daysRemaining: daysRemaining > 0 ? daysRemaining : 0
+        })
+      } else {
+        setTrialInfo({
+          trial_ends_at: trialEndsAt?.toISOString() || null,
+          free_months: freeMonths,
+          isInTrial: false,
+          daysRemaining: 0
+        })
+      }
+    } catch (err) {
+      console.error('Erro ao buscar informações de trial:', err)
+      setTrialInfo(null)
     }
-  }, [isAuthenticated, user, router])
+  }
 
   const fetchSubscription = async () => {
     try {
@@ -144,6 +193,23 @@ export default function AssinaturaPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/assinatura')
+      return
+    }
+
+    // Aguardar um pouco para garantir que a sessão está totalmente carregada
+    if (user) {
+      const timer = setTimeout(() => {
+        fetchSubscription()
+        fetchTrialInfo()
+      }, 500) // Aguardar 500ms para garantir que a sessão está pronta
+      
+      return () => clearTimeout(timer)
+    }
+  }, [isAuthenticated, user, router])
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
@@ -384,23 +450,78 @@ export default function AssinaturaPage() {
           )}
 
           {!subscription ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <CreditCard className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                  Nenhuma assinatura ativa
-                </h2>
-                <p className="text-gray-600 mb-6">
-                  Você ainda não possui uma assinatura ativa. Escolha um plano para começar.
-                </p>
-                <Link href="/planos">
-                  <Button>
-                    Ver Planos Disponíveis
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
+            <div className="space-y-6">
+              {/* Informações do Trial Gratuito */}
+              {trialInfo && trialInfo.isInTrial && (
+                <Card className="border-2 border-teal-500 bg-gradient-to-br from-teal-50 to-teal-100">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-3">
+                      <div className="p-2 bg-teal-500 rounded-lg">
+                        <Clock className="w-6 h-6 text-white" />
+                      </div>
+                      <span className="text-2xl font-bold text-teal-900">
+                        Período de Teste Gratuito Ativo
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="bg-white border-2 border-teal-200 rounded-lg p-6">
+                      <div className="flex items-center justify-between flex-wrap gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-teal-700 mb-2">Dias Restantes</p>
+                          <p className="text-4xl font-bold text-teal-600">
+                            {trialInfo.daysRemaining}
+                          </p>
+                          <p className="text-xs text-teal-600 mt-1">
+                            {trialInfo.daysRemaining === 1 ? 'dia restante' : 'dias restantes'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-teal-700 mb-2">Data de Término</p>
+                          <p className="text-xl font-bold text-teal-900">
+                            {formatDate(trialInfo.trial_ends_at)}
+                          </p>
+                          {trialInfo.free_months && trialInfo.free_months > 0 && (
+                            <p className="text-xs text-teal-600 mt-1">
+                              + {trialInfo.free_months} {trialInfo.free_months === 1 ? 'mês grátis' : 'meses grátis'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
+                      <p className="text-sm text-teal-800">
+                        <strong>💡 Você está no período de teste gratuito!</strong> Aproveite todos os recursos da plataforma sem custo. 
+                        Após o término do período de teste, você precisará escolher um plano para continuar usando o serviço.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Card de Nenhuma Assinatura */}
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <CreditCard className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                    {trialInfo && trialInfo.isInTrial 
+                      ? 'Escolha um plano para continuar após o período de teste'
+                      : 'Nenhuma assinatura ativa'}
+                  </h2>
+                  <p className="text-gray-600 mb-6">
+                    {trialInfo && trialInfo.isInTrial
+                      ? 'Seu período de teste gratuito termina em breve. Escolha um plano para continuar aproveitando todos os recursos.'
+                      : 'Você ainda não possui uma assinatura ativa. Escolha um plano para começar.'}
+                  </p>
+                  <Link href="/planos">
+                    <Button>
+                      Ver Planos Disponíveis
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            </div>
           ) : (
             <div className="space-y-6">
               {/* Status da Assinatura - Destaque */}

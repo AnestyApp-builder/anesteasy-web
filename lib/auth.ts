@@ -20,8 +20,6 @@ export const authService = {
       // Limpar qualquer sessão existente antes de tentar login
       try {
         await supabase.auth.signOut()
-        // Aguardar um pouco para garantir que o signOut foi processado
-        await new Promise(resolve => setTimeout(resolve, 100))
       } catch (signOutError) {
         // Ignorar erros no signOut
         console.log('⚠️ [AUTH SERVICE] Erro ao limpar sessão (pode ser ignorado):', signOutError)
@@ -113,6 +111,14 @@ export const authService = {
 
           if (newUserData) {
             console.log('✅ [AUTH SERVICE] Registro criado automaticamente na tabela users')
+            
+            // Atualizar last_login_at para o usuário recém-criado
+            const now = new Date().toISOString()
+            await supabase
+              .from('users')
+              .update({ last_login_at: now })
+              .eq('id', authData.user.id)
+            
             return {
               id: newUserData.id,
               email: newUserData.email,
@@ -136,6 +142,20 @@ export const authService = {
         name: userData.name,
         subscription_status: userData.subscription_status
       })
+
+      // Atualizar last_login_at
+      const now = new Date().toISOString()
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ last_login_at: now })
+        .eq('id', authData.user.id)
+
+      if (updateError) {
+        console.warn('⚠️ [AUTH SERVICE] Erro ao atualizar last_login_at:', updateError)
+        // Não bloquear o login se falhar a atualização
+      } else {
+        console.log('✅ [AUTH SERVICE] last_login_at atualizado:', now)
+      }
 
       // Verificar subscription_status - se não for 'active', ainda permitir login mas logar aviso
       if (userData.subscription_status !== 'active') {
@@ -234,7 +254,7 @@ export const authService = {
         }
       }
 
-      // Verificar se o CPF já existe
+      // Verificar se o CPF já existe na tabela users
       if (userData.cpf) {
         const { data: existingUserByCpf } = await supabase
           .from('users')
@@ -244,6 +264,17 @@ export const authService = {
 
         if (existingUserByCpf) {
           return { success: false, message: 'CPF já cadastrado' }
+        }
+        
+        // CRÍTICO: Verificar se CPF existe na tabela secretarias
+        const { data: existingSecretariaByCpf } = await supabase
+          .from('secretarias')
+          .select('cpf')
+          .eq('cpf', userData.cpf)
+          .maybeSingle()
+        
+        if (existingSecretariaByCpf) {
+          return { success: false, message: 'CPF já cadastrado como secretária. Um CPF de secretária não pode ser usado como anestesista.' }
         }
       }
 
@@ -513,9 +544,6 @@ export const authService = {
       
       console.log('✅ [AUTH SERVICE] Senha atual verificada com sucesso')
       
-      // Aguardar um pouco para garantir que a sessão foi atualizada
-      await new Promise(resolve => setTimeout(resolve, 300))
-      
       // Agora atualizar para a nova senha
       console.log('🔄 [AUTH SERVICE] Atualizando para nova senha...')
       const { error: updateError } = await supabase.auth.updateUser({
@@ -693,8 +721,24 @@ export const authService = {
         return { success: false }
       }
 
+      // CRÍTICO: Verificar e remover qualquer registro incorreto na tabela users
+      // Garantir que secretária NÃO existe na tabela users
+      const { data: existingUserIncorrect } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', authData.user.id)
+        .maybeSingle()
+      
+      if (existingUserIncorrect) {
+        console.warn('⚠️ [AUTH SERVICE] Secretária tem registro incorreto na tabela users. Removendo...')
+        await supabase
+          .from('users')
+          .delete()
+          .eq('id', authData.user.id)
+      }
+
       // Criar registro na tabela secretarias
-      // Adicionar campo para marcar que precisa trocar senha
+      // IMPORTANTE: Secretária deve existir APENAS na tabela secretarias
       const { error: secretariaError } = await supabase
         .from('secretarias')
         .insert({

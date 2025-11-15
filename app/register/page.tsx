@@ -194,7 +194,10 @@ export default function Register() {
         )
 
         if (result.success) {
-          setSuccess('Conta da secretaria criada com sucesso! Um email com as instruções foi enviado.')
+          // Salvar email antes de limpar formulário
+          const userEmail = secretariaForm.email.trim().toLowerCase()
+          
+          // Limpar formulário
           setSecretariaForm({
             name: '',
             email: '',
@@ -203,16 +206,27 @@ export default function Register() {
             phone: '',
             cpf: ''
           })
+          
+          // Redirecionar para página de confirmação de email
+          console.log('✅ [REGISTER] Conta de secretaria criada com sucesso, redirecionando para confirmação de email...')
+          
+          // Garantir redirecionamento
+          setTimeout(() => {
+            console.log('🔄 [REGISTER] Redirecionando para:', `/confirm-email?email=${encodeURIComponent(userEmail)}`)
+            router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
+          }, 300)
+          
+          // Não definir setIsRegistering(false) aqui, pois será redirecionado
         } else {
           setError('Erro ao criar conta da secretaria. Tente novamente.')
+          setIsRegistering(false)
         }
       } catch (error) {
         console.error('Erro ao criar conta de secretaria:', error)
         setError('Erro interno. Tente novamente.')
+        setIsRegistering(false)
       }
     }
-    
-    setIsRegistering(false)
   }
 
   return (

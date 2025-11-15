@@ -70,7 +70,14 @@ export function Navigation() {
               <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                 <User className="w-4 h-4 text-primary-600" />
               </div>
-              <Button variant="ghost" size="sm" onClick={logout}>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={(e) => {
+                  e.preventDefault()
+                  logout()
+                }}
+              >
                 <LogOut className="w-4 h-4" />
               </Button>
             </div>
@@ -134,7 +141,10 @@ export function Navigation() {
                 variant="ghost" 
                 size="sm" 
                 className="w-full justify-start text-white hover:text-white hover:bg-teal-500/20"
-                onClick={logout}
+                onClick={(e) => {
+                  e.preventDefault()
+                  logout()
+                }}
               >
                 <LogOut className="w-4 h-4 mr-2" />
                 Sair

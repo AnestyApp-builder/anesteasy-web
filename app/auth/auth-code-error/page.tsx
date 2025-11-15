@@ -59,7 +59,7 @@ export default function AuthCodeErrorPage() {
               </Button>
             </div>
 
-            <div className="border-t pt-4 text-center">
+            <div className="border-t border-teal-500 pt-4 text-center">
               <p className="text-xs text-gray-500">
                 Se o problema persistir, entre em contato conosco em{' '}
                 <a href="mailto:contato@anesteasyapp.com.br" className="text-blue-600 hover:underline">

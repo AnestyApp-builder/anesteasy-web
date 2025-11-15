@@ -1393,14 +1393,6 @@ function ProcedimentosContent() {
                     updateFormField={updateFormField}
                   />
                   <EditField
-                    field="room_number"
-                    label="Número da Sala"
-                    value={selectedProcedure.room_number || ''}
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <EditField
                     field="codigo_tssu"
                     label="Código TSSU"
                     value={selectedProcedure.codigo_tssu || ''}
@@ -1455,13 +1447,13 @@ function ProcedimentosContent() {
                 </div>
               </div>
 
-              {/* Informações de Feedback */}
-              <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-6 shadow-sm">
+              {/* Feedback do Cirurgião - Seção Unificada */}
+              <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-6 shadow-sm border border-purple-200">
                 <h3 className="text-xl font-bold text-purple-800 mb-5 flex items-center">
                   <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
                     <MessageSquare className="w-5 h-5 text-purple-600" />
                   </div>
-                  Informações de Feedback
+                  Feedback do Cirurgião
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <EditField
@@ -1478,22 +1470,63 @@ function ProcedimentosContent() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
-                  <EditField
-                    field="email_cirurgiao"
-                    label="Email do Cirurgião"
-                    value={selectedProcedure.email_cirurgiao || ''}
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <EditField
-                    field="telefone_cirurgiao"
-                    label="Telefone do Cirurgião"
-                    value={selectedProcedure.telefone_cirurgiao || ''}
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
+                  {selectedProcedure.feedback_solicitado && (
+                    <>
+                      <EditField
+                        field="email_cirurgiao"
+                        label="Email do Cirurgião"
+                        value={selectedProcedure.email_cirurgiao || ''}
+                        isEditingMode={isEditingMode}
+                        editFormData={editFormData}
+                        updateFormField={updateFormField}
+                      />
+                      <EditField
+                        field="telefone_cirurgiao"
+                        label="Telefone do Cirurgião"
+                        value={selectedProcedure.telefone_cirurgiao || ''}
+                        isEditingMode={isEditingMode}
+                        editFormData={editFormData}
+                        updateFormField={updateFormField}
+                      />
+                      <div className="col-span-2">
+                        <Button
+                          onClick={async () => {
+                            try {
+                              const link = await feedbackService.createFeedbackLinkOnly({
+                                procedureId: selectedProcedure.id,
+                                emailCirurgiao: selectedProcedure.email_cirurgiao,
+                                telefoneCirurgiao: selectedProcedure.telefone_cirurgiao
+                              });
+                              
+                              // Copiar o link para a área de transferência
+                              await navigator.clipboard.writeText(link);
+                              
+                              // Mostrar mensagem de sucesso
+                              setFeedbackMessage({
+                                type: 'success',
+                                message: 'Novo link gerado e copiado para a área de transferência!'
+                              });
+                              
+                              setTimeout(() => setFeedbackMessage(null), 3000);
+                            } catch (error) {
+                              
+                              setFeedbackMessage({
+                                type: 'error',
+                                message: 'Erro ao gerar novo link. Tente novamente.'
+                              });
+                              setTimeout(() => setFeedbackMessage(null), 3000);
+                            }
+                          }}
+                          className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                        >
+                          Gerar Novo Link de Feedback
+                        </Button>
+                        <p className="text-xs text-gray-500 mt-2 text-center">
+                          O link gerado terá validade de 48 horas e será copiado automaticamente
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Seção de Respostas do Feedback */}
@@ -1665,6 +1698,7 @@ function ProcedimentosContent() {
                       options={[
                         { value: '', label: 'Selecione...' },
                         { value: 'Nova Ráqui', label: 'Nova Ráqui' },
+                        { value: 'Raquianestesia', label: 'Raquianestesia' },
                         { value: 'Geral', label: 'Geral' },
                         { value: 'Complementação pelo Cateter', label: 'Complementação pelo Cateter' }
                       ]}
@@ -1889,82 +1923,6 @@ function ProcedimentosContent() {
                 </div>
               </div>
 
-              {/* Informações de Feedback */}
-              <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-6 shadow-sm border border-purple-200">
-                <h3 className="text-xl font-bold text-purple-800 mb-5 flex items-center">
-                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-                    <User className="w-5 h-5 text-purple-600" />
-                  </div>
-                  Feedback do Cirurgião
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <EditField
-                    field="feedback_solicitado"
-                    label="Feedback Solicitado"
-                    value={selectedProcedure.feedback_solicitado ? 'Sim' : 'Não'}
-                    isEditingMode={false}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  {selectedProcedure.feedback_solicitado && (
-                    <>
-                      <EditField
-                        field="email_cirurgiao"
-                        label="Email do Cirurgião"
-                        value={selectedProcedure.email_cirurgiao || ''}
-                        isEditingMode={isEditingMode}
-                        editFormData={editFormData}
-                        updateFormField={updateFormField}
-                      />
-                      <EditField
-                        field="telefone_cirurgiao"
-                        label="Telefone do Cirurgião"
-                        value={selectedProcedure.telefone_cirurgiao || ''}
-                        isEditingMode={isEditingMode}
-                        editFormData={editFormData}
-                        updateFormField={updateFormField}
-                      />
-                      <div className="col-span-2">
-                        <Button
-                          onClick={async () => {
-                            try {
-                              const link = await feedbackService.createFeedbackLinkOnly({
-                                procedureId: selectedProcedure.id,
-                                emailCirurgiao: selectedProcedure.email_cirurgiao,
-                                telefoneCirurgiao: selectedProcedure.telefone_cirurgiao
-                              });
-                              
-                              // Copiar o link para a área de transferência
-                              await navigator.clipboard.writeText(link);
-                              
-                              // Mostrar mensagem de sucesso
-                              setFeedbackMessage({
-                                type: 'success',
-                                message: 'Novo link gerado e copiado para a área de transferência!'
-                              });
-                              
-                              setTimeout(() => setFeedbackMessage(null), 3000);
-                            } catch (error) {
-                              
-                              setFeedbackMessage({
-                                type: 'error',
-                                message: 'Erro ao gerar novo link. Tente novamente.'
-                              });
-                              setTimeout(() => setFeedbackMessage(null), 3000);
-                            }
-                          }}
-                          className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                        >
-                          Gerar Novo Link de Feedback
-                        </Button>
-                        <p className="text-xs text-gray-500 mt-2 text-center">
-                          O link gerado terá validade de 48 horas e será copiado automaticamente
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
 
               {/* Informações Financeiras */}
               <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl p-6 shadow-sm border border-emerald-200">

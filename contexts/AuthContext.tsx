@@ -28,22 +28,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true
-    let loadingTimeout: NodeJS.Timeout | null = null
-
-    // Timeout de segurança - sempre finalizar loading após 5 segundos
-    loadingTimeout = setTimeout(() => {
-      if (mounted) {
-        console.warn('⚠️ [AUTH] Timeout de segurança - finalizando loading')
-        setIsLoading(false)
-      }
-    }, 5000)
 
     // Função para carregar dados do usuário
     const loadUser = async (session: any) => {
-      if (!mounted || !session?.user) {
+        if (!mounted || !session?.user) {
         if (mounted) {
           setIsLoading(false)
-          if (loadingTimeout) clearTimeout(loadingTimeout)
         }
         return
       }
@@ -51,20 +41,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         console.log('👤 [AUTH] Carregando usuário:', session.user.id)
         
-        // Verificar se é secretária - se for, ignorar (com timeout muito curto)
+        // Verificar se é secretária - se for, ignorar
         // Secretárias usam SecretariaAuthContext, não este contexto
         try {
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Timeout')), 1000) // Timeout muito curto
-          })
-          
           // Tentar verificar por ID primeiro
           let isSec = false
           try {
-            const isSecPromise = isSecretaria(session.user.id)
-            isSec = await Promise.race([isSecPromise, timeoutPromise]) as boolean
+            isSec = await isSecretaria(session.user.id)
           } catch (e) {
-            // Se der timeout, tentar por email (mais rápido às vezes)
+            // Se der erro, tentar por email
             try {
               const { data } = await supabase
                 .from('secretarias')
@@ -83,7 +68,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(null)
               setIsEmailConfirmed(false)
               setIsLoading(false)
-              if (loadingTimeout) clearTimeout(loadingTimeout)
             }
             return
           }
@@ -91,50 +75,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Silenciar erro - continuar normalmente como anestesista
         }
 
-        // Buscar dados do usuário (com timeout curto)
+        // Buscar dados do usuário
         let userData = null
         try {
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Timeout')), 2000) // Timeout curto
-          })
-          const userDataPromise = supabase
+          const result = await supabase
             .from('users')
             .select('*')
             .eq('id', session.user.id)
             .maybeSingle()
           
-          const result = await Promise.race([userDataPromise, timeoutPromise]) as any
           if (result && !result.error && result.data) {
             userData = result.data
           }
         } catch (error) {
-          // Se der timeout, continuar sem dados - vamos criar dados básicos
-          console.warn('⚠️ [AUTH] Timeout ao buscar dados do usuário, usando dados básicos')
+          // Se der erro, continuar sem dados - vamos criar dados básicos
+          console.warn('⚠️ [AUTH] Erro ao buscar dados do usuário, usando dados básicos')
         }
 
         if (!userData) {
-          console.log('⚠️ [AUTH] Usuário não encontrado na tabela, criando dados básicos')
-          // Se o usuário está autenticado mas não existe na tabela, criar dados básicos
-          const basicUser = {
-            id: session.user.id,
-            email: session.user.email || '',
-            name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
-            specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
-            crm: session.user.user_metadata?.crm || '000000',
-            gender: session.user.user_metadata?.gender || null,
-            phone: session.user.user_metadata?.phone || null
+          console.log('⚠️ [AUTH] Usuário não encontrado na tabela')
+          
+          // Se o email foi confirmado mas o usuário não existe na tabela, tentar criar
+          // Isso pode acontecer se a confirmação de email não criou o registro corretamente
+          if (session.user.email_confirmed_at && !session.user.user_metadata?.role) {
+            // Não é secretária, então deveria estar na tabela users
+            console.log('🔄 [AUTH] Tentando criar usuário na tabela users...')
+            
+            try {
+              const trialEndsAt = new Date()
+              trialEndsAt.setDate(trialEndsAt.getDate() + 7)
+              
+              const { data: newUserData, error: createError } = await supabase
+                .from('users')
+                .insert({
+                  id: session.user.id,
+                  email: session.user.email || '',
+                  name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
+                  specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
+                  crm: session.user.user_metadata?.crm || '000000',
+                  gender: session.user.user_metadata?.gender || null,
+                  phone: session.user.user_metadata?.phone || null,
+                  cpf: session.user.user_metadata?.cpf || null,
+                  password_hash: '',
+                  subscription_plan: 'premium',
+                  subscription_status: 'active', // Status ativo (período de trial é controlado por trial_ends_at)
+                  trial_ends_at: trialEndsAt.toISOString()
+                })
+                .select()
+                .single()
+              
+              if (createError) {
+                console.error('❌ [AUTH] Erro ao criar usuário na tabela:', createError)
+                // Continuar com dados básicos se não conseguir criar
+              } else if (newUserData) {
+                console.log('✅ [AUTH] Usuário criado na tabela users com sucesso')
+                userData = newUserData
+              }
+            } catch (createError) {
+              console.error('❌ [AUTH] Erro ao tentar criar usuário:', createError)
+            }
           }
           
-          if (mounted) {
-            setUser(basicUser)
-            setIsEmailConfirmed(!!session.user.email_confirmed_at)
-            localStorage.setItem('currentUser', JSON.stringify(basicUser))
-            localStorage.setItem('isEmailConfirmed', (!!session.user.email_confirmed_at).toString())
-            console.log('✅ [AUTH] Usuário básico criado')
-            setIsLoading(false)
-            if (loadingTimeout) clearTimeout(loadingTimeout)
+          // Se ainda não tem userData, usar dados básicos
+          if (!userData) {
+            const basicUser = {
+              id: session.user.id,
+              email: session.user.email || '',
+              name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
+              specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
+              crm: session.user.user_metadata?.crm || '000000',
+              gender: session.user.user_metadata?.gender || null,
+              phone: session.user.user_metadata?.phone || null
+            }
+            
+            if (mounted) {
+              setUser(basicUser)
+              setIsEmailConfirmed(!!session.user.email_confirmed_at)
+              localStorage.setItem('currentUser', JSON.stringify(basicUser))
+              localStorage.setItem('isEmailConfirmed', (!!session.user.email_confirmed_at).toString())
+              console.log('✅ [AUTH] Usando dados básicos (usuário não encontrado na tabela)')
+              setIsLoading(false)
+            }
+            return
           }
-          return
         }
 
         const emailConfirmed = !!session.user.email_confirmed_at
@@ -156,7 +179,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('isEmailConfirmed', emailConfirmed.toString())
           console.log('✅ [AUTH] Usuário carregado')
           setIsLoading(false)
-          if (loadingTimeout) clearTimeout(loadingTimeout)
         }
       } catch (error) {
         console.error('❌ [AUTH] Erro ao carregar usuário:', error)
@@ -164,7 +186,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null)
           setIsEmailConfirmed(false)
           setIsLoading(false)
-          if (loadingTimeout) clearTimeout(loadingTimeout)
         }
       }
     }
@@ -173,46 +194,76 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
+      // Ignorar eventos de erro relacionados a refresh token
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        // Token refresh falhou (normal quando não há sessão)
+        return
+      }
+
       console.log('🔔 [AUTH] Evento:', event)
 
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        await loadUser(session)
-      } else if (event === 'SIGNED_OUT') {
-        if (mounted) {
-          setUser(null)
-          setIsEmailConfirmed(false)
-          setIsLoading(false)
+      try {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          await loadUser(session)
+        } else if (event === 'SIGNED_OUT') {
+          if (mounted) {
+            setUser(null)
+            setIsEmailConfirmed(false)
+            setIsLoading(false)
+          }
+          localStorage.removeItem('currentUser')
+          localStorage.removeItem('isEmailConfirmed')
         }
-        localStorage.removeItem('currentUser')
-        localStorage.removeItem('isEmailConfirmed')
+      } catch (error: any) {
+        // Ignorar erros de refresh token não encontrado
+        const errorMessage = error?.message || ''
+        if (errorMessage.includes('Refresh Token') || errorMessage.includes('refresh_token')) {
+          // Estado normal - não há sessão válida
+          if (mounted && event === 'SIGNED_OUT') {
+            setUser(null)
+            setIsEmailConfirmed(false)
+            setIsLoading(false)
+          }
+          return
+        }
+        console.warn('⚠️ [AUTH] Erro no listener de autenticação:', error)
       }
     })
 
-    // Verificar sessão inicial com timeout
+    // Verificar sessão inicial
     const init = async () => {
       try {
-        // Timeout de 3 segundos para evitar travamento
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Timeout na verificação de autenticação')), 3000)
-        })
-
-        const sessionPromise = supabase.auth.getSession()
-        let session = null
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
-        try {
-          const result = await Promise.race([
-            sessionPromise,
-            timeoutPromise
-          ]) as any
-          session = result?.data?.session || null
-        } catch (error) {
-          // Se der timeout, continuar sem sessão
-          console.warn('⚠️ [AUTH] Timeout ao buscar sessão, continuando sem autenticação')
-          session = null
+        // Ignorar erros de refresh token não encontrado (estado normal quando não há sessão)
+        if (sessionError) {
+          const errorMessage = sessionError.message || ''
+          if (errorMessage.includes('Refresh Token') || errorMessage.includes('refresh_token')) {
+            // Estado normal - não há sessão válida, continuar sem erro
+            if (mounted) {
+              setUser(null)
+              setIsEmailConfirmed(false)
+              setIsLoading(false)
+            }
+            return
+          }
+          // Outros erros podem ser logados
+          console.warn('⚠️ [AUTH] Erro ao buscar sessão:', sessionError.message)
         }
-
+        
         await loadUser(session)
-      } catch (error) {
+      } catch (error: any) {
+        // Ignorar erros de refresh token não encontrado
+        const errorMessage = error?.message || ''
+        if (errorMessage.includes('Refresh Token') || errorMessage.includes('refresh_token')) {
+          // Estado normal - não há sessão válida
+          if (mounted) {
+            setUser(null)
+            setIsEmailConfirmed(false)
+            setIsLoading(false)
+          }
+          return
+        }
         console.error('❌ [AUTH] Erro na inicialização:', error)
         if (mounted) {
           setUser(null)
@@ -226,7 +277,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false
-      if (loadingTimeout) clearTimeout(loadingTimeout)
       subscription.unsubscribe()
     }
   }, [])
@@ -276,16 +326,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('🚪 [AUTH] Logout')
       
-      await supabase.auth.signOut()
-      
+      // Limpar estado imediatamente para feedback visual rápido
       setUser(null)
       setIsEmailConfirmed(false)
-      localStorage.removeItem('currentUser')
-      localStorage.removeItem('isEmailConfirmed')
       
-      router.push('/login')
+      // Limpar localStorage antes do signOut
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('currentUser')
+        localStorage.removeItem('isEmailConfirmed')
+        // Limpar todos os dados do Supabase do localStorage
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) {
+            localStorage.removeItem(key)
+          }
+        })
+      }
+      
+      // Fazer signOut (não aguardar para redirecionar mais rápido)
+      supabase.auth.signOut().catch(error => {
+        console.error('❌ [AUTH] Erro no signOut:', error)
+      })
+      
+      // Redirecionar imediatamente para login usando window.location para forçar reload completo
+      // Isso garante que funciona em qualquer página, incluindo /planos
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
     } catch (error) {
       console.error('❌ [AUTH] Erro no logout:', error)
+      // Mesmo com erro, redirecionar para login
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
     }
   }
 

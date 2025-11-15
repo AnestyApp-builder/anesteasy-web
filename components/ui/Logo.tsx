@@ -4,9 +4,10 @@ interface LogoProps {
   size?: 'sm' | 'md' | 'lg'
   showText?: boolean
   className?: string
+  textColor?: 'white' | 'gray' | 'black'
 }
 
-export function Logo({ size = 'md', showText = true, className = '' }: LogoProps) {
+export function Logo({ size = 'md', showText = true, className = '', textColor = 'white' }: LogoProps) {
   const sizeClasses = {
     sm: 'w-12 h-12',
     md: 'w-16 h-16', 
@@ -19,8 +20,14 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
     lg: 'text-2xl'
   }
 
+  const textColorClasses = {
+    white: 'text-white',
+    gray: 'text-gray-900',
+    black: 'text-black'
+  }
+  
   return (
-    <div className={`flex items-center space-x-3 ${className}`}>
+    <div className={`flex items-center justify-center space-x-3 ${className}`}>
       {/* Ícone personalizado do AnestEasy */}
       <div 
         className={`${sizeClasses[size]} flex items-center justify-center`}
@@ -53,7 +60,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
       </div>
       
       {showText && (
-        <span className={`font-bold text-white ${textSizeClasses[size]}`}>
+        <span className={`font-bold ${textColorClasses[textColor]} ${textSizeClasses[size]}`}>
           AnestEasy
         </span>
       )}

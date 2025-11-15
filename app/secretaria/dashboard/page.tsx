@@ -373,7 +373,11 @@ function SecretariaDashboardContent() {
     }
   }
 
-  const handleLogout = async () => {
+  const handleLogout = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
     setIsLoggingOut(true)
     try {
       await logout()
@@ -463,7 +467,7 @@ function SecretariaDashboardContent() {
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={handleLogout}
+                onClick={(e) => handleLogout(e)}
                 disabled={isLoggingOut}
                 className="bg-white/10 border-white/20 text-white hover:bg-white/20 p-2 sm:px-3 disabled:opacity-50"
               >

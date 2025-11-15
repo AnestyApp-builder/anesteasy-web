@@ -196,6 +196,12 @@ function ConfiguracoesContent() {
 
       setIsLoadingPendingRequest(true)
 
+      // Timeout de segurança para evitar carregamento infinito
+      const timeoutId = setTimeout(() => {
+        console.warn('⏱️ [CONFIG] Timeout ao carregar solicitações pendentes')
+        setIsLoadingPendingRequest(false)
+      }, 10000) // 10 segundos
+
       try {
         console.log('🔍 [CONFIG] Buscando solicitações pendentes para anestesista:', user.id)
         
@@ -350,6 +356,7 @@ function ConfiguracoesContent() {
         console.error('❌ [CONFIG] Erro ao carregar solicitações pendentes:', error)
         setPendingRequest(null)
       } finally {
+        clearTimeout(timeoutId) // Limpar timeout quando a função terminar
         setIsLoadingPendingRequest(false)
       }
     }
@@ -1080,15 +1087,6 @@ function ConfiguracoesContent() {
               </CardTitle>
             </CardHeader>
             <div className="p-6 space-y-4">
-              {/* Debug: Log do estado atual */}
-              {process.env.NODE_ENV === 'development' && (
-                <div className="text-xs text-gray-400 mb-2">
-                  Debug: isLoading={String(isLoadingPendingRequest)}, 
-                  hasSecretaria={String(!!secretaria)}, 
-                  hasPendingRequest={String(!!pendingRequest)}
-                </div>
-              )}
-              
               {isLoadingPendingRequest && !secretaria ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto mb-4"></div>

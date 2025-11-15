@@ -132,7 +132,7 @@ export function SecretariaNotificationBell() {
             aria-hidden="true"
           />
           <div className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-auto sm:mt-2 w-[calc(100vw-1rem)] sm:w-96 max-w-sm bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[calc(100vh-5rem)] sm:max-h-96 overflow-hidden flex flex-col transform transition-all">
-            <div className="p-3 sm:p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+            <div className="p-3 sm:p-4 border-b border-teal-200 flex items-center justify-between flex-shrink-0">
               <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Notificações</h3>
               <div className="flex items-center space-x-2">
                 {unreadCount > 0 && (
@@ -162,13 +162,13 @@ export function SecretariaNotificationBell() {
                   <p className="text-sm">Nenhuma notificação</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-teal-200 [&>*:not(:first-child)]:border-t [&>*:not(:first-child)]:border-teal-200">
                   {/* Solicitações de vinculação pendentes */}
                   {linkRequests.map((request) => (
                     <div
                       key={request.id}
                       className={`p-3 sm:p-4 hover:bg-gray-50 transition-colors ${
-                        !request.is_read ? 'bg-blue-50/50' : ''
+                        !request.is_read ? 'bg-teal-50/50' : ''
                       }`}
                     >
                       <div className="flex items-start space-x-2 sm:space-x-3">
@@ -214,7 +214,7 @@ export function SecretariaNotificationBell() {
                     <div
                       key={notification.id}
                       className={`p-3 sm:p-4 hover:bg-gray-50 transition-colors ${
-                        !notification.is_read ? 'bg-blue-50/50' : ''
+                        !notification.is_read ? 'bg-teal-50/50' : ''
                       }`}
                     >
                       <div className="flex items-start space-x-2 sm:space-x-3">

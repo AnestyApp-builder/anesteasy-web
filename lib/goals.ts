@@ -52,11 +52,15 @@ export const goalService = {
   // Salvar ou atualizar meta
   async saveGoal(goalData: GoalInsert): Promise<Goal | null> {
     try {
+      console.log('💾 [GOAL SERVICE] Salvando meta:', goalData)
+      
       // Verificar se já existe uma meta para o usuário
       const existingGoal = await this.getGoal(goalData.user_id)
+      console.log('🔍 [GOAL SERVICE] Meta existente:', existingGoal)
       
       if (existingGoal) {
         // Atualizar meta existente
+        console.log('🔄 [GOAL SERVICE] Atualizando meta existente...')
         const { data, error } = await supabase
           .from('goals')
           .update({
@@ -69,13 +73,21 @@ export const goalService = {
           .single()
 
         if (error) {
-          
+          console.error('❌ [GOAL SERVICE] Erro ao atualizar meta:', {
+            error,
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          })
           return null
         }
 
+        console.log('✅ [GOAL SERVICE] Meta atualizada com sucesso:', data)
         return data
       } else {
         // Criar nova meta
+        console.log('➕ [GOAL SERVICE] Criando nova meta...')
         const { data, error } = await supabase
           .from('goals')
           .insert(goalData)
@@ -83,14 +95,21 @@ export const goalService = {
           .single()
 
         if (error) {
-          
+          console.error('❌ [GOAL SERVICE] Erro ao criar meta:', {
+            error,
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          })
           return null
         }
 
+        console.log('✅ [GOAL SERVICE] Meta criada com sucesso:', data)
         return data
       }
-    } catch (error) {
-      
+    } catch (error: any) {
+      console.error('❌ [GOAL SERVICE] Erro inesperado ao salvar meta:', error)
       return null
     }
   },
