@@ -790,33 +790,86 @@ export const authService = {
   // Excluir conta do usuário
   async deleteAccount(userId: string): Promise<{ success: boolean; message: string }> {
     try {
-      // 1. Excluir dados relacionados do usuário
-      const tablesToClean = [
-        'procedures',
-        'goals', 
-        'shifts',
-        'feedback',
-        'secretaria_links'
-      ]
+      console.log('🗑️ [AUTH SERVICE] Iniciando exclusão de conta para:', userId)
+      
+      // Verificar se é secretaria ou anestesista
+      const { isSecretaria } = await import('@/lib/user-utils')
+      const isSecretariaUser = await isSecretaria(userId)
+      
+      console.log('👤 [AUTH SERVICE] Tipo de usuário:', isSecretariaUser ? 'Secretaria' : 'Anestesista')
 
-      for (const table of tablesToClean) {
+      if (isSecretariaUser) {
+        // É SECRETARIA - excluir da tabela secretarias e relacionamentos
+        console.log('👩‍💼 [AUTH SERVICE] Excluindo secretaria...')
+        
+        // 1. Excluir relacionamentos
         await supabase
-          .from(table)
+          .from('anestesista_secretaria')
           .delete()
-          .eq('user_id', userId)
+          .eq('secretaria_id', userId)
+        
+        await supabase
+          .from('secretaria_link_requests')
+          .delete()
+          .eq('secretaria_id', userId)
+        
+        // 2. Excluir procedimentos vinculados à secretaria
+        await supabase
+          .from('procedures')
+          .delete()
+          .eq('secretaria_id', userId)
+
+        // 3. Excluir da tabela secretarias
+        const { error: secretariaError } = await supabase
+          .from('secretarias')
+          .delete()
+          .eq('id', userId)
+
+        if (secretariaError) {
+          console.error('❌ [AUTH SERVICE] Erro ao excluir secretaria:', secretariaError)
+          return { success: false, message: 'Erro ao excluir dados da secretaria.' }
+        }
+      } else {
+        // É ANESTESISTA - excluir da tabela users e relacionamentos
+        console.log('👨‍⚕️ [AUTH SERVICE] Excluindo anestesista...')
+        
+        // 1. Excluir dados relacionados do usuário
+        const tablesToClean = [
+          'procedures',
+          'goals', 
+          'shifts',
+          'feedback',
+          'secretaria_links',
+          'anestesista_secretaria' // Relacionamentos com secretarias
+        ]
+
+        for (const table of tablesToClean) {
+          await supabase
+            .from(table)
+            .delete()
+            .eq('user_id', userId)
+        }
+
+        // 2. Excluir solicitações de vinculação
+        await supabase
+          .from('secretaria_link_requests')
+          .delete()
+          .eq('anestesista_id', userId)
+
+        // 3. Excluir o usuário da tabela users
+        const { error: userError } = await supabase
+          .from('users')
+          .delete()
+          .eq('id', userId)
+
+        if (userError) {
+          console.error('❌ [AUTH SERVICE] Erro ao excluir anestesista:', userError)
+          return { success: false, message: 'Erro ao excluir dados do usuário.' }
+        }
       }
 
-      // 2. Excluir o usuário da tabela users
-      const { error: userError } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', userId)
-
-      if (userError) {
-        return { success: false, message: 'Erro ao excluir dados do usuário.' }
-      }
-
-      // 3. Excluir do Supabase Auth via API
+      // 4. Excluir do Supabase Auth via API (para ambos os tipos)
+      console.log('🔐 [AUTH SERVICE] Excluindo do Supabase Auth...')
       try {
         const response = await fetch('/api/delete-user', {
           method: 'POST',
@@ -829,14 +882,20 @@ export const authService = {
         const result = await response.json()
 
         if (!response.ok) {
+          console.error('❌ [AUTH SERVICE] Erro ao excluir do Auth:', result)
           return { success: false, message: 'Erro ao excluir conta de autenticação.' }
         }
+        
+        console.log('✅ [AUTH SERVICE] Usuário excluído do Supabase Auth com sucesso')
       } catch (apiError) {
+        console.error('❌ [AUTH SERVICE] Erro na API de exclusão:', apiError)
         return { success: false, message: 'Erro ao excluir conta de autenticação.' }
       }
 
+      console.log('✅ [AUTH SERVICE] Conta excluída com sucesso!')
       return { success: true, message: 'Conta excluída com sucesso!' }
     } catch (error) {
+      console.error('❌ [AUTH SERVICE] Erro interno ao excluir conta:', error)
       return { success: false, message: 'Erro interno. Tente novamente.' }
     }
   }

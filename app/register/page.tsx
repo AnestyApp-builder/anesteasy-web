@@ -146,14 +146,9 @@ export default function Register() {
           cpf: ''
         })
         
-        // O redirecionamento será feito pelo contexto, mas vamos garantir aqui também
+        // Redirecionar imediatamente para confirmação de email
         console.log('✅ [REGISTER] Registro bem-sucedido, redirecionando para confirmação de email...')
-        
-        // Garantir redirecionamento mesmo se o contexto não fizer
-        setTimeout(() => {
-          console.log('🔄 [REGISTER] Redirecionando para:', `/confirm-email?email=${encodeURIComponent(userEmail)}`)
-          router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
-        }, 300)
+        router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
         
         // Não definir setIsRegistering(false) aqui, pois será redirecionado
       }
@@ -207,14 +202,9 @@ export default function Register() {
             cpf: ''
           })
           
-          // Redirecionar para página de confirmação de email
+          // Redirecionar imediatamente para página de confirmação de email
           console.log('✅ [REGISTER] Conta de secretaria criada com sucesso, redirecionando para confirmação de email...')
-          
-          // Garantir redirecionamento
-          setTimeout(() => {
-            console.log('🔄 [REGISTER] Redirecionando para:', `/confirm-email?email=${encodeURIComponent(userEmail)}`)
-            router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
-          }, 300)
+          router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
           
           // Não definir setIsRegistering(false) aqui, pois será redirecionado
         } else {
