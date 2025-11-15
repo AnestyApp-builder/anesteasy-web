@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/Button'
 import { procedureService, ProcedureAttachment } from '@/lib/procedures'
 import { goalService } from '@/lib/goals'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatCurrency, formatDate, getFullGreeting, handleButtonPress, handleCardPress } from '@/lib/utils'
+import { formatCurrency, formatDate, getFullGreeting, handleButtonPress, handleCardPress, retryWithTimeout } from '@/lib/utils'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { Loading } from '@/components/ui/Loading'
 import { useRouter } from 'next/navigation'
@@ -79,20 +79,25 @@ export default function Dashboard() {
     const checkIfSecretaria = async () => {
       if (user?.id) {
         try {
-          // Timeout de 2 segundos para evitar travamento
-          const timeoutPromise = new Promise<boolean>((_, reject) => {
-            setTimeout(() => reject(new Error('Timeout')), 2000)
-          })
-          
-          const secretariaPromise = isSecretaria(user.id)
-          const secretaria = await Promise.race([secretariaPromise, timeoutPromise]) as boolean
+          // Usar retry com timeout maior para melhorar confiabilidade
+          const secretaria = await retryWithTimeout(
+            () => isSecretaria(user.id),
+            {
+              maxRetries: 2,
+              timeout: 5000, // 5 segundos
+              delay: 500,
+              onRetry: (attempt) => {
+                console.log(`🔄 [DASHBOARD] Tentativa ${attempt} de verificar secretária...`)
+              }
+            }
+          )
           
           if (secretaria) {
             router.push('/secretaria/dashboard')
             return
           }
         } catch (error) {
-          // Se der timeout, continuar como anestesista
+          // Se der timeout após todas as tentativas, continuar como anestesista
           console.warn('⚠️ Erro ao verificar secretária no dashboard, continuando:', error)
         }
         
@@ -126,17 +131,21 @@ export default function Dashboard() {
     
     setLoading(true)
     try {
-      // Timeout de 10 segundos para evitar travamento
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Timeout ao carregar dados do dashboard')), 10000)
-      })
-      
-      const dataPromise = Promise.all([
-        procedureService.getProcedureStats(user.id),
-        procedureService.getProcedures(user.id)
-      ])
-      
-      const [statsData, proceduresData] = await Promise.race([dataPromise, timeoutPromise])
+      // Usar retry com timeout maior para melhorar confiabilidade
+      const [statsData, proceduresData] = await retryWithTimeout(
+        () => Promise.all([
+          procedureService.getProcedureStats(user.id),
+          procedureService.getProcedures(user.id)
+        ]),
+        {
+          maxRetries: 2,
+          timeout: 15000, // 15 segundos
+          delay: 1000,
+          onRetry: (attempt) => {
+            console.log(`🔄 [DASHBOARD] Tentativa ${attempt} de carregar dados...`)
+          }
+        }
+      )
       
       setStats(statsData)
       setRecentProcedures(proceduresData.slice(0, 5))
@@ -155,17 +164,18 @@ export default function Dashboard() {
       })
       setMonthlyProcedures(monthlyProcs)
       
-      // Carregar anexos para os procedimentos recentes (com timeout individual)
+      // Carregar anexos para os procedimentos recentes (com retry individual)
       const attachmentsMap: Record<string, ProcedureAttachment[]> = {}
       for (const procedure of proceduresData.slice(0, 5)) {
         try {
-          const attachmentTimeout = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('Timeout')), 3000)
-          })
-          const procedureAttachments = await Promise.race([
-            procedureService.getAttachments(procedure.id),
-            attachmentTimeout
-          ]) as ProcedureAttachment[]
+          const procedureAttachments = await retryWithTimeout(
+            () => procedureService.getAttachments(procedure.id),
+            {
+              maxRetries: 2,
+              timeout: 5000, // 5 segundos
+              delay: 500
+            }
+          )
           attachmentsMap[procedure.id] = procedureAttachments
         } catch (error) {
           console.warn(`⚠️ Erro ao carregar anexos do procedimento ${procedure.id}:`, error)

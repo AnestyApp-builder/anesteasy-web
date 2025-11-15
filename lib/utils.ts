@@ -176,3 +176,58 @@ export function formatCPF(cpf: string): string {
   }
   return cleanCPF.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
 }
+
+/**
+ * Executa uma função com retry automático em caso de timeout ou erro
+ * @param fn Função assíncrona a ser executada
+ * @param options Opções de retry (maxRetries, timeout, delay)
+ * @returns Resultado da função ou lança erro após todas as tentativas
+ */
+export async function retryWithTimeout<T>(
+  fn: () => Promise<T>,
+  options: {
+    maxRetries?: number
+    timeout?: number
+    delay?: number
+    onRetry?: (attempt: number, error: Error) => void
+  } = {}
+): Promise<T> {
+  const {
+    maxRetries = 3,
+    timeout = 8000, // 8 segundos padrão
+    delay = 1000, // 1 segundo entre tentativas
+    onRetry
+  } = options
+
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Criar promise de timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout')), timeout)
+      })
+
+      // Race entre a função e o timeout
+      const result = await Promise.race([fn(), timeoutPromise])
+      return result
+    } catch (error: any) {
+      lastError = error
+
+      // Se não for a última tentativa, aguardar antes de tentar novamente
+      if (attempt < maxRetries) {
+        if (onRetry) {
+          onRetry(attempt, error)
+        }
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+
+      // Última tentativa falhou, lançar erro
+      throw error
+    }
+  }
+
+  // Nunca deveria chegar aqui, mas TypeScript exige
+  throw lastError || new Error('Erro desconhecido no retry')
+}

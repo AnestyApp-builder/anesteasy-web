@@ -40,12 +40,21 @@ export async function checkSubscriptionAccess(userId: string): Promise<Subscript
   }
 
   try {
-    // PRIMEIRO: Verificar período de teste gratuito
-    const { data: userData, error: userError } = await supabaseAdmin
+    // PRIMEIRO: Verificar período de teste gratuito (com timeout)
+    const userQuery = supabaseAdmin
       .from('users')
       .select('trial_ends_at, created_at, free_months')
       .eq('id', userId)
       .maybeSingle()
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout ao verificar usuário')), 10000)
+    })
+
+    const { data: userData, error: userError } = await Promise.race([
+      userQuery,
+      timeoutPromise
+    ])
 
     if (!userError && userData) {
       const now = new Date()
@@ -83,14 +92,23 @@ export async function checkSubscriptionAccess(userId: string): Promise<Subscript
       }
     }
 
-    // Verificar assinatura ativa
-    const { data: subscription, error } = await supabaseAdmin
+    // Verificar assinatura ativa (com timeout)
+    const subscriptionQuery = supabaseAdmin
       .from('subscriptions')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+
+    const subscriptionTimeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout ao verificar assinatura')), 10000)
+    })
+
+    const { data: subscription, error } = await Promise.race([
+      subscriptionQuery,
+      subscriptionTimeoutPromise
+    ])
 
     if (error || !subscription) {
       // Se não tem assinatura e o período de teste expirou, sem acesso
@@ -171,8 +189,17 @@ export async function checkSubscriptionAccess(userId: string): Promise<Subscript
       subscriptionStatus: subscription.status
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao verificar acesso:', error)
+    // Se for timeout, permitir acesso temporário em vez de bloquear
+    if (error?.message?.includes('Timeout')) {
+      console.warn('⚠️ Timeout na verificação de acesso, permitindo acesso temporário')
+      return { 
+        hasAccess: true, 
+        reason: 'Verificação de acesso temporariamente indisponível. O acesso será verificado novamente em breve.',
+        subscriptionStatus: 'checking'
+      }
+    }
     return { hasAccess: false, reason: 'Erro ao verificar assinatura' }
   }
 }

@@ -16,7 +16,6 @@ function CheckoutSuccessPageContent() {
   const userId = searchParams.get('user_id')
   const [loading, setLoading] = useState(true)
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('pending')
-  const [processingWebhook, setProcessingWebhook] = useState(false)
 
   useEffect(() => {
     // Verificar status da sessão se session_id estiver presente
@@ -118,44 +117,6 @@ function CheckoutSuccessPageContent() {
     }
   }, [sessionId, router])
 
-  const processWebhookManually = async () => {
-    if (!sessionId) {
-      alert('Session ID não encontrado')
-      return
-    }
-
-    try {
-      setProcessingWebhook(true)
-      
-      const response = await fetch('/api/stripe/test-webhook', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          session_id: sessionId
-        })
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        alert('✅ Assinatura processada com sucesso! Agora você pode acessar a página de assinatura.')
-        // Aguardar um pouco e redirecionar
-        setTimeout(() => {
-          router.push('/assinatura')
-        }, 1000)
-      } else {
-        alert(`❌ Erro: ${data.error || 'Erro desconhecido'}`)
-      }
-    } catch (error: any) {
-      console.error('Erro ao processar webhook:', error)
-      alert(`❌ Erro ao processar: ${error.message || 'Erro desconhecido'}`)
-    } finally {
-      setProcessingWebhook(false)
-    }
-  }
-
   const planNames: Record<string, string> = {
     monthly: 'Plano Mensal',
     quarterly: 'Plano Trimestral',
@@ -229,10 +190,10 @@ function CheckoutSuccessPageContent() {
 
               {/* Status - Só mostrar se não for active (para não confundir) */}
               {status !== 'active' && (
-                <div className={`border rounded-lg p-4 ${
+                <div className={`rounded-lg p-4 ${
                   status === 'pending'
-                    ? 'bg-yellow-50 border-yellow-200'
-                    : 'bg-gray-50 border-gray-200'
+                    ? 'bg-yellow-50'
+                    : 'bg-gray-50'
                 }`}>
                   <p className="text-sm font-semibold mb-1">
                     Status: <span className="capitalize">{status === 'pending' ? 'Pendente' : status}</span>
@@ -269,30 +230,6 @@ function CheckoutSuccessPageContent() {
                   </Button>
                 </Link>
               </div>
-
-              {/* Botão para processar webhook manualmente se necessário */}
-              {sessionId && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <p className="text-xs text-gray-500 mb-2 text-center">
-                    Se a assinatura não aparecer, clique abaixo para processar manualmente:
-                  </p>
-                  <Button
-                    onClick={processWebhookManually}
-                    disabled={processingWebhook}
-                    variant="outline"
-                    className="w-full text-sm"
-                  >
-                    {processingWebhook ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Processando...
-                      </>
-                    ) : (
-                      'Processar Assinatura Manualmente'
-                    )}
-                  </Button>
-                </div>
-              )}
 
               <div className="text-center text-sm text-gray-500 pt-4 border-t">
                 <p>

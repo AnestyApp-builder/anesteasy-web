@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSecretaria } from '@/lib/user-utils'
 import { hasActiveSubscription } from '@/lib/subscription'
+import { retryWithTimeout } from '@/lib/utils'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -44,13 +45,18 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
       // Verificar se é secretária - secretárias NÃO podem acessar rotas de anestesistas
       if (user) {
         try {
-          // Timeout de 2 segundos para evitar travamento
-          const timeoutPromise = new Promise<boolean>((_, reject) => {
-            setTimeout(() => reject(new Error('Timeout')), 2000)
-          })
-          
-          const secretariaPromise = isSecretaria(user.id)
-          const secretaria = await Promise.race([secretariaPromise, timeoutPromise]) as boolean
+          // Usar retry com timeout maior para melhorar confiabilidade
+          const secretaria = await retryWithTimeout(
+            () => isSecretaria(user.id),
+            {
+              maxRetries: 2,
+              timeout: 5000, // 5 segundos
+              delay: 500,
+              onRetry: (attempt) => {
+                console.log(`🔄 [PROTECTED] Tentativa ${attempt} de verificar secretária...`)
+              }
+            }
+          )
           
           if (secretaria) {
             // Secretária tentando acessar rota de anestesista - redirecionar para dashboard da secretária
@@ -59,7 +65,7 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
             return
           }
         } catch (error) {
-          // Se der timeout, continuar como anestesista
+          // Se der timeout após todas as tentativas, continuar como anestesista
           console.warn('⚠️ Erro ao verificar secretária, continuando:', error)
         }
 
@@ -68,13 +74,18 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
           setIsCheckingSubscription(true)
           
           try {
-            // Timeout de 3 segundos para evitar travamento
-            const timeoutPromise = new Promise<boolean>((_, reject) => {
-              setTimeout(() => reject(new Error('Timeout')), 3000)
-            })
-            
-            const subscriptionPromise = hasActiveSubscription(user.id)
-            const hasSubscription = await Promise.race([subscriptionPromise, timeoutPromise]) as boolean
+            // Usar retry com timeout maior para melhorar confiabilidade
+            const hasSubscription = await retryWithTimeout(
+              () => hasActiveSubscription(user.id),
+              {
+                maxRetries: 2,
+                timeout: 8000, // 8 segundos
+                delay: 1000,
+                onRetry: (attempt) => {
+                  console.log(`🔄 [PROTECTED] Tentativa ${attempt} de verificar assinatura...`)
+                }
+              }
+            )
             
             if (!hasSubscription) {
               // Sem assinatura ativa - redirecionar para planos
@@ -84,7 +95,7 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
               return
             }
           } catch (error) {
-            // Se der timeout ou erro, permitir acesso (não bloquear)
+            // Se der timeout ou erro após todas as tentativas, permitir acesso (não bloquear)
             console.warn('⚠️ Erro ao verificar assinatura, permitindo acesso:', error)
           }
           
