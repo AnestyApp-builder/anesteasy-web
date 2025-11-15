@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Mail, Lock, Users } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -16,7 +16,43 @@ export default function SecretariaLogin() {
   })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
-  const { login, isLoading } = useSecretariaAuth()
+  const { login, isLoading, isAuthenticated, secretaria } = useSecretariaAuth()
+  const router = useRouter()
+
+  // Redirecionar se já estiver autenticado (especialmente em mobile)
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && secretaria) {
+      // Verificar se é mobile
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        typeof window !== 'undefined' ? navigator.userAgent : ''
+      )
+
+      // Em mobile, redirecionar imediatamente
+      // Em desktop, dar um pequeno delay
+      const delay = isMobile ? 0 : 1000
+
+      setTimeout(() => {
+        router.replace('/secretaria/dashboard')
+      }, delay)
+    }
+  }, [isLoading, isAuthenticated, secretaria, router])
+
+  // Mostrar loading enquanto verifica autenticação
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-teal-50 to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Carregando...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Não renderizar se já estiver logado
+  if (isAuthenticated && secretaria) {
+    return null
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

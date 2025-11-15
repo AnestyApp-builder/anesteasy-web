@@ -21,14 +21,40 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
 import { useAuth } from '@/contexts/AuthContext'
+import { Navigation } from '@/components/layout/Navigation'
 
 export default function Home() {
   const { user, isAuthenticated, isEmailConfirmed, isLoading, logout } = useAuth()
   const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const hasRedirected = useRef(false)
 
-  // Removido redirecionamento automático para evitar loops
-  // O usuário pode escolher ficar na página inicial ou ir para o dashboard
+  // Redirecionamento automático para dashboard quando autenticado (especialmente em mobile)
+  useEffect(() => {
+    // Evitar múltiplos redirecionamentos
+    if (hasRedirected.current) return
+
+    // Aguardar carregamento completo
+    if (isLoading) return
+
+    // Se estiver autenticado e email confirmado, redirecionar para dashboard
+    if (isAuthenticated && user && isEmailConfirmed) {
+      // Verificar se é mobile
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        typeof window !== 'undefined' ? navigator.userAgent : ''
+      )
+
+      // Em mobile, redirecionar imediatamente
+      // Em desktop, dar um pequeno delay para permitir visualização da página
+      const delay = isMobile ? 0 : 2000
+
+      hasRedirected.current = true
+      
+      setTimeout(() => {
+        router.replace('/dashboard')
+      }, delay)
+    }
+  }, [isAuthenticated, isEmailConfirmed, isLoading, user, router])
 
   // Controlar o vídeo de fundo
   useEffect(() => {
@@ -43,10 +69,14 @@ export default function Home() {
   // Mostrar loading enquanto verifica autenticação
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Verificando autenticação...</p>
+      <div className="min-h-screen bg-white">
+        {/* Navigation sempre visível em mobile */}
+        <Navigation />
+        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] pt-16">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+            <p className="text-gray-600">Verificando autenticação...</p>
+          </div>
         </div>
       </div>
     )

@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { isSecretaria } from '@/lib/user-utils'
 import { hasActiveSubscription } from '@/lib/subscription'
 import { retryWithTimeout } from '@/lib/utils'
+import { Navigation } from '@/components/layout/Navigation'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -21,6 +22,31 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
 
   // Rotas que não requerem assinatura
   const publicRoutes = ['/planos', '/checkout']
+
+  // Timeout de segurança para evitar travamentos (especialmente em mobile)
+  useEffect(() => {
+    // Se estiver autenticado e confirmado, mas travado em loading por muito tempo, redirecionar
+    if (isAuthenticated && isEmailConfirmed && user && (isCheckingSecretaria || isCheckingSubscription)) {
+      const safetyTimeout = setTimeout(() => {
+        console.warn('⚠️ [PROTECTED] Timeout de segurança - redirecionando para dashboard')
+        // Verificar se é secretária antes de redirecionar
+        isSecretaria(user.id)
+          .then((isSec) => {
+            if (isSec) {
+              router.replace('/secretaria/dashboard')
+            } else {
+              router.replace('/dashboard')
+            }
+          })
+          .catch(() => {
+            // Se der erro, redirecionar para dashboard padrão
+            router.replace('/dashboard')
+          })
+      }, 10000) // 10 segundos máximo
+
+      return () => clearTimeout(safetyTimeout)
+    }
+  }, [isAuthenticated, isEmailConfirmed, user, isCheckingSecretaria, isCheckingSubscription, router])
 
   useEffect(() => {
     const checkUserType = async () => {
@@ -111,10 +137,14 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
 
   if (isLoading || isCheckingSecretaria || isCheckingSubscription) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
+      <div className="min-h-screen bg-white">
+        {/* Navigation sempre visível em mobile */}
+        <Navigation />
+        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] pt-16">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando...</p>
+          </div>
         </div>
       </div>
     )

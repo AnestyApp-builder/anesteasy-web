@@ -79,6 +79,18 @@ function SecretariaDashboardContent() {
   const [isProcessingRequest, setIsProcessingRequest] = useState<string | null>(null)
   const router = useRouter()
 
+  // Timeout de segurança para evitar travamentos (especialmente em mobile)
+  useEffect(() => {
+    if (isLoading && !authLoading) {
+      const safetyTimeout = setTimeout(() => {
+        console.warn('⚠️ [SECRETARIA DASHBOARD] Timeout de segurança - parando loading')
+        setIsLoading(false)
+      }, 15000) // 15 segundos máximo
+
+      return () => clearTimeout(safetyTimeout)
+    }
+  }, [isLoading, authLoading])
+
   // Carregar dados da secretaria e procedimentos
   useEffect(() => {
     let isMounted = true
@@ -406,10 +418,26 @@ function SecretariaDashboardContent() {
 
   if (authLoading || isLoading) {
     return (
-      <div className="min-h-screen user-area-bg flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
+      <div className="min-h-screen user-area-bg">
+        {/* Header sempre visível em mobile */}
+        <header className="bg-gradient-to-r from-teal-600 to-teal-700 border-b border-teal-800 shadow-lg fixed top-0 left-0 right-0 z-[9999]">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+            <div className="flex justify-between items-center h-14 sm:h-16">
+              <div className="flex items-center min-w-0 flex-1">
+                <Users className="w-6 h-6 sm:w-8 sm:h-8 text-white mr-2 sm:mr-3 flex-shrink-0" />
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-xl font-semibold text-white truncate">AnestEasy</h1>
+                  <p className="text-xs sm:text-sm text-teal-100 hidden sm:block">Área da Secretaria</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] pt-16">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando...</p>
+          </div>
         </div>
       </div>
     )
@@ -417,21 +445,37 @@ function SecretariaDashboardContent() {
 
   if (error) {
     return (
-      <div className="min-h-screen user-area-bg flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="text-center text-red-600">Erro</CardTitle>
-          </CardHeader>
-          <div className="p-6">
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-            <Button onClick={() => router.push('/login')} className="w-full mt-4">
-              Voltar ao Login
-            </Button>
+      <div className="min-h-screen user-area-bg">
+        {/* Header sempre visível em mobile */}
+        <header className="bg-gradient-to-r from-teal-600 to-teal-700 border-b border-teal-800 shadow-lg fixed top-0 left-0 right-0 z-[9999]">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+            <div className="flex justify-between items-center h-14 sm:h-16">
+              <div className="flex items-center min-w-0 flex-1">
+                <Users className="w-6 h-6 sm:w-8 sm:h-8 text-white mr-2 sm:mr-3 flex-shrink-0" />
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-xl font-semibold text-white truncate">AnestEasy</h1>
+                  <p className="text-xs sm:text-sm text-teal-100 hidden sm:block">Área da Secretaria</p>
+                </div>
+              </div>
+            </div>
           </div>
-        </Card>
+        </header>
+        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] pt-16 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="text-center text-red-600">Erro</CardTitle>
+            </CardHeader>
+            <div className="p-6">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+              <Button onClick={() => router.push('/login')} className="w-full mt-4">
+                Voltar ao Login
+              </Button>
+            </div>
+          </Card>
+        </div>
       </div>
     )
   }
@@ -439,7 +483,7 @@ function SecretariaDashboardContent() {
   return (
     <div className="min-h-screen user-area-bg">
       {/* Header */}
-      <header className="bg-gradient-to-r from-teal-600 to-teal-700 border-b border-teal-800 shadow-lg sticky top-0 z-50">
+      <header className="bg-gradient-to-r from-teal-600 to-teal-700 border-b border-teal-800 shadow-lg fixed top-0 left-0 right-0 z-[9999]">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
             <div className="flex items-center min-w-0 flex-1">
@@ -487,6 +531,9 @@ function SecretariaDashboardContent() {
           </div>
         </div>
       </header>
+
+      {/* Espaçamento para compensar o header fixo */}
+      <div className="h-14 sm:h-16"></div>
 
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-3 sm:py-4 lg:py-6 xl:py-8">
         {/* Header Section */}
@@ -859,10 +906,26 @@ export default function SecretariaDashboard() {
   
   if (isLoading) {
     return (
-      <div className="min-h-screen user-area-bg flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
+      <div className="min-h-screen user-area-bg">
+        {/* Header sempre visível em mobile */}
+        <header className="bg-gradient-to-r from-teal-600 to-teal-700 border-b border-teal-800 shadow-lg fixed top-0 left-0 right-0 z-[9999]">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+            <div className="flex justify-between items-center h-14 sm:h-16">
+              <div className="flex items-center min-w-0 flex-1">
+                <Users className="w-6 h-6 sm:w-8 sm:h-8 text-white mr-2 sm:mr-3 flex-shrink-0" />
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-xl font-semibold text-white truncate">AnestEasy</h1>
+                  <p className="text-xs sm:text-sm text-teal-100 hidden sm:block">Área da Secretaria</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] pt-16">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando...</p>
+          </div>
         </div>
       </div>
     )
