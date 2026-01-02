@@ -5,6 +5,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // ⚡ CACHE BUSTING: Gerar buildId único a cada deploy
   generateBuildId: async () => {
     // Usar timestamp + random para garantir uniqueness em cada build

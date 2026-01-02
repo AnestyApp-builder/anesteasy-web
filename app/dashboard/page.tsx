@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
 import { 
   TrendingUp, 
   DollarSign, 
@@ -16,7 +17,9 @@ import {
   X,
   Paperclip,
   Settings,
-  CheckCircle,
+  Loader2,
+  ArrowRight,
+  Zap,
   AlertCircle
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
@@ -25,12 +28,15 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/Button'
 import { procedureService, ProcedureAttachment } from '@/lib/procedures'
 import { goalService } from '@/lib/goals'
+import { shiftService } from '@/lib/shifts'
 import { useAuth } from '@/contexts/AuthContext'
+import { useSecretaria } from '@/contexts/SecretariaContext'
 import { formatCurrency, formatDate, getFullGreeting, handleButtonPress, handleCardPress, retryWithTimeout } from '@/lib/utils'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { Loading } from '@/components/ui/Loading'
+import { SkeletonStatsCard, SkeletonChart, SkeletonProcedureList } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { useRouter } from 'next/navigation'
-import { isSecretaria } from '@/lib/user-utils'
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -71,42 +77,53 @@ export default function Dashboard() {
   } | null>(null)
   const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null)
   const [monthlyProcedures, setMonthlyProcedures] = useState<any[]>([])
+  const [monthlyShifts, setMonthlyShifts] = useState<any[]>([])
+  const [allProcedures, setAllProcedures] = useState<any[]>([])
+  const [allShifts, setAllShifts] = useState<any[]>([])
+  const [monthlyStats, setMonthlyStats] = useState<any>({
+    receivedValue: 0,
+    pendingValue: 0,
+    totalMonthly: 0,
+    completedMonthly: 0,
+    paidProcedures: [],
+    pendingProcedures: [],
+    monthlyProcs: [],
+    totalMonthlyShifts: 0,
+    completedMonthlyShifts: 0,
+    paidShifts: [],
+    pendingShifts: [],
+    monthlyShiftsFiltered: []
+  })
   const { user } = useAuth()
+  const { secretaria, isLoading: secretariaLoading } = useSecretaria()
   const router = useRouter()
+  
 
-  // Verificar se é secretária e redirecionar
+  // Verificar cache de autenticação e redirecionar se necessário
   useEffect(() => {
-    const checkIfSecretaria = async () => {
-      if (user?.id) {
+    if (user?.id) {
+      // Verificar cache local para decisão rápida
+      const cachedAuth = localStorage.getItem('auth_cache')
+      if (cachedAuth) {
         try {
-          // Usar retry com timeout maior para melhorar confiabilidade
-          const secretaria = await retryWithTimeout(
-            () => isSecretaria(user.id),
-            {
-              maxRetries: 2,
-              timeout: 5000, // 5 segundos
-              delay: 500,
-              onRetry: (attempt) => {
-                console.log(`🔄 [DASHBOARD] Tentativa ${attempt} de verificar secretária...`)
-              }
-            }
-          )
-          
-          if (secretaria) {
+          const cached = JSON.parse(cachedAuth)
+          if (cached.role === 'secretaria') {
             router.push('/secretaria/dashboard')
             return
           }
         } catch (error) {
-          // Se der timeout após todas as tentativas, continuar como anestesista
-          console.warn('⚠️ Erro ao verificar secretária no dashboard, continuando:', error)
+          // Cache inválido, continuar
         }
-        
-        // Só carregar dados se não for secretária
-        loadDashboardData()
-        loadMonthlyGoal()
       }
+      
+      // Carregar dados em paralelo
+      Promise.all([
+        loadDashboardData(),
+        loadMonthlyGoal()
+      ]).catch((error) => {
+        console.error('Erro ao carregar dados do dashboard:', error)
+      })
     }
-    checkIfSecretaria()
   }, [user, router])
 
   // Verificar se precisa resetar a meta e recalcular progresso
@@ -115,7 +132,7 @@ export default function Dashboard() {
       checkAndResetGoal(monthlyGoal)
       calculateProgress(monthlyGoal)
     }
-  }, [stats.completedValue, monthlyGoal, user])
+  }, [monthlyStats.receivedValue, monthlyGoal, user])
 
   // Função para atualizar o índice atual baseado no scroll
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -131,24 +148,41 @@ export default function Dashboard() {
     
     setLoading(true)
     try {
-      // Usar retry com timeout maior para melhorar confiabilidade
-      const [statsData, proceduresData] = await retryWithTimeout(
+      // Usar retry com timeout padronizado de 7s
+      const [statsData, proceduresData, shiftStats, shiftsData] = await retryWithTimeout(
         () => Promise.all([
           procedureService.getProcedureStats(user.id),
-          procedureService.getProcedures(user.id)
+          procedureService.getProcedures(user.id),
+          shiftService.getShiftStats(user.id),
+          shiftService.getShifts(user.id)
         ]),
         {
           maxRetries: 2,
-          timeout: 15000, // 15 segundos
-          delay: 1000,
-          onRetry: (attempt) => {
-            console.log(`🔄 [DASHBOARD] Tentativa ${attempt} de carregar dados...`)
+          timeout: 7000, // Padronizado para 7 segundos
+          delay: 500,
+          onRetry: () => {
+            // Retry de carregamento de dados
           }
         }
       )
       
-      setStats(statsData)
+      // Combinar estatísticas de procedimentos e plantões
+      const combinedStats = {
+        total: statsData.total + shiftStats.total,
+        completed: statsData.completed + shiftStats.completed,
+        pending: statsData.pending + shiftStats.pending,
+        cancelled: statsData.cancelled + shiftStats.cancelled,
+        totalValue: statsData.totalValue + shiftStats.totalValue,
+        completedValue: statsData.completedValue + shiftStats.completedValue,
+        pendingValue: statsData.pendingValue + shiftStats.pendingValue
+      }
+      
+      setStats(combinedStats)
       setRecentProcedures(proceduresData.slice(0, 5))
+      
+      // Armazenar todos os procedimentos e plantões para cálculos totais
+      setAllProcedures(proceduresData)
+      setAllShifts(shiftsData)
       
       // Filtrar procedimentos do mês atual para os detalhes
       const now = new Date()
@@ -163,32 +197,43 @@ export default function Dashboard() {
         return procDate >= monthStart && procDate <= monthEnd
       })
       setMonthlyProcedures(monthlyProcs)
+
+      // Filtrar plantões do mês atual
+      const monthlyShiftsData = shiftsData.filter((shift: any) => {
+        if (!shift.start_date) return false
+        const shiftDate = new Date(shift.start_date)
+        return shiftDate >= monthStart && shiftDate <= monthEnd
+      })
+      setMonthlyShifts(monthlyShiftsData)
       
-      // Carregar anexos para os procedimentos recentes (com retry individual)
+      // Carregar anexos para os procedimentos recentes em paralelo (com retry individual)
       const attachmentsMap: Record<string, ProcedureAttachment[]> = {}
-      for (const procedure of proceduresData.slice(0, 5)) {
+      const attachmentPromises = proceduresData.slice(0, 5).map(async (procedure) => {
         try {
           const procedureAttachments = await retryWithTimeout(
             () => procedureService.getAttachments(procedure.id),
             {
               maxRetries: 2,
-              timeout: 5000, // 5 segundos
+              timeout: 7000, // Padronizado para 7 segundos
               delay: 500
             }
           )
-          attachmentsMap[procedure.id] = procedureAttachments
+          return { id: procedure.id, attachments: procedureAttachments }
         } catch (error) {
-          console.warn(`⚠️ Erro ao carregar anexos do procedimento ${procedure.id}:`, error)
-          attachmentsMap[procedure.id] = []
+          return { id: procedure.id, attachments: [] }
         }
-      }
+      })
+      
+      const attachmentResults = await Promise.all(attachmentPromises)
+      attachmentResults.forEach(({ id, attachments }) => {
+        attachmentsMap[id] = attachments
+      })
       setProcedureAttachments(attachmentsMap)
       
       // Calcular receita mensal dos últimos 6 meses
       const monthlyData = await calculateMonthlyRevenue(proceduresData)
       setMonthlyRevenue(monthlyData)
     } catch (error: any) {
-      console.error('❌ Erro ao carregar dados do dashboard:', error)
       // Em caso de erro, manter dados vazios mas não travar
       setStats({
         total: 0,
@@ -201,6 +246,7 @@ export default function Dashboard() {
       })
       setRecentProcedures([])
       setMonthlyRevenue([])
+      setMonthlyShifts([])
     } finally {
       setLoading(false)
     }
@@ -268,13 +314,6 @@ export default function Dashboard() {
     setGoalError(null)
     
     try {
-      console.log('💾 [GOAL] Salvando meta:', {
-        user_id: user.id,
-        target_value: goal.targetValue,
-        reset_day: goal.resetDay,
-        is_enabled: goal.isEnabled
-      })
-
       // Salvar no Supabase
       const goalData = {
         user_id: user.id,
@@ -286,7 +325,6 @@ export default function Dashboard() {
       const savedGoal = await goalService.saveGoal(goalData)
       
       if (savedGoal) {
-        console.log('✅ [GOAL] Meta salva com sucesso:', savedGoal)
         setMonthlyGoal(goal)
         // Recalcular progresso após salvar
         if (goal.isEnabled) {
@@ -295,11 +333,9 @@ export default function Dashboard() {
         setShowGoalModal(false)
         setGoalError(null)
       } else {
-        console.error('❌ [GOAL] Erro ao salvar meta: saveGoal retornou null')
         setGoalError('Erro ao salvar meta. Por favor, tente novamente.')
       }
     } catch (error: any) {
-      console.error('❌ [GOAL] Erro ao salvar meta:', error)
       setGoalError(error?.message || 'Erro ao salvar meta. Por favor, tente novamente.')
     } finally {
       setIsSavingGoal(false)
@@ -338,7 +374,6 @@ export default function Dashboard() {
     
     // Se chegou o dia de reset e ainda não foi resetado neste período
     if (currentDay >= resetDay && shouldReset) {
-      console.log(`🔄 [DASHBOARD] Resetando meta no dia ${resetDay} do mês ${currentMonth + 1}/${currentYear}`)
       localStorage.setItem(lastResetKey, today.toISOString())
       // Recarregar dados do dashboard para recalcular com novo período
       await loadDashboardData()
@@ -400,38 +435,73 @@ export default function Dashboard() {
     // Calcular dias restantes até o fim do período
     const daysRemaining = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
     
-    console.log(`📅 [GOAL] Cálculo de dias restantes:`, {
-      hoje: now.toLocaleDateString('pt-BR'),
-      diaAtual: currentDay,
-      resetDay: goal.resetDay,
-      inicioPeriodo: startDate.toLocaleDateString('pt-BR'),
-      fimPeriodo: endDate.toLocaleDateString('pt-BR'),
-      diasRestantes: daysRemaining
-    })
-    
-    // Calcular valor atual do período (apenas procedimentos pagos no período atual)
+    // Calcular valor atual do período
+    // Se o período for o mês atual e monthlyStats estiver disponível, usar receivedValue
+    // (que já considera parcelas recebidas no mês baseado em payment_date)
     let currentValue = 0
-    try {
-      const procedures = await procedureService.getProcedures(user.id)
-      
-      // Filtrar procedimentos pagos no período atual
-      const periodProcedures = procedures.filter((proc: any) => {
-        if (proc.payment_status !== 'paid' || !proc.payment_date) return false
+    
+    const monthStart = new Date(currentYear, currentMonth, 1)
+    const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999)
+    
+    // Se o período da meta corresponde ao mês atual, usar monthlyStats.receivedValue
+    if (startDate >= monthStart && endDate <= monthEnd && monthlyStats?.receivedValue !== undefined) {
+      currentValue = monthlyStats.receivedValue
+    } else {
+      // Para outros períodos, calcular manualmente
+      try {
+        const [procedures, shifts] = await Promise.all([
+          procedureService.getProcedures(user.id),
+          shiftService.getShifts(user.id)
+        ])
         
-        const paymentDate = new Date(proc.payment_date)
-        return paymentDate >= startDate && paymentDate < endDate
-      })
-      
-      // Somar valores dos procedimentos do período
-      currentValue = periodProcedures.reduce((sum: number, proc: any) => {
-        return sum + (proc.procedure_value || 0)
-      }, 0)
-      
-      console.log(`📊 [DASHBOARD] Meta: Valor atual do período: R$ ${currentValue.toFixed(2)} (${periodProcedures.length} procedimentos)`)
-    } catch (error) {
-      console.error('Erro ao calcular valor do período:', error)
-      // Fallback: usar valor total se houver erro
-      currentValue = stats.completedValue
+        // Filtrar procedimentos pagos no período atual
+        const periodProcedures = procedures.filter((proc: any) => {
+          if (proc.payment_status !== 'paid' || !proc.payment_date) return false
+          
+          const paymentDate = new Date(proc.payment_date)
+          return paymentDate >= startDate && paymentDate < endDate
+        })
+        
+        // Para procedimentos parcelados, considerar apenas parcelas recebidas no período
+        let proceduresValue = 0
+        for (const proc of periodProcedures) {
+          const isParcelado = proc.payment_method === 'Parcelado' || proc.forma_pagamento === 'Parcelado'
+          if (isParcelado) {
+            try {
+              const parcelas = await procedureService.getParcelas(proc.id)
+              const parcelasDoPeriodo = parcelas.filter((parcela: any) => {
+                if (!parcela.recebida || !parcela.data_recebimento) return false
+                const dataRecebimento = new Date(parcela.data_recebimento)
+                return dataRecebimento >= startDate && dataRecebimento < endDate
+              })
+              proceduresValue += parcelasDoPeriodo.reduce((sum: number, p: any) => sum + (p.valor_parcela || 0), 0)
+            } catch (error) {
+              // Se der erro, usar valor total do procedimento
+              proceduresValue += proc.procedure_value || 0
+            }
+          } else {
+            proceduresValue += proc.procedure_value || 0
+          }
+        }
+        
+        // Filtrar plantões pagos no período atual
+        const periodShifts = shifts.filter((shift: any) => {
+          if (shift.payment_status !== 'paid' || !shift.payment_date) return false
+          
+          const paymentDate = new Date(shift.payment_date)
+          return paymentDate >= startDate && paymentDate < endDate
+        })
+        
+        // Somar valores dos plantões do período
+        const shiftsValue = periodShifts.reduce((sum: number, shift: any) => {
+          return sum + (shift.shift_value || 0)
+        }, 0)
+        
+        currentValue = proceduresValue + shiftsValue
+      } catch (error) {
+        // Fallback: usar monthlyStats.receivedValue se disponível, senão stats.completedValue
+        currentValue = monthlyStats?.receivedValue || stats.completedValue || 0
+      }
     }
     
     const percentage = Math.min(100, (currentValue / goal.targetValue) * 100)
@@ -551,37 +621,117 @@ export default function Dashboard() {
   ]
 
   // Calcular valores mensais para os cards
-  const calculateMonthlyStats = () => {
+  const calculateMonthlyStats = async () => {
     const now = new Date()
     const currentMonth = now.getMonth()
     const currentYear = now.getFullYear()
     const monthStart = new Date(currentYear, currentMonth, 1)
     const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999)
     
-    // Filtrar procedimentos do mês atual
+    // Filtrar procedimentos do mês atual (para contagem total)
     const monthlyProcs = monthlyProcedures.filter((proc: any) => {
       if (!proc.procedure_date) return false
       const procDate = new Date(proc.procedure_date)
       return procDate >= monthStart && procDate <= monthEnd
     })
     
-    // Calcular receita recebida (procedimentos pagos)
-    const paidProcedures = monthlyProcs.filter((p: any) => p.payment_status === 'paid')
-    const receivedValue = paidProcedures.reduce((sum: number, p: any) => {
-      return sum + (p.procedure_value || 0)
+    // Filtrar plantões do mês atual (para contagem total)
+    const monthlyShiftsFiltered = monthlyShifts.filter((shift: any) => {
+      if (!shift.start_date) return false
+      const shiftDate = new Date(shift.start_date)
+      return shiftDate >= monthStart && shiftDate <= monthEnd
+    })
+    
+    // Calcular receita recebida (procedimentos pagos no mês - usar payment_date)
+    // Primeiro buscar todos os procedimentos pagos, depois filtrar por payment_date
+    const allPaidProcedures = allProcedures.filter((p: any) => p.payment_status === 'paid')
+    const paidProceduresThisMonth = allPaidProcedures.filter((p: any) => {
+      if (!p.payment_date) return false
+      const paymentDate = new Date(p.payment_date)
+      return paymentDate >= monthStart && paymentDate <= monthEnd
+    })
+    
+    // Para procedimentos parcelados, considerar apenas parcelas recebidas no mês
+    // Buscar todas as parcelas de uma vez para otimizar
+    const procedureIds = paidProceduresThisMonth.map(p => p.id)
+    const parcelasMap: Record<string, any[]> = {}
+    
+    if (procedureIds.length > 0) {
+      try {
+        // Buscar todas as parcelas de todos os procedimentos pagos do mês
+        for (const procId of procedureIds) {
+          try {
+            const parcelas = await procedureService.getParcelas(procId)
+            parcelasMap[procId] = parcelas || []
+          } catch (error) {
+            parcelasMap[procId] = []
+          }
+        }
+      } catch (error) {
+        // Se der erro, continuar sem parcelas
+      }
+    }
+    
+    let receivedValueProcs = 0
+    for (const proc of paidProceduresThisMonth) {
+      const isParcelado = proc.payment_method === 'Parcelado' || proc.forma_pagamento === 'Parcelado'
+      if (isParcelado) {
+        // Usar parcelas do cache
+        const parcelas = parcelasMap[proc.id] || []
+        const parcelasDoMes = parcelas.filter((parcela: any) => {
+          if (!parcela.recebida || !parcela.data_recebimento) return false
+          const dataRecebimento = new Date(parcela.data_recebimento)
+          return dataRecebimento >= monthStart && dataRecebimento <= monthEnd
+        })
+        receivedValueProcs += parcelasDoMes.reduce((sum: number, p: any) => sum + (p.valor_parcela || 0), 0)
+      } else {
+        // Procedimento não parcelado, usar valor total
+        receivedValueProcs += proc.procedure_value || 0
+      }
+    }
+    
+    // Calcular receita recebida (plantões pagos no mês - usar payment_date)
+    const allPaidShifts = allShifts.filter((s: any) => s.payment_status === 'paid')
+    const paidShiftsThisMonth = allPaidShifts.filter((s: any) => {
+      if (!s.payment_date) return false
+      const paymentDate = new Date(s.payment_date)
+      return paymentDate >= monthStart && paymentDate <= monthEnd
+    })
+    const receivedValueShifts = paidShiftsThisMonth.reduce((sum: number, s: any) => {
+      return sum + (s.shift_value || 0)
     }, 0)
+    
+    const receivedValue = receivedValueProcs + receivedValueShifts
+    
+    // Manter referência aos procedimentos pagos do mês para o modal de detalhes
+    const paidProcedures = paidProceduresThisMonth
+    const paidShifts = paidShiftsThisMonth
     
     // Calcular receita pendente (procedimentos pendentes)
     const pendingProcedures = monthlyProcs.filter((p: any) => p.payment_status === 'pending')
-    const pendingValue = pendingProcedures.reduce((sum: number, p: any) => {
+    const pendingValueProcs = pendingProcedures.reduce((sum: number, p: any) => {
       return sum + (p.procedure_value || 0)
     }, 0)
+    
+    // Calcular receita pendente (plantões pendentes)
+    const pendingShifts = monthlyShiftsFiltered.filter((s: any) => s.payment_status === 'pending')
+    const pendingValueShifts = pendingShifts.reduce((sum: number, s: any) => {
+      return sum + (s.shift_value || 0)
+    }, 0)
+    
+    const pendingValue = pendingValueProcs + pendingValueShifts
     
     // Total de procedimentos do mês
     const totalMonthly = monthlyProcs.length
     
+    // Total de plantões do mês
+    const totalMonthlyShifts = monthlyShiftsFiltered.length
+    
     // Procedimentos concluídos do mês
     const completedMonthly = paidProcedures.length
+    
+    // Plantões concluídos do mês
+    const completedMonthlyShifts = paidShifts.length
     
     return {
       receivedValue,
@@ -590,48 +740,160 @@ export default function Dashboard() {
       completedMonthly,
       paidProcedures,
       pendingProcedures,
-      monthlyProcs
+      monthlyProcs,
+      totalMonthlyShifts,
+      completedMonthlyShifts,
+      paidShifts,
+      pendingShifts,
+      monthlyShiftsFiltered
     }
   }
 
-  const monthlyStats = calculateMonthlyStats()
+  // Calcular estatísticas mensais quando os dados mudarem
+  useEffect(() => {
+    if ((allProcedures.length > 0 || allShifts.length > 0) && (monthlyProcedures.length > 0 || monthlyShifts.length > 0)) {
+      calculateMonthlyStats().then(setMonthlyStats).catch(() => {
+        // Em caso de erro, manter valores padrão
+      })
+    }
+  }, [allProcedures, allShifts, monthlyProcedures, monthlyShifts])
 
   // Função para preparar detalhes do cálculo
-  const prepareCalculationDetails = (statKey: string) => {
+  const prepareCalculationDetails = async (statKey: string) => {
     const now = new Date()
     const monthName = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    const monthStart = new Date(currentYear, currentMonth, 1)
+    const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999)
     
     switch (statKey) {
       case 'received':
+        // Para procedimentos parcelados, buscar e mostrar as parcelas recebidas no mês
+        const itemsToShow: any[] = []
+        let totalValue = 0
+        
+        // Verificar se monthlyStats existe antes de acessar
+        if (!monthlyStats) {
+          return {
+            title: 'Receita Total (mensal) - Recebida',
+            description: `Valores recebidos em ${monthName}`,
+            procedures: [],
+            totalValue: 0,
+            period: monthName
+          }
+        }
+        
+        // Processar procedimentos pagos do mês
+        if (monthlyStats.paidProcedures && monthlyStats.paidProcedures.length > 0) {
+          for (const proc of monthlyStats.paidProcedures) {
+            const isParcelado = proc.payment_method === 'Parcelado' || proc.forma_pagamento === 'Parcelado'
+            
+            if (isParcelado) {
+              // Buscar parcelas do procedimento
+              try {
+                const parcelas = await procedureService.getParcelas(proc.id)
+                const parcelasDoMes = parcelas.filter((parcela: any) => {
+                  if (!parcela.recebida || !parcela.data_recebimento) return false
+                  const dataRecebimento = new Date(parcela.data_recebimento)
+                  return dataRecebimento >= monthStart && dataRecebimento <= monthEnd
+                })
+                
+                // Adicionar cada parcela como item separado
+                for (const parcela of parcelasDoMes) {
+                  itemsToShow.push({
+                    id: `${proc.id}-parcela-${parcela.id}`,
+                    type: 'parcela',
+                    procedure_id: proc.id,
+                    patient_name: proc.patient_name,
+                    procedure_name: proc.procedure_name || proc.procedure_type,
+                    procedure_date: proc.procedure_date,
+                    parcela_numero: parcela.numero_parcela || 0,
+                    value: parcela.valor_parcela || 0,
+                    payment_date: parcela.data_recebimento,
+                    isParcela: true
+                  })
+                  totalValue += parcela.valor_parcela || 0
+                }
+              } catch (error) {
+                console.error('Erro ao buscar parcelas:', error)
+                // Se der erro ao buscar parcelas, adicionar procedimento completo
+                itemsToShow.push({
+                  ...proc,
+                  type: 'procedure',
+                  isParcela: false
+                })
+                totalValue += proc.procedure_value || 0
+              }
+            } else {
+              // Procedimento não parcelado, adicionar normalmente
+              itemsToShow.push({
+                ...proc,
+                type: 'procedure',
+                isParcela: false
+              })
+              totalValue += proc.procedure_value || 0
+            }
+          }
+        }
+        
+        // Adicionar plantões pagos do mês
+        if (monthlyStats.paidShifts && monthlyStats.paidShifts.length > 0) {
+          for (const shift of monthlyStats.paidShifts) {
+            itemsToShow.push({
+              ...shift,
+              type: 'shift',
+              isParcela: false
+            })
+            totalValue += shift.shift_value || 0
+          }
+        }
+        
         return {
           title: 'Receita Total (mensal) - Recebida',
-          description: `Soma dos valores de todos os procedimentos pagos realizados em ${monthName}`,
-          procedures: monthlyStats.paidProcedures,
-          totalValue: monthlyStats.receivedValue,
+          description: `Valores recebidos em ${monthName}`,
+          procedures: itemsToShow,
+          totalValue: totalValue,
           period: monthName
         }
       case 'pending':
+        // Calcular todos os procedimentos e plantões não pagos (tudo exceto 'paid')
+        // Inclui 'pending' e 'cancelled' (Aguardando)
+        const allPendingProcedures = (allProcedures || []).filter((p: any) => 
+          p.payment_status !== 'paid' && p.payment_status !== null && p.payment_status !== undefined
+        )
+        const allPendingShifts = (allShifts || []).filter((s: any) => 
+          s.payment_status !== 'paid' && s.payment_status !== null && s.payment_status !== undefined
+        )
+        const totalPendingValue = allPendingProcedures.reduce((sum: number, p: any) => sum + (p.procedure_value || 0), 0) +
+          allPendingShifts.reduce((sum: number, s: any) => sum + (s.shift_value || 0), 0)
+        
+        // Se não houver dados carregados ainda, usar o valor de stats.pendingValue
+        const finalPendingValue = (allProcedures.length === 0 && allShifts.length === 0) 
+          ? stats.pendingValue 
+          : totalPendingValue
+        
         return {
-          title: 'Receita Total (mensal) - Pendente',
-          description: `Soma dos valores de todos os procedimentos pendentes realizados em ${monthName}`,
-          procedures: monthlyStats.pendingProcedures,
-          totalValue: monthlyStats.pendingValue,
-          period: monthName
+          title: 'Receita Total - Pendente',
+          description: 'Soma dos valores de todos os procedimentos e plantões não pagos (pendentes e aguardando)',
+          procedures: [...allPendingProcedures, ...allPendingShifts],
+          totalValue: finalPendingValue,
+          period: 'Total'
         }
       case 'total':
         return {
           title: 'Procedimentos (mensal) - Total',
           description: `Total de procedimentos realizados em ${monthName}`,
-          procedures: monthlyStats.monthlyProcs,
-          totalValue: monthlyStats.totalMonthly,
+          procedures: monthlyStats?.monthlyProcs || [],
+          totalValue: monthlyStats?.totalMonthly || 0,
           period: monthName
         }
-      case 'completed':
+      case 'shifts':
         return {
-          title: 'Procedimentos Realizados - Concluídos',
-          description: `Total de procedimentos pagos realizados em ${monthName}`,
-          procedures: monthlyStats.paidProcedures,
-          totalValue: monthlyStats.completedMonthly,
+          title: 'Plantões (mensal) - Total',
+          description: `Total de plantões realizados em ${monthName}`,
+          procedures: monthlyStats?.monthlyShiftsFiltered || [],
+          totalValue: monthlyStats?.totalMonthlyShifts || 0,
           period: monthName
         }
       default:
@@ -641,8 +903,8 @@ export default function Dashboard() {
 
   // Handlers para long press
   const handleLongPressStart = (statKey: string) => {
-    const timer = setTimeout(() => {
-      const details = prepareCalculationDetails(statKey)
+    const timer = setTimeout(async () => {
+      const details = await prepareCalculationDetails(statKey)
       if (details) {
         setCalculationDetails(details)
         setShowCalculationModal(true)
@@ -668,8 +930,8 @@ export default function Dashboard() {
       statKey: 'received'
     },
     {
-      title: 'Receita Total (mensal)',
-      value: formatCurrency(monthlyStats.pendingValue),
+      title: 'Receita Total',
+      value: formatCurrency(stats.pendingValue),
       change: 'Pendente',
       changeType: 'neutral' as const,
       icon: DollarSign,
@@ -684,52 +946,54 @@ export default function Dashboard() {
       statKey: 'total'
     },
     {
-      title: 'Procedimentos Realizados',
-      value: monthlyStats.completedMonthly.toString(),
-      change: 'Concluídos',
+      title: 'Plantões (mensal)',
+      value: monthlyStats.totalMonthlyShifts.toString(),
+      change: 'Total',
       changeType: 'positive' as const,
-      icon: Users,
-      statKey: 'completed'
+      icon: Calendar,
+      statKey: 'shifts'
     }
   ]
 
+  // Renderizar imediatamente, não bloquear por loading
   return (
     <ProtectedRoute>
       <Layout>
         <div className="space-y-8">
-          {/* Header */}
+          {/* Header - sempre visível */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Dashboard</h1>
               <p className="text-base sm:text-lg text-gray-600 mt-1 font-medium">{getFullGreeting(user?.name, user?.gender)}</p>
             </div>
-            <div className="mt-4 sm:mt-0 hidden lg:block">
-              <Link href="/procedimentos/novo">
-                <Button 
-                  onClick={() => handleButtonPress(undefined, 'medium')}
-                  className="text-base sm:text-lg font-semibold px-6 py-3"
-                >
-                  <Calendar className="w-5 h-5 mr-2" />
-                  Novo Procedimento
-                </Button>
-              </Link>
-            </div>
           </div>
 
         {/* Stats Grid - Mobile Carousel */}
         <div className="lg:hidden">
-          <div 
-            className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
-            style={{
-              WebkitOverflowScrolling: 'touch',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none'
-            }}
-            onScroll={handleScroll}
-          >
-            {dashboardStats.map((stat, index) => (
+          {loading ? (
+            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <SkeletonStatsCard key={index} />
+              ))}
+            </div>
+          ) : (
+            <div 
+              className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
+              style={{
+                WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none'
+              }}
+              onScroll={handleScroll}
+            >
+              {dashboardStats.map((stat, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                >
               <Card 
-                key={index} 
                 className="min-w-[280px] flex-shrink-0 hover:shadow-lg transition-all duration-300 cursor-pointer select-none"
                 onMouseDown={() => handleLongPressStart(stat.statKey)}
                 onMouseUp={handleLongPressEnd}
@@ -764,9 +1028,10 @@ export default function Dashboard() {
                   </div>
                 </div>
               </Card>
-            ))}
-          </div>
-          
+                </motion.div>
+              ))}
+            </div>
+          )}
           {/* Indicadores de paginação */}
           <div className="flex justify-center items-center gap-1 mt-3 mb-2">
             {dashboardStats.map((_, index) => (
@@ -778,7 +1043,6 @@ export default function Dashboard() {
               ></div>
             ))}
           </div>
-          
           {/* Dica de texto */}
           <p className="text-xs text-gray-400 text-center">
             Deslize para o lado
@@ -830,10 +1094,10 @@ export default function Dashboard() {
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-600">
-                      {formatCurrency(currentProgress.currentValue || stats.completedValue)} de {formatCurrency(monthlyGoal.targetValue)}
+                      {formatCurrency(currentProgress.currentValue || monthlyStats?.receivedValue || 0)} de {formatCurrency(monthlyGoal.targetValue)}
                     </span>
                     <span className="font-medium text-teal-600">
-                      {formatCurrency(monthlyGoal.targetValue - (currentProgress.currentValue || stats.completedValue))} restante
+                      {formatCurrency(monthlyGoal.targetValue - (currentProgress.currentValue || monthlyStats?.receivedValue || 0))} restante
                     </span>
                   </div>
                 </div>
@@ -859,10 +1123,87 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {/* Seção de Ações Rápidas */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold text-gray-900">Ações Rápidas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+              {/* Cadastro Rápido */}
+              <Link href="/procedimentos/rapido" className="w-full">
+                <div
+                  className="w-full bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3 cursor-pointer active:scale-95"
+                  onClick={() => handleButtonPress(undefined, 'medium')}
+                >
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span className="text-[10px] sm:text-xs font-medium text-gray-900 text-center leading-tight px-0.5">Cadastro Rápido</span>
+                </div>
+              </Link>
+
+              {/* Cadastro Detalhado */}
+              <Link href="/procedimentos/novo" className="w-full">
+                <div
+                  className="w-full bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3 cursor-pointer active:scale-95"
+                  onClick={() => handleButtonPress(undefined, 'medium')}
+                >
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="text-[10px] sm:text-xs font-medium text-gray-900 text-center leading-tight px-0.5">Cadastro Detalhado</span>
+                </div>
+              </Link>
+
+              {/* Vincular Secretária */}
+              {secretariaLoading ? (
+                <div className="w-full bg-gray-50 rounded-lg border border-gray-200 animate-pulse flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3">
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 bg-gray-200 rounded"></div>
+                  <div className="h-2.5 w-12 sm:w-16 bg-gray-200 rounded"></div>
+                </div>
+              ) : secretaria ? (
+                <Link href="/configuracoes" className="w-full">
+                  <div className="w-full bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3 cursor-pointer active:scale-95">
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    <span className="text-[10px] sm:text-xs font-medium text-gray-900 text-center leading-tight px-0.5">{secretaria.nome.split(' ')[0]}</span>
+                  </div>
+                </Link>
+              ) : (
+                <Link href="/configuracoes" className="w-full">
+                  <div className="w-full bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3 cursor-pointer active:scale-95">
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                    </svg>
+                    <span className="text-[10px] sm:text-xs font-medium text-gray-900 text-center leading-tight px-0.5">Vincular Secretária</span>
+                  </div>
+                </Link>
+              )}
+
+            </div>
+
+          </CardContent>
+        </Card>
 
         {/* Stats Grid - Desktop */}
         <div className="hidden lg:grid grid-cols-4 gap-6">
-          {dashboardStats.map((stat, index) => (
+          {loading ? (
+            <>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <SkeletonStatsCard key={index} />
+              ))}
+            </>
+          ) : (
+            <>
+              {dashboardStats.map((stat, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: index * 0.1 }}
+            >
             <Card 
               key={index} 
               className="hover:shadow-lg transition-all duration-300 cursor-pointer select-none"
@@ -897,16 +1238,27 @@ export default function Dashboard() {
                     {stat.change}
                   </span>
                 </div>
-              </div>
-            </Card>
-          ))}
+                </div>
+              </Card>
+            </motion.div>
+              ))}
+            </>
+          )}
         </div>
 
 
         {/* Charts and Recent Activity */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
           {/* Revenue Chart */}
-          <Card className="overflow-hidden">
+          {loading ? (
+            <SkeletonChart />
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+            >
+            <Card className="overflow-hidden">
             <CardHeader className="pb-4">
               <CardTitle className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Receita dos Últimos 6 Meses</CardTitle>
             </CardHeader>
@@ -977,9 +1329,19 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
+            </motion.div>
+          )}
 
           {/* Status Distribution */}
-          <Card className="overflow-hidden">
+          {loading ? (
+            <SkeletonChart />
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+            >
+            <Card className="overflow-hidden">
             <CardHeader className="pb-4">
               <CardTitle className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Distribuição por Status</CardTitle>
             </CardHeader>
@@ -1033,6 +1395,8 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
+            </motion.div>
+          )}
         </div>
 
         {/* Recent Procedures */}
@@ -1047,16 +1411,27 @@ export default function Dashboard() {
             </Link>
           </div>
             {loading ? (
-              <Loading text="Carregando dados..." />
+              <SkeletonProcedureList count={5} />
             ) : recentProcedures.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">Nenhum procedimento encontrado</p>
-                <p className="text-sm text-gray-500 mt-1">Comece criando seu primeiro procedimento</p>
-              </div>
+              <EmptyState
+                icon={FileText}
+                title="Nenhum procedimento ainda"
+                description="Comece criando seu primeiro procedimento para organizar seus atendimentos."
+                action={{
+                  label: 'Criar Procedimento',
+                  onClick: () => router.push('/procedimentos/rapido'),
+                  variant: 'primary'
+                }}
+              />
             ) : (
             <div className="space-y-3 sm:space-y-4">
-                {recentProcedures.map((procedure) => (
+                {recentProcedures.map((procedure, index) => (
+                  <motion.div
+                    key={procedure.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3, delay: index * 0.05 }}
+                  >
                   <div 
                     key={procedure.id} 
                   className="group relative overflow-hidden bg-white rounded-xl border border-gray-200/50 shadow-sm hover:shadow-lg hover:shadow-gray-200/50 hover:border-gray-300/50 cursor-pointer transition-all duration-300 ease-in-out transform hover:-translate-y-1"
@@ -1160,6 +1535,7 @@ export default function Dashboard() {
                     </div>
                     </div>
                   </div>
+                  </motion.div>
                 ))}
               </div>
             )}
@@ -1278,17 +1654,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Floating Action Button - Mobile Only */}
-      <div className="fixed bottom-6 right-6 z-50 lg:hidden">
-        <Link href="/procedimentos/novo">
-          <button 
-            className="h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 bg-teal-600 hover:bg-teal-700 text-white border-0 flex items-center justify-center"
-            onClick={() => handleButtonPress(undefined, 'medium')}
-          >
-            <Plus className="w-7 h-7 stroke-2" />
-          </button>
-        </Link>
-      </div>
 
       {/* Modal de Detalhes do Cálculo */}
       {showCalculationModal && calculationDetails && (
@@ -1298,7 +1663,6 @@ export default function Dashboard() {
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{calculationDetails.title}</h2>
-                <p className="text-sm text-gray-600 mt-1">{calculationDetails.description}</p>
               </div>
               <Button
                 variant="ghost"
@@ -1332,9 +1696,12 @@ export default function Dashboard() {
               {calculationDetails.procedures.length > 0 ? (
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-700">
-                    Procedimentos ({calculationDetails.procedures.length}):
+                    {calculationDetails.title.includes('Receita') && calculationDetails.procedures.some((p: any) => p.isParcela)
+                      ? 'Parcelas e Procedimentos'
+                      : 'Procedimentos'
+                    } ({calculationDetails.procedures.length}):
                   </h3>
-                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  <div className="space-y-2">
                     {calculationDetails.procedures.map((proc: any, idx: number) => (
                       <div key={proc.id || idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="flex items-start justify-between">
@@ -1343,21 +1710,29 @@ export default function Dashboard() {
                               {proc.patient_name || 'Paciente não informado'}
                             </p>
                             <p className="text-xs text-gray-600 mt-1">
-                              {proc.procedure_type || 'Tipo não informado'}
+                              {proc.isParcela 
+                                ? `${proc.procedure_name || proc.procedure_type || 'Procedimento'} - Parcela ${proc.parcela_numero}`
+                                : (proc.procedure_type || proc.procedure_name || 'Tipo não informado')
+                              }
                             </p>
                             {proc.procedure_date && (
                               <p className="text-xs text-gray-500 mt-1">
-                                {formatDate(proc.procedure_date)}
+                                Procedimento: {formatDate(proc.procedure_date)}
+                              </p>
+                            )}
+                            {proc.isParcela && proc.payment_date && (
+                              <p className="text-xs text-teal-600 mt-1 font-medium">
+                                Recebida em: {formatDate(proc.payment_date)}
                               </p>
                             )}
                           </div>
                           {calculationDetails.title.includes('Receita') && (
                             <div className="ml-4 text-right">
                               <p className="text-sm font-semibold text-teal-600">
-                                {formatCurrency(proc.procedure_value || 0)}
+                                {formatCurrency(proc.isParcela ? (proc.value || 0) : (proc.procedure_value || proc.shift_value || 0))}
                               </p>
                               <p className="text-xs text-gray-500 mt-1">
-                                {proc.payment_status === 'paid' ? 'Pago' : 'Pendente'}
+                                {proc.isParcela ? 'Parcela Recebida' : (proc.payment_status === 'paid' ? 'Pago' : 'Pendente')}
                               </p>
                             </div>
                           )}
@@ -1390,6 +1765,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
     </Layout>
     </ProtectedRoute>
   )
