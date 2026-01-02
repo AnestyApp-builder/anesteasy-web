@@ -5,9 +5,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   // ⚡ CACHE BUSTING: Gerar buildId único a cada deploy
   generateBuildId: async () => {
     // Usar timestamp + random para garantir uniqueness em cada build
@@ -15,7 +12,16 @@ const nextConfig = {
   },
   // Otimizações para mobile
   images: {
-    domains: ['localhost', 'zmtwwajyhusyrugobxur.supabase.co'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'zmtwwajyhusyrugobxur.supabase.co',
+      },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+      },
+    ],
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
