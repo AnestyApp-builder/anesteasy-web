@@ -3,9 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev",
     "prebuild": "node scripts/update-version.js",
-    "build": "next build --webpack",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "clear-cache": "node scripts/clear-cache.js",
