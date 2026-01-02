@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Plus, 
   Search, 
@@ -25,7 +27,11 @@ import {
   MessageSquare,
   Image as ImageIcon,
   Download,
-  Banknote
+  Banknote,
+  Stethoscope,
+  Building,
+  CheckCircle,
+  ArrowLeft
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
@@ -37,8 +43,66 @@ import { feedbackService } from '@/lib/feedback'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency, formatDate, handleButtonPress, handleCardPress } from '@/lib/utils'
 import { Loading } from '@/components/ui/Loading'
+import { SkeletonProcedureList } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { useToast } from '@/contexts/ToastContext'
+import { useDebounce } from '@/hooks/useDebounce'
 import { isImageFile } from '@/lib/mime-utils'
 import { supabase } from '@/lib/supabase'
+
+/**
+ * Converte data ISO (YYYY-MM-DD) para formato brasileiro (DD/MM/YYYY)
+ */
+function isoToBrazilian(isoDate: string): string {
+  if (!isoDate) return ''
+  const [year, month, day] = isoDate.split('-')
+  if (year && month && day) {
+    return `${day}/${month}/${year}`
+  }
+  return isoDate
+}
+
+/**
+ * Formata string numérica para formato brasileiro (DD/MM/YYYY)
+ */
+function formatBrazilianDate(input: string): string {
+  // Remove tudo que não é número
+  const cleaned = input.replace(/\D/g, '')
+  
+  if (cleaned.length === 0) return ''
+  if (cleaned.length <= 2) return cleaned
+  if (cleaned.length <= 4) return `${cleaned.slice(0, 2)}/${cleaned.slice(2)}`
+  return `${cleaned.slice(0, 2)}/${cleaned.slice(2, 4)}/${cleaned.slice(4, 8)}`
+}
+
+/**
+ * Converte data brasileira (DD/MM/YYYY) para formato ISO (YYYY-MM-DD)
+ */
+function brazilianToIso(brDate: string): string {
+  if (!brDate) return ''
+  // Remove caracteres não numéricos
+  const cleaned = brDate.replace(/\D/g, '')
+  
+  if (cleaned.length === 0) return ''
+  
+  // Se já está no formato DD/MM/YYYY, converter para ISO
+  if (cleaned.length === 8) {
+    const day = cleaned.slice(0, 2)
+    const month = cleaned.slice(2, 4)
+    const year = cleaned.slice(4, 8)
+    
+    // Validação básica
+    const dayNum = parseInt(day, 10)
+    const monthNum = parseInt(month, 10)
+    const yearNum = parseInt(year, 10)
+    
+    if (dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12 && yearNum >= 1900 && yearNum <= 2100) {
+      return `${year}-${month}-${day}`
+    }
+  }
+  
+  return ''
+}
 
 // Componente de campo editável - Memoizado para evitar re-renders
 const EditField = memo(({ 
@@ -49,7 +113,8 @@ const EditField = memo(({
   options = null,
   isEditingMode,
   editFormData,
-  updateFormField
+  updateFormField,
+  customValue
 }: {
   field: string
   label: string
@@ -59,9 +124,35 @@ const EditField = memo(({
   isEditingMode: boolean
   editFormData: any
   updateFormField: (field: string, value: string) => void
+  customValue?: string // Valor customizado para sobrescrever o value (útil para payment_date com parcelas)
 }) => {
+  const isDateType = type === 'date'
+  const initialValue = customValue || editFormData[field] || value
+  const [displayValue, setDisplayValue] = useState(
+    isDateType && initialValue
+      ? isoToBrazilian(initialValue) 
+      : (initialValue ?? '')
+  )
+  const [isFocused, setIsFocused] = useState(false)
+
+  // Atualizar display quando editFormData ou customValue mudar (apenas para dates)
+  useEffect(() => {
+    if (isDateType) {
+      if (!isFocused) {
+        const currentValue = customValue || editFormData[field] || value
+        setDisplayValue(currentValue ? isoToBrazilian(currentValue) : '')
+      }
+    } else {
+      const newValue = customValue || (editFormData[field] ?? value)
+      if (newValue !== displayValue) {
+        setDisplayValue(newValue)
+      }
+    }
+  }, [editFormData, field, isDateType, isFocused, customValue, value]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (isEditingMode) {
-    const currentValue = editFormData[field] ?? ''
+    // Se tiver customValue, usar ele (útil para payment_date com última parcela)
+    const currentValue = customValue || (editFormData[field] ?? '')
 
     if (type === 'select' && options) {
     return (
@@ -82,6 +173,32 @@ const EditField = memo(({
     )
     }
 
+    // Handler para campos de data
+    const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const inputValue = e.target.value
+      const formatted = formatBrazilianDate(inputValue)
+      setDisplayValue(formatted)
+      
+      const isoValue = brazilianToIso(formatted)
+      updateFormField(field, isoValue || '')
+    }
+
+    const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+      setIsFocused(false)
+      const isoValue = brazilianToIso(e.target.value)
+      if (isoValue) {
+        setDisplayValue(isoToBrazilian(isoValue))
+      } else if (e.target.value === '') {
+        setDisplayValue('')
+      } else {
+        setDisplayValue(currentValue ? isoToBrazilian(currentValue) : '')
+      }
+    }
+
+    const handleDateFocus = () => {
+      setIsFocused(true)
+    }
+
     return (
       <div className="space-y-2 h-[90px]">
         <label className="text-sm font-medium text-gray-700 block h-5 truncate" title={label}>{label}</label>
@@ -97,9 +214,14 @@ const EditField = memo(({
           </div>
         ) : (
           <input
-            type={type}
-            value={currentValue}
-            onChange={(e) => updateFormField(field, e.target.value)}
+            type={isDateType ? 'text' : type}
+            inputMode={isDateType ? 'numeric' : undefined}
+            maxLength={isDateType ? 10 : undefined}
+            value={isDateType ? displayValue : currentValue}
+            onChange={isDateType ? handleDateChange : (e) => updateFormField(field, e.target.value)}
+            onBlur={isDateType ? handleDateBlur : undefined}
+            onFocus={isDateType ? handleDateFocus : undefined}
+            placeholder={isDateType ? 'DD/MM/AAAA' : undefined}
             className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
           />
         )}
@@ -108,7 +230,7 @@ const EditField = memo(({
   }
 
   // Formatar valor monetário quando necessário
-  const formatValue = (val: string) => {
+  const formatValue = (val: string, customValue?: string) => {
     if (field === 'procedure_value' && val && !isNaN(Number(val))) {
       return formatCurrency(Number(val))
     }
@@ -121,6 +243,21 @@ const EditField = memo(({
         case 'refunded': return 'Não Lançado'
         default: return val ?? 'Não informado'
       }
+    }
+    
+    // Se for payment_date e tiver valor customizado (última parcela), usar ele
+    if (field === 'payment_date' && customValue) {
+      return formatDate(customValue)
+    }
+    
+    // Formatar datas
+    if (field === 'payment_date' && val) {
+      return formatDate(val)
+    }
+    
+    // Formatar data do procedimento
+    if (field === 'procedure_date' && val) {
+      return formatDate(val)
     }
     
     // Campos de Sim/Não
@@ -157,11 +294,43 @@ const EditField = memo(({
     return val ?? 'Não informado'
   }
 
+  // Se for payment_date e tiver parcelas recebidas, usar a última data (modo visualização)
+  let finalDisplayValue = customValue || (editFormData[field] ?? value)
+  if (field === 'payment_date' && !customValue) {
+    // Tentar buscar de editFormData.parcelas primeiro
+    if (editFormData.parcelas && Array.isArray(editFormData.parcelas)) {
+      const parcelasRecebidas = editFormData.parcelas.filter((p: any) => p.recebida && p.data_recebimento)
+      if (parcelasRecebidas.length > 0) {
+        // Ordenar por data_recebimento e pegar a mais recente
+        const ultimaParcela = parcelasRecebidas.sort((a: any, b: any) => {
+          const dateA = new Date(a.data_recebimento).getTime()
+          const dateB = new Date(b.data_recebimento).getTime()
+          return dateB - dateA
+        })[0]
+        finalDisplayValue = ultimaParcela.data_recebimento
+      }
+    }
+  }
+  
+  // Para procedure_date, garantir que o valor completo seja usado (não apenas a parte antes do 'T')
+  if (field === 'procedure_date' && !isEditingMode) {
+    // Se tiver customValue (valor completo do selectedProcedure), usar ele
+    if (customValue) {
+      finalDisplayValue = customValue
+    } else {
+      // Caso contrário, tentar usar editFormData ou value
+      const dateValue = editFormData[field] || value
+      if (dateValue) {
+        finalDisplayValue = dateValue
+      }
+    }
+  }
+
   return (
     <div className="space-y-2 h-[90px]">
       <label className="text-sm font-medium text-gray-700 block h-5 truncate" title={label}>{label}</label>
       <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[52px] flex items-center">
-        <p className="text-gray-900 font-medium truncate">{formatValue(editFormData[field] ?? value)}</p>
+        <p className="text-gray-900 font-medium truncate">{formatValue(finalDisplayValue)}</p>
       </div>
     </div>
   )
@@ -170,7 +339,10 @@ const EditField = memo(({
 EditField.displayName = 'EditField'
 
 function ProcedimentosContent() {
+  const router = useRouter()
+  const { addToast } = useToast()
   const [searchTerm, setSearchTerm] = useState('')
+  const debouncedSearchTerm = useDebounce(searchTerm, 300) // Debounce de 300ms
   const [procedures, setProcedures] = useState<Procedure[]>([])
   const [loading, setLoading] = useState(true)
   const [filteredProcedures, setFilteredProcedures] = useState<Procedure[]>([])
@@ -193,11 +365,97 @@ function ProcedimentosContent() {
   const [showImageModal, setShowImageModal] = useState(false)
   const [selectedImage, setSelectedImage] = useState<ProcedureAttachment | null>(null)
   const [dateFilter, setDateFilter] = useState<{start: string, end: string} | null>(null)
+  const [valueFilter, setValueFilter] = useState<{min: string, max: string} | null>(null)
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([])
+  const [showAutocomplete, setShowAutocomplete] = useState(false)
+  const [frequentSearches, setFrequentSearches] = useState<string[]>([])
   const [feedbackStatuses, setFeedbackStatuses] = useState<Record<string, {linkCriado: boolean, respondido: boolean}>>({})
   const [selectedProcedureFeedback, setSelectedProcedureFeedback] = useState<any>(null)
   const [secretariasVinculadas, setSecretariasVinculadas] = useState<Array<{ id: string; nome: string; email: string }>>([])
+  const [loadingAttachments, setLoadingAttachments] = useState<Set<string>>(new Set())
+  const [hasAttachments, setHasAttachments] = useState<Record<string, boolean>>({})
   const [showPaymentRegistrationBanner, setShowPaymentRegistrationBanner] = useState(false)
+  const [visibleProceduresCount, setVisibleProceduresCount] = useState(10)
+  const [deletedProcedure, setDeletedProcedure] = useState<{ procedure: Procedure; index: number } | null>(null)
+  const [undoTimeout, setUndoTimeout] = useState<NodeJS.Timeout | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
+
+  // Carregar buscas frequentes do localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('procedure_frequent_searches')
+      if (saved) {
+        try {
+          setFrequentSearches(JSON.parse(saved))
+        } catch (e) {
+          console.error('Erro ao carregar buscas frequentes:', e)
+        }
+      }
+    }
+  }, [])
+
+  // Salvar busca frequente
+  const saveFrequentSearch = (search: string) => {
+    if (!search || search.trim().length < 2) return
+    
+    const trimmed = search.trim().toLowerCase()
+    setFrequentSearches(prev => {
+      const updated = [trimmed, ...prev.filter(s => s !== trimmed)].slice(0, 10) // Máximo 10 buscas
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('procedure_frequent_searches', JSON.stringify(updated))
+      }
+      return updated
+    })
+  }
+
+  // Gerar sugestões de autocomplete
+  useEffect(() => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setAutocompleteSuggestions([])
+      setShowAutocomplete(false)
+      return
+    }
+
+    const term = searchTerm.toLowerCase()
+    const suggestions = new Set<string>()
+
+    // Buscar em nomes de pacientes
+    procedures.forEach(p => {
+      if (p.patient_name?.toLowerCase().includes(term)) {
+        suggestions.add(p.patient_name)
+      }
+      if (p.procedure_type?.toLowerCase().includes(term)) {
+        suggestions.add(p.procedure_type)
+      }
+      if (p.procedure_name?.toLowerCase().includes(term) && p.procedure_name !== p.procedure_type) {
+        suggestions.add(p.procedure_name)
+      }
+      if (p.hospital?.toLowerCase().includes(term)) {
+        suggestions.add(p.hospital)
+      }
+    })
+
+    // Adicionar buscas frequentes que correspondem
+    frequentSearches.forEach(search => {
+      if (search.includes(term) && !suggestions.has(search)) {
+        suggestions.add(search)
+      }
+    })
+
+    setAutocompleteSuggestions(Array.from(suggestions).slice(0, 8))
+    setShowAutocomplete(suggestions.size > 0)
+  }, [searchTerm, procedures, frequentSearches])
+
+  // Função para limpar todos os filtros
+  const clearAllFilters = () => {
+    setSearchTerm('')
+    setStatusFilter('all')
+    setDateFilter(null)
+    setValueFilter(null)
+    setShowAdvancedFilters(false)
+  }
 
   useEffect(() => {
     if (user?.id) {
@@ -214,8 +472,9 @@ function ProcedimentosContent() {
       
       // Configurar filtro de status se presente na URL
       if (statusParam) {
+        // Converter 'pending,not_launched' para 'pending' (agora inclui cancelled)
         if (statusParam === 'pending,not_launched') {
-          setStatusFilter('pending,not_launched')
+          setStatusFilter('pending')
           // Mostrar banner informativo quando vier do botão "Registrar Pagamento"
           setShowPaymentRegistrationBanner(true)
           // Remover banner após 5 segundos
@@ -241,29 +500,66 @@ function ProcedimentosContent() {
   useEffect(() => {
     let filtered = procedures
 
-    // Filtro por busca
-    if (searchTerm) {
+    // Filtro por busca (usando debouncedSearchTerm para evitar re-renders excessivos)
+    if (debouncedSearchTerm) {
       filtered = filtered.filter(procedure =>
-        procedure.patient_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        procedure.procedure_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        procedure.procedure_name?.toLowerCase().includes(searchTerm.toLowerCase())
+        procedure.patient_name?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        procedure.procedure_type?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        procedure.procedure_name?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        procedure.hospital?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        procedure.nome_cirurgiao?.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
       )
+      
+      // Salvar busca frequente
+      if (debouncedSearchTerm.length >= 2) {
+        saveFrequentSearch(debouncedSearchTerm)
+      }
     }
 
     // Filtro por status
     if (statusFilter !== 'all') {
-      if (statusFilter === 'pending,not_launched') {
-        // Filtrar por pendente e não lançado
+      if (statusFilter === 'pending') {
+        // Filtrar por pendente (inclui cancelled, que agora é tratado como pendente)
         filtered = filtered.filter(procedure => 
           procedure.payment_status === 'pending' || procedure.payment_status === 'cancelled'
         )
-    } else {
+      } else {
         filtered = filtered.filter(procedure => procedure.payment_status === statusFilter)
       }
     }
 
+    // Filtro por data
+    if (dateFilter?.start || dateFilter?.end) {
+      filtered = filtered.filter(procedure => {
+        if (!procedure.procedure_date) return false
+        const procDate = new Date(procedure.procedure_date)
+        
+        if (dateFilter.start && procDate < new Date(dateFilter.start)) return false
+        if (dateFilter.end) {
+          const endDate = new Date(dateFilter.end)
+          endDate.setHours(23, 59, 59, 999) // Incluir o dia inteiro
+          if (procDate > endDate) return false
+        }
+        return true
+      })
+    }
+
+    // Filtro por valor
+    if (valueFilter?.min || valueFilter?.max) {
+      filtered = filtered.filter(procedure => {
+        if (!procedure.procedure_value) return false
+        const value = Number(procedure.procedure_value)
+        
+        if (valueFilter.min && value < Number(valueFilter.min)) return false
+        if (valueFilter.max && value > Number(valueFilter.max)) return false
+        return true
+      })
+    }
+
     setFilteredProcedures(filtered)
-  }, [searchTerm, statusFilter, procedures])
+    // Resetar contador de procedimentos visíveis quando filtros mudarem
+    setVisibleProceduresCount(10)
+  }, [debouncedSearchTerm, statusFilter, dateFilter, valueFilter, procedures])
 
   const loadProcedures = async () => {
     if (!user?.id) return
@@ -273,29 +569,83 @@ function ProcedimentosContent() {
       const data = await procedureService.getProcedures(user.id)
       setProcedures(data)
       
-      // Carregar anexos para todos os procedimentos
+      // OTIMIZAÇÃO: Lazy loading - não carregar anexos automaticamente
+      // Os anexos serão carregados apenas quando o usuário expandir um procedimento
       const attachmentsMap: Record<string, ProcedureAttachment[]> = {}
-      // Carregar status de feedback para todos os procedimentos
-      const feedbackStatusesMap: Record<string, {linkCriado: boolean, respondido: boolean}> = {}
       
-      for (const procedure of data) {
-        const procedureAttachments = await procedureService.getAttachments(procedure.id)
-        attachmentsMap[procedure.id] = procedureAttachments
+      // OTIMIZAÇÃO: Batch queries para status de feedback e contagem de anexos
+      // Buscar status de feedback e contagem de anexos para todos os procedimentos de uma vez
+      const procedureIds = data.map(p => p.id)
+      const feedbackStatusesMap: Record<string, {linkCriado: boolean, respondido: boolean}> = {}
+      const hasAttachmentsMap: Record<string, boolean> = {}
+      
+      if (procedureIds.length > 0) {
+        // Buscar todos os feedbacks de uma vez
+        const { data: feedbackLinks } = await supabase
+          .from('feedback_links')
+          .select('procedure_id, responded_at')
+          .in('procedure_id', procedureIds)
         
-        // Verificar status do feedback
-        const feedbackStatus = await feedbackService.getFeedbackStatus(procedure.id)
-        feedbackStatusesMap[procedure.id] = {
-          linkCriado: feedbackStatus.linkCriado,
-          respondido: feedbackStatus.respondido
-        }
+        // Buscar contagem de anexos (apenas verificar se existem, não carregar todos)
+        const { data: attachmentsCount } = await supabase
+          .from('procedure_attachments')
+          .select('procedure_id')
+          .in('procedure_id', procedureIds)
+        
+        // Processar resultados
+        procedureIds.forEach(procedureId => {
+          const feedbackLink = feedbackLinks?.find(fl => fl.procedure_id === procedureId)
+          feedbackStatusesMap[procedureId] = {
+            linkCriado: !!feedbackLink,
+            respondido: !!feedbackLink?.responded_at
+          }
+          
+          // Verificar se tem anexos (sem carregar os anexos)
+          hasAttachmentsMap[procedureId] = !!attachmentsCount?.find(ac => ac.procedure_id === procedureId)
+        })
       }
       
       setProcedureAttachments(attachmentsMap)
       setFeedbackStatuses(feedbackStatusesMap)
+      
+      // Salvar informações sobre quais procedimentos têm anexos (para mostrar ícone)
+      setHasAttachments(hasAttachmentsMap)
     } catch (error) {
       
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Função para carregar anexos sob demanda (lazy loading)
+  const loadAttachmentsForProcedure = async (procedureId: string) => {
+    // Verificar se já está carregado
+    if (procedureAttachments[procedureId]) {
+      return procedureAttachments[procedureId]
+    }
+
+    // Verificar se já está carregando
+    if (loadingAttachments.has(procedureId)) {
+      return []
+    }
+
+    try {
+      setLoadingAttachments(prev => new Set(prev).add(procedureId))
+      const attachments = await procedureService.getAttachments(procedureId)
+      setProcedureAttachments(prev => ({
+        ...prev,
+        [procedureId]: attachments
+      }))
+      return attachments
+    } catch (error) {
+      console.error('Erro ao carregar anexos:', error)
+      return []
+    } finally {
+      setLoadingAttachments(prev => {
+        const next = new Set(prev)
+        next.delete(procedureId)
+        return next
+      })
     }
   }
 
@@ -346,11 +696,24 @@ function ProcedimentosContent() {
 
     setIsDeleting(true)
     try {
+      // Encontrar o índice do procedimento antes de remover
+      const procedureIndex = procedures.findIndex(p => p.id === procedureToDelete.id)
+      
       const success = await procedureService.deleteProcedure(procedureToDelete.id)
       if (success) {
-        setProcedures(procedures.filter(p => p.id !== procedureToDelete.id))
-        setFilteredProcedures(filteredProcedures.filter(p => p.id !== procedureToDelete.id))
+        // Remover da lista
+        const updatedProcedures = procedures.filter(p => p.id !== procedureToDelete.id)
+        const updatedFiltered = filteredProcedures.filter(p => p.id !== procedureToDelete.id)
+        
+        setProcedures(updatedProcedures)
+        setFilteredProcedures(updatedFiltered)
         setShowDeleteModal(false)
+        
+        // Guardar dados para possível undo
+        setDeletedProcedure({
+          procedure: procedureToDelete,
+          index: procedureIndex
+        })
         setProcedureToDelete(null)
         
         // Fechar modal de detalhes se estiver aberto
@@ -358,18 +721,98 @@ function ProcedimentosContent() {
           closeDetailsModal()
         }
         
-        // Feedback de sucesso
-        alert('Procedimento excluído com sucesso!')
+        // Configurar timeout para realmente excluir após 10 segundos
+        const timeout = setTimeout(() => {
+          setDeletedProcedure(null)
+        }, 10000) // 10 segundos para desfazer
+        setUndoTimeout(timeout)
+        
+        // Feedback de sucesso com opção de desfazer
+        addToast({
+          title: 'Procedimento excluído',
+          description: 'O procedimento foi excluído. Você tem 10 segundos para desfazer.',
+          variant: 'success',
+          duration: 10000
+        })
       } else {
-        alert('Erro ao excluir procedimento. Tente novamente.')
+        addToast({
+          title: 'Erro ao excluir',
+          description: 'Não foi possível excluir o procedimento. Tente novamente.',
+          variant: 'error'
+        })
       }
     } catch (error) {
       
-      alert('Erro ao excluir procedimento. Verifique sua conexão.')
+      addToast({
+        title: 'Erro de conexão',
+        description: 'Não foi possível excluir o procedimento. Verifique sua conexão com a internet.',
+        variant: 'error'
+      })
     } finally {
       setIsDeleting(false)
     }
   }
+
+  const handleUndoDelete = async () => {
+    if (!deletedProcedure) return
+
+    try {
+      // Restaurar o procedimento na lista
+      const restoredProcedures = [...procedures]
+      restoredProcedures.splice(deletedProcedure.index, 0, deletedProcedure.procedure)
+      
+      setProcedures(restoredProcedures)
+      
+      // Reaplicar filtros
+      let restoredFiltered = restoredProcedures
+      if (debouncedSearchTerm) {
+        restoredFiltered = restoredFiltered.filter(procedure =>
+          procedure.patient_name?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+          procedure.procedure_type?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+          procedure.procedure_name?.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
+        )
+      }
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'pending') {
+          restoredFiltered = restoredFiltered.filter(procedure => 
+            procedure.payment_status === 'pending' || procedure.payment_status === 'cancelled'
+          )
+        } else {
+          restoredFiltered = restoredFiltered.filter(procedure => procedure.payment_status === statusFilter)
+        }
+      }
+      setFilteredProcedures(restoredFiltered)
+
+      // Cancelar timeout
+      if (undoTimeout) {
+        clearTimeout(undoTimeout)
+        setUndoTimeout(null)
+      }
+
+      setDeletedProcedure(null)
+      
+      addToast({
+        title: 'Exclusão desfeita',
+        description: 'O procedimento foi restaurado com sucesso.',
+        variant: 'success'
+      })
+    } catch (error) {
+      addToast({
+        title: 'Erro ao desfazer',
+        description: 'Não foi possível restaurar o procedimento.',
+        variant: 'error'
+      })
+    }
+  }
+
+  // Limpar timeout ao desmontar
+  useEffect(() => {
+    return () => {
+      if (undoTimeout) {
+        clearTimeout(undoTimeout)
+      }
+    }
+  }, [undoTimeout])
 
   const handleOpenImageModal = (attachment: ProcedureAttachment) => {
     setSelectedImage(attachment)
@@ -402,18 +845,22 @@ function ProcedimentosContent() {
       setParcelas([])
     }
 
-    // Carregar anexos do procedimento
-    const attachmentsData = await procedureService.getAttachments(procedure.id)
-    setAttachments(attachmentsData)
+    // OTIMIZAÇÃO: Carregar anexos apenas quando o modal for aberto (lazy loading)
+    // Verificar se já estão em cache, senão carregar
+    if (procedureAttachments[procedure.id]) {
+      setAttachments(procedureAttachments[procedure.id])
+    } else {
+      // Carregar anexos sob demanda
+      const attachmentsData = await loadAttachmentsForProcedure(procedure.id)
+      setAttachments(attachmentsData)
+    }
 
     // Carregar dados do feedback se o procedimento tiver feedback solicitado
     // Sempre tentar carregar, mesmo que feedback_solicitado seja false, para verificar se há resposta
     try {
       const feedbackData = await feedbackService.getFeedbackByProcedureId(procedureWithSecretaria.id)
-      console.log('🔍 [FEEDBACK] Dados carregados:', feedbackData)
       setSelectedProcedureFeedback(feedbackData)
     } catch (error) {
-      console.error('❌ [FEEDBACK] Erro ao carregar feedback:', error)
       setSelectedProcedureFeedback(null)
     }
 
@@ -432,7 +879,6 @@ function ProcedimentosContent() {
           .eq('anestesista_id', user.id)
 
         if (error) {
-          console.error('Erro ao carregar secretárias:', error)
           setSecretariasVinculadas([])
         } else {
           const secretarias = (data || [])
@@ -441,7 +887,6 @@ function ProcedimentosContent() {
           setSecretariasVinculadas(secretarias)
         }
       } catch (error) {
-        console.error('Erro ao carregar secretárias:', error)
         setSecretariasVinculadas([])
       }
     }
@@ -737,6 +1182,34 @@ function ProcedimentosContent() {
     }
   }
 
+  // Calcular métricas dos procedimentos
+  const metrics = useMemo(() => {
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+
+    const total = procedures.length
+    
+    const monthlyCount = procedures.filter(proc => {
+      if (!proc.created_at) return false
+      const procDate = new Date(proc.created_at)
+      return procDate.getMonth() === currentMonth && procDate.getFullYear() === currentYear
+    }).length
+
+    const paidCount = procedures.filter(proc => proc.payment_status === 'paid').length
+    
+    const pendingCount = procedures.filter(proc => 
+      proc.payment_status === 'pending' || proc.payment_status === 'cancelled'
+    ).length
+
+    return {
+      total,
+      monthly: monthlyCount,
+      paid: paidCount,
+      pending: pendingCount
+    }
+  }, [procedures])
+
   return (
     <Layout>
       <div className="space-y-8">
@@ -760,6 +1233,101 @@ function ProcedimentosContent() {
           </div>
         </div>
 
+        {/* Métricas */}
+        <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+          {/* Mobile: Grid 2x2 */}
+          <div className="grid grid-cols-2 gap-3 sm:hidden">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-teal-50 flex items-center justify-center">
+                <FileText className="w-3.5 h-3.5 text-teal-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</span>
+                <span className="text-base font-bold text-gray-900">{metrics.total}</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center">
+                <Calendar className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Este mês</span>
+                <span className="text-base font-bold text-gray-900">{metrics.monthly}</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-green-50 flex items-center justify-center">
+                <DollarSign className="w-3.5 h-3.5 text-green-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pagos</span>
+                <span className="text-base font-bold text-green-600">{metrics.paid}</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-amber-50 flex items-center justify-center">
+                <Activity className="w-3.5 h-3.5 text-amber-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pendentes</span>
+                <span className="text-base font-bold text-amber-600">{metrics.pending}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop: Flex Horizontal */}
+          <div className="hidden sm:flex items-center gap-x-6 gap-y-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-teal-50 flex items-center justify-center">
+                <FileText className="w-3.5 h-3.5 text-teal-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</span>
+                <span className="text-base font-bold text-gray-900">{metrics.total}</span>
+              </div>
+            </div>
+            
+            <div className="w-px h-6 bg-gray-300"></div>
+            
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center">
+                <Calendar className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Este mês</span>
+                <span className="text-base font-bold text-gray-900">{metrics.monthly}</span>
+              </div>
+            </div>
+            
+            <div className="w-px h-6 bg-gray-300"></div>
+            
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-green-50 flex items-center justify-center">
+                <DollarSign className="w-3.5 h-3.5 text-green-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pagos</span>
+                <span className="text-base font-bold text-green-600">{metrics.paid}</span>
+              </div>
+            </div>
+            
+            <div className="w-px h-6 bg-gray-300"></div>
+            
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-amber-50 flex items-center justify-center">
+                <Activity className="w-3.5 h-3.5 text-amber-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pendentes</span>
+                <span className="text-base font-bold text-amber-600">{metrics.pending}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Banner informativo para registro de pagamento */}
         {showPaymentRegistrationBanner && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4 flex items-center justify-between">
@@ -770,7 +1338,7 @@ function ProcedimentosContent() {
                   Registro de Pagamento
                 </p>
                 <p className="text-xs text-emerald-700 mt-1">
-                  Procedimentos pendentes e não lançados estão sendo exibidos. Clique em um procedimento para registrar o pagamento.
+                  Procedimentos pendentes estão sendo exibidos. Clique em um procedimento para registrar o pagamento.
                 </p>
               </div>
             </div>
@@ -783,47 +1351,154 @@ function ProcedimentosContent() {
           </div>
         )}
 
-        {/* Search */}
+        {/* Search with Autocomplete */}
         <div className="lg:hidden">
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <Input
-                placeholder="Buscar por nome, procedimento..."
-                icon={<Search className="w-4 h-4" />}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="text-base"
-              />
+          <div className="relative">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 relative">
+                <Input
+                  ref={searchInputRef}
+                  placeholder="Buscar por nome, procedimento..."
+                  icon={<Search className="w-4 h-4" />}
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setShowAutocomplete(true)
+                  }}
+                  onFocus={() => {
+                    if (autocompleteSuggestions.length > 0 || frequentSearches.length > 0) {
+                      setShowAutocomplete(true)
+                    }
+                  }}
+                  onBlur={() => {
+                    // Delay para permitir clique nas sugestões
+                    setTimeout(() => setShowAutocomplete(false), 200)
+                  }}
+                  className="text-base"
+                />
+                {/* Autocomplete Dropdown */}
+                {(showAutocomplete && (autocompleteSuggestions.length > 0 || (frequentSearches.length > 0 && !searchTerm))) && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {!searchTerm && frequentSearches.length > 0 && (
+                      <div className="p-2 border-b border-gray-200">
+                        <p className="text-xs font-medium text-gray-500 px-2 py-1">Buscas frequentes</p>
+                        {frequentSearches.slice(0, 5).map((search, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              setSearchTerm(search)
+                              setShowAutocomplete(false)
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded text-sm flex items-center gap-2"
+                          >
+                            <Search className="w-3 h-3 text-gray-400" />
+                            {search}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {autocompleteSuggestions.length > 0 && (
+                      <div className="p-2">
+                        {autocompleteSuggestions.map((suggestion, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              setSearchTerm(suggestion)
+                              setShowAutocomplete(false)
+                              searchInputRef.current?.blur()
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-teal-50 rounded text-sm"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <Button 
+                variant="ghost" 
+                onClick={() => handleButtonPress(() => setShowAdvancedFilters(true), 'light')}
+                title="Filtros avançados"
+              >
+                <Filter className="w-4 h-4" />
+              </Button>
             </div>
-            <Button 
-              variant="ghost" 
-              onClick={() => handleButtonPress(() => setShowDateFilter(true), 'light')}
-              title="Filtrar por período"
-            >
-              <Calendar className="w-4 h-4" />
-            </Button>
           </div>
         </div>
 
-        {/* Desktop Search */}
+        {/* Desktop Search with Autocomplete */}
         <Card className="hidden lg:block">
           <div className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
+              <div className="flex-1 relative">
                 <Input
-                  placeholder="Buscar por nome, procedimento, telefone ou email..."
+                  ref={searchInputRef}
+                  placeholder="Buscar por nome, procedimento, hospital, cirurgião..."
                   icon={<Search className="w-5 h-5" />}
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setShowAutocomplete(true)
+                  }}
+                  onFocus={() => {
+                    if (autocompleteSuggestions.length > 0 || frequentSearches.length > 0) {
+                      setShowAutocomplete(true)
+                    }
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => setShowAutocomplete(false), 200)
+                  }}
                 />
+                {/* Autocomplete Dropdown */}
+                {(showAutocomplete && (autocompleteSuggestions.length > 0 || (frequentSearches.length > 0 && !searchTerm))) && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {!searchTerm && frequentSearches.length > 0 && (
+                      <div className="p-2 border-b border-gray-200">
+                        <p className="text-xs font-medium text-gray-500 px-2 py-1">Buscas frequentes</p>
+                        {frequentSearches.slice(0, 5).map((search, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              setSearchTerm(search)
+                              setShowAutocomplete(false)
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded text-sm flex items-center gap-2"
+                          >
+                            <Search className="w-3 h-3 text-gray-400" />
+                            {search}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {autocompleteSuggestions.length > 0 && (
+                      <div className="p-2">
+                        {autocompleteSuggestions.map((suggestion, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              setSearchTerm(suggestion)
+                              setShowAutocomplete(false)
+                              searchInputRef.current?.blur()
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-teal-50 rounded text-sm"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <Button 
                 variant="outline" 
-                onClick={() => handleButtonPress(() => setShowDateFilter(true), 'light')}
+                onClick={() => handleButtonPress(() => setShowAdvancedFilters(true), 'light')}
                 className="flex items-center gap-2"
               >
-                <Calendar className="w-4 h-4" />
-                <span>Período</span>
+                <Filter className="w-4 h-4" />
+                <span>Filtros Avançados</span>
               </Button>
             </div>
           </div>
@@ -891,51 +1566,7 @@ function ProcedimentosContent() {
             >
               Pago
             </button>
-            <button
-              onClick={() => handleButtonPress(() => setStatusFilter('cancelled'), 'light')}
-              className={`filter-chip flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                statusFilter === 'cancelled'
-                  ? 'bg-red-500 text-white shadow-md'
-                  : 'bg-red-100 text-red-700 hover:bg-red-200'
-              }`}
-            >
-              Não Lançado
-            </button>
-            <button
-              onClick={() => handleButtonPress(() => setStatusFilter('pending,not_launched'), 'light')}
-              className={`filter-chip flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                statusFilter === 'pending,not_launched'
-                  ? 'bg-purple-500 text-white shadow-md'
-                  : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-              }`}
-            >
-              Pendente + Não Lançado
-            </button>
           </div>
-          
-          {/* Indicadores de paginação */}
-          <div className="flex justify-center items-center gap-1 mt-2 mb-1">
-            <div className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
-              statusFilter === 'all' ? 'bg-teal-600' : 'bg-gray-300'
-            }`}></div>
-            <div className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
-              statusFilter === 'pending' ? 'bg-amber-500' : 'bg-gray-300'
-            }`}></div>
-            <div className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
-              statusFilter === 'paid' ? 'bg-green-500' : 'bg-gray-300'
-            }`}></div>
-            <div className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
-              statusFilter === 'cancelled' ? 'bg-red-500' : 'bg-gray-300'
-            }`}></div>
-            <div className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
-              statusFilter === 'pending,not_launched' ? 'bg-purple-500' : 'bg-gray-300'
-            }`}></div>
-          </div>
-          
-          {/* Dica de texto */}
-          <p className="text-xs text-gray-400 text-center">
-            Deslize para o lado
-          </p>
         </div>
 
         {/* Desktop Filters */}
@@ -968,8 +1599,6 @@ function ProcedimentosContent() {
                       <option value="all">Todos os status</option>
                       <option value="pending">Pendente</option>
                       <option value="paid">Pago</option>
-                      <option value="cancelled">Aguardando</option>
-                      <option value="pending,not_launched">Pendente + Não Lançado</option>
                     </select>
                   </div>
                   <div className="flex gap-3">
@@ -1001,18 +1630,28 @@ function ProcedimentosContent() {
         <div>
           <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">Lista de Procedimentos</h2>
             {loading ? (
-              <Loading text="Carregando procedimentos..." />
+              <SkeletonProcedureList count={5} />
           ) : filteredProcedures.length === 0 ? (
-                  <div className="text-center py-8">
-                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">Nenhum procedimento encontrado</p>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {searchTerm ? 'Tente ajustar os filtros de busca' : 'Comece criando seu primeiro procedimento'}
-                    </p>
-                  </div>
+                  <EmptyState
+                    icon={FileText}
+                    title={debouncedSearchTerm ? 'Nenhum procedimento encontrado' : 'Nenhum procedimento ainda'}
+                    description={debouncedSearchTerm ? 'Tente ajustar os filtros de busca ou limpar a pesquisa.' : 'Comece criando seu primeiro procedimento para organizar seus atendimentos.'}
+                    action={debouncedSearchTerm ? undefined : {
+                      label: 'Criar Procedimento',
+                      onClick: () => router.push('/procedimentos/novo'),
+                      variant: 'primary'
+                    }}
+                  />
                 ) : (
             <div className="space-y-3">
-                {filteredProcedures.map((procedure) => (
+                {filteredProcedures.slice(0, visibleProceduresCount).map((procedure, index) => (
+                  <motion.div
+                    key={procedure.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.3, delay: index * 0.03 }}
+                  >
                   <div 
                     key={procedure.id} 
                   className="group relative overflow-hidden bg-white rounded-xl border border-gray-200/50 shadow-sm hover:shadow-lg hover:shadow-gray-200/50 hover:border-gray-300/50 cursor-pointer transition-all duration-300 ease-in-out transform hover:-translate-y-1"
@@ -1031,7 +1670,7 @@ function ProcedimentosContent() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center space-x-2 mb-1">
                               <p className="font-semibold text-gray-900 text-base truncate">{procedure.patient_name}</p>
-                              {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
+                              {(hasAttachments[procedure.id] || (procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0)) && (
                                 <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
                               )}
                               {getFeedbackIndicator(procedure.id) && (
@@ -1063,7 +1702,7 @@ function ProcedimentosContent() {
                           <span className="font-bold text-gray-900 text-lg">{formatCurrency(procedure.procedure_value)}</span>
                         </div>
                         <div className="text-sm text-gray-500 font-medium">
-                          {formatDate(procedure.procedure_date)}
+                          {procedure.procedure_date ? formatDate(procedure.procedure_date) : 'Data não informada'}
                         </div>
                       </div>
                       
@@ -1081,7 +1720,7 @@ function ProcedimentosContent() {
                       <div>
                           <div className="flex items-center space-x-2 mb-1">
                             <p className="font-semibold text-gray-900 text-lg">{procedure.patient_name}</p>
-                            {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
+                            {(hasAttachments[procedure.id] || (procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0)) && (
                               <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
                             )}
                             {getFeedbackIndicator(procedure.id) && (
@@ -1110,26 +1749,40 @@ function ProcedimentosContent() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-6 text-sm text-gray-500">
                         <div className="flex items-center">
-                            <Calendar className="w-4 h-4 mr-1" />
-                            {formatDate(procedure.procedure_date)} às {procedure.procedure_time}
-                          </div>
+                          <Calendar className="w-4 h-4 mr-1" />
+                          {procedure.procedure_date 
+                            ? `${formatDate(procedure.procedure_date)}${procedure.procedure_time ? ` às ${procedure.procedure_time}` : ''}`
+                            : 'Data não informada'}
+                        </div>
                         <div className="flex items-center">
-                            <User className="w-4 h-4 mr-1" />
-                            {user?.name}
+                          <User className="w-4 h-4 mr-1" />
+                          {user?.name}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
+                      <div className="flex items-center space-x-4">
+                        <div className="text-right">
                           <p className="font-bold text-gray-900 text-xl flex items-center justify-end">
                             <DollarSign className="w-5 h-5 mr-2 text-gray-600" />
-                          {formatCurrency(procedure.procedure_value)}
-                        </p>
-                      </div>
-                      </div>
+                            {formatCurrency(procedure.procedure_value)}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
+                </div>
+                  </motion.div>
                 ))}
+                {filteredProcedures.length > visibleProceduresCount && (
+                  <div className="flex justify-center pt-4 pb-2">
+                    <Button
+                      onClick={() => setVisibleProceduresCount(prev => prev + 10)}
+                      variant="outline"
+                      className="w-full sm:w-auto px-6 py-3 text-base font-medium hover:bg-teal-50 hover:border-teal-300 transition-colors"
+                    >
+                      Ver mais {Math.min(10, filteredProcedures.length - visibleProceduresCount)} procedimentos
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1140,22 +1793,22 @@ function ProcedimentosContent() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[9999]">
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
             {/* Header do Modal */}
-            <div className="modal-header bg-gradient-to-r from-teal-500 to-teal-600 text-white p-6 rounded-t-xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                    <FileText className="w-6 h-6 text-white" />
+            <div className="modal-header bg-gradient-to-r from-teal-500 to-teal-600 text-white p-4 sm:p-6 rounded-t-xl">
+              <div className="flex items-center justify-between gap-2 sm:gap-3">
+                <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white">Detalhes do Procedimento</h2>
+                  <div className="min-w-0">
+                    <h2 className="text-base sm:text-lg md:text-xl font-bold text-white break-words truncate">Detalhes do Procedimento</h2>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {!isEditingMode ? (
                     <>
                       <button
                         onClick={startEdit}
-                        className="flex items-center justify-center w-10 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors select-none"
+                        className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors select-none flex-shrink-0"
                         style={{
                           userSelect: 'none',
                           WebkitUserSelect: 'none',
@@ -1171,7 +1824,7 @@ function ProcedimentosContent() {
                       </button>
                       <button
                         onClick={() => handleDeleteClick(selectedProcedure)}
-                        className="flex items-center justify-center w-10 h-10 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors select-none"
+                        className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors select-none flex-shrink-0"
                         style={{
                           userSelect: 'none',
                           WebkitUserSelect: 'none',
@@ -1187,11 +1840,11 @@ function ProcedimentosContent() {
                       </button>
                     </>
                   ) : (
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={saveEdit}
                         disabled={isSaving}
-                        className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors select-none font-medium"
+                        className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors select-none flex-shrink-0"
                         style={{
                           userSelect: 'none',
                           WebkitUserSelect: 'none',
@@ -1201,14 +1854,18 @@ function ProcedimentosContent() {
                           border: 'none',
                           boxShadow: 'none'
                         }}
+                        title={isSaving ? 'Salvando...' : 'Salvar'}
                       >
-                        <Save className="w-4 h-4" />
-                        <span className="text-sm">{isSaving ? 'Salvando...' : 'Salvar'}</span>
+                        {isSaving ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
                       </button>
                       <button
                         onClick={cancelEdit}
                         disabled={isSaving}
-                        className="flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white rounded-lg transition-colors select-none font-medium"
+                        className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white rounded-lg transition-colors select-none flex-shrink-0"
                         style={{
                           userSelect: 'none',
                           WebkitUserSelect: 'none',
@@ -1218,18 +1875,12 @@ function ProcedimentosContent() {
                           border: 'none',
                           boxShadow: 'none'
                         }}
+                        title="Cancelar"
                       >
                         <X className="w-4 h-4" />
-                        <span className="text-sm">Cancelar</span>
                       </button>
                     </div>
                   )}
-                  <button
-                    onClick={closeDetailsModal}
-                    className="text-white hover:text-teal-200 transition-colors p-2 rounded-full hover:bg-white hover:bg-opacity-20"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
                 </div>
               </div>
             </div>
@@ -1365,6 +2016,7 @@ function ProcedimentosContent() {
                     isEditingMode={isEditingMode}
                     editFormData={editFormData}
                     updateFormField={updateFormField}
+                    customValue={!isEditingMode && selectedProcedure.procedure_date ? selectedProcedure.procedure_date : undefined}
                   />
                   <EditField
                     field="procedure_time"
@@ -1809,122 +2461,6 @@ function ProcedimentosContent() {
               </div>
 
               {/* Informações Financeiras */}
-              <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 rounded-xl p-6 shadow-sm">
-                <h3 className="text-xl font-bold text-yellow-800 mb-5 flex items-center">
-                  <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center mr-3">
-                    <DollarSign className="w-5 h-5 text-yellow-600" />
-                  </div>
-                  Informações Financeiras
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <EditField
-                    field="procedure_value"
-                    label="Valor do Procedimento"
-                    value={selectedProcedure.procedure_value ? selectedProcedure.procedure_value.toString() : ''}
-                    type="number"
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <EditField
-                    field="payment_status"
-                    label="Status do Pagamento"
-                    value={selectedProcedure.payment_status || ''}
-                    type="select"
-                    options={[
-                      { value: '', label: 'Selecione...' },
-                      { value: 'pending', label: 'Pendente' },
-                      { value: 'paid', label: 'Pago' },
-                      { value: 'cancelled', label: 'Aguardando' },
-                      { value: 'refunded', label: 'Não Lançado' }
-                    ]}
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <EditField
-                    field="forma_pagamento"
-                    label="Forma de Pagamento"
-                    value={selectedProcedure.forma_pagamento || ''}
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <EditField
-                    field="payment_date"
-                    label="Data do Pagamento"
-                    value={selectedProcedure.payment_date ? selectedProcedure.payment_date.split('T')[0] : ''}
-                    type="date"
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <EditField
-                    field="numero_parcelas"
-                    label="Número de Parcelas"
-                    value={selectedProcedure.numero_parcelas ? selectedProcedure.numero_parcelas.toString() : ''}
-                    type="number"
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <EditField
-                    field="parcelas_recebidas"
-                    label="Parcelas Recebidas"
-                    value={selectedProcedure.parcelas_recebidas ? selectedProcedure.parcelas_recebidas.toString() : ''}
-                    type="number"
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <EditField
-                    field="observacoes_financeiras"
-                    label="Observações Financeiras"
-                    value={selectedProcedure.observacoes_financeiras || ''}
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Secretária Vinculada
-                    </label>
-                    {isEditingMode ? (
-                      <select
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                        value={editFormData.secretaria_id || (selectedProcedure as any).secretaria_id || ''}
-                        onChange={(e) => updateFormField('secretaria_id', e.target.value)}
-                      >
-                        <option value="">Nenhum</option>
-                        {secretariasVinculadas.map((sec) => (
-                          <option key={sec.id} value={sec.id}>
-                            {sec.nome} ({sec.email})
-                          </option>
-                        ))}
-                        {/* Mostrar secretária vinculada mesmo se não estiver na lista (caso tenha sido desvinculada) */}
-                        {(selectedProcedure as any).secretaria_id && 
-                         !secretariasVinculadas.find(s => s.id === (selectedProcedure as any).secretaria_id) && (
-                          <option value={(selectedProcedure as any).secretaria_id} disabled>
-                            Secretária vinculada (não disponível)
-                          </option>
-                        )}
-                      </select>
-                    ) : (
-                      <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                        <span className="text-sm text-gray-600">
-                          {(selectedProcedure as any).secretaria_id ? (() => {
-                            const secretaria = secretariasVinculadas.find(s => s.id === (selectedProcedure as any).secretaria_id)
-                            return secretaria ? `${secretaria.nome} (${secretaria.email})` : 'Secretária vinculada'
-                          })() : 'Nenhuma secretária vinculada'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-
-              {/* Informações Financeiras */}
               <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl p-6 shadow-sm border border-emerald-200">
                 <h3 className="text-xl font-bold text-emerald-800 mb-5 flex items-center">
                   <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
@@ -2072,6 +2608,23 @@ function ProcedimentosContent() {
                           isEditingMode={isEditingMode}
                           editFormData={editFormData}
                           updateFormField={updateFormField}
+                          customValue={(() => {
+                            // Se for parcelado, buscar a última parcela recebida
+                            const isParcelado = selectedProcedure.payment_method === 'Parcelado' || selectedProcedure.forma_pagamento === 'Parcelado'
+                            if (isParcelado && parcelas && parcelas.length > 0) {
+                              const parcelasRecebidas = parcelas.filter((p: any) => p.recebida && p.data_recebimento)
+                              if (parcelasRecebidas.length > 0) {
+                                // Ordenar por data_recebimento e pegar a mais recente
+                                const ultimaParcela = parcelasRecebidas.sort((a: any, b: any) => {
+                                  const dateA = new Date(a.data_recebimento).getTime()
+                                  const dateB = new Date(b.data_recebimento).getTime()
+                                  return dateB - dateA
+                                })[0]
+                                return ultimaParcela.data_recebimento.split('T')[0]
+                              }
+                            }
+                            return undefined
+                          })()}
                   />
                 </div>
                       
@@ -2353,65 +2906,79 @@ function ProcedimentosContent() {
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && procedureToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[10000]">
-          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-[10000] overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl my-4 max-h-[95vh] flex flex-col">
             {/* Header do Modal */}
-            <div className="bg-red-50 border-b border-red-200 p-6 rounded-t-xl">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                  <Trash2 className="w-6 h-6 text-red-600" />
+            <div className="bg-gradient-to-r from-red-50 to-red-100 border-b border-red-200 p-4 sm:p-6 rounded-t-xl flex-shrink-0">
+              <div className="flex items-center space-x-2 sm:space-x-3">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Trash2 className="w-5 h-5 sm:w-6 sm:h-6 text-red-600" />
                 </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-red-800">Confirmar Exclusão</h3>
-                  <p className="text-red-600 text-sm">Esta ação não pode ser desfeita</p>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-lg sm:text-xl font-bold text-red-900 break-words">Confirmar Exclusão</h3>
+                  <p className="text-red-700 text-xs sm:text-sm mt-1 break-words">Tem certeza que deseja excluir este procedimento?</p>
                 </div>
               </div>
             </div>
 
             {/* Conteúdo do Modal */}
-            <div className="p-6">
-              <div className="mb-4">
-                <p className="text-gray-700 mb-2">
-                  Tem certeza que deseja excluir o procedimento:
-                </p>
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
-                      <FileText className="w-4 h-4 text-teal-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{procedureToDelete.patient_name}</p>
-                      <p className="text-sm text-gray-600">{procedureToDelete.procedure_type}</p>
-                      <p className="text-xs text-gray-500">
-                        {formatDate(procedureToDelete.procedure_date)} às {procedureToDelete.procedure_time}
-                      </p>
-                    </div>
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4">
+                <div className="space-y-2 text-sm sm:text-base">
+                  <div>
+                    <span className="text-gray-500">Paciente:</span>{' '}
+                    <span className="font-semibold text-gray-900 break-words">
+                      {procedureToDelete.patient_name || 'Não informado'}
+                    </span>
                   </div>
+                  <div>
+                    <span className="text-gray-500">Procedimento:</span>{' '}
+                    <span className="font-semibold text-gray-900 break-words">
+                      {procedureToDelete.procedure_type || 'Não informado'}
+                    </span>
+                  </div>
+                  {procedureToDelete.procedure_date && (
+                    <div>
+                      <span className="text-gray-500">Data:</span>{' '}
+                      <span className="font-semibold text-gray-900">
+                        {formatDate(procedureToDelete.procedure_date)}
+                        {procedureToDelete.procedure_time && ` às ${procedureToDelete.procedure_time}`}
+                      </span>
+                    </div>
+                  )}
+                  {procedureToDelete.procedure_value && (
+                    <div>
+                      <span className="text-gray-500">Valor:</span>{' '}
+                      <span className="font-semibold text-gray-900">
+                        {formatCurrency(procedureToDelete.procedure_value)}
+                        {procedureToDelete.payment_status && ` (${getStatusText(procedureToDelete.payment_status)})`}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>
-                  Todos os dados relacionados a este procedimento serão permanentemente removidos.
-                </span>
+              <div className="bg-red-50 border-l-4 border-red-500 p-3 sm:p-4 rounded-r-lg">
+                <p className="text-sm sm:text-base text-red-700 break-words">
+                  Esta ação não pode ser desfeita. Todos os dados relacionados serão permanentemente excluídos.
+                </p>
               </div>
             </div>
 
             {/* Footer do Modal */}
-            <div className="bg-gray-50 border-t border-gray-200 p-4 rounded-b-xl">
-              <div className="flex justify-end space-x-3">
+            <div className="bg-gray-50 border-t border-gray-200 p-4 sm:p-6 rounded-b-xl flex-shrink-0">
+              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
                 <button
                   onClick={cancelDelete}
                   disabled={isDeleting}
-                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 text-sm sm:text-base text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={confirmDelete}
                   disabled={isDeleting}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+                  className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 text-sm sm:text-base bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 font-medium shadow-sm"
                 >
                   {isDeleting ? (
                     <>
@@ -2421,10 +2988,243 @@ function ProcedimentosContent() {
                   ) : (
                     <>
                       <Trash2 className="w-4 h-4" />
-                      <span>Excluir Procedimento</span>
+                      <span>Excluir</span>
                     </>
                   )}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notificação de Undo */}
+      {deletedProcedure && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:max-w-md z-[10001] animate-in slide-in-from-bottom-5">
+          <div className="bg-white rounded-lg shadow-2xl border-2 border-green-200 p-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900">Procedimento excluído</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  <span className="font-medium">{deletedProcedure.procedure.patient_name}</span> foi removido da lista.
+                </p>
+                <button
+                  onClick={handleUndoDelete}
+                  className="mt-3 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm font-medium inline-flex items-center space-x-2"
+                >
+                  <ArrowLeft className="w-4 h-4 rotate-90" />
+                  <span>Desfazer Exclusão</span>
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  if (undoTimeout) clearTimeout(undoTimeout)
+                  setDeletedProcedure(null)
+                  setUndoTimeout(null)
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Filtros Avançados */}
+      {showAdvancedFilters && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[9999]">
+          <div className="bg-white rounded-xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            {/* Header do Modal */}
+            <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-6 rounded-t-xl sticky top-0 z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+                    <Filter className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Filtros Avançados</h2>
+                    <p className="text-teal-100 text-sm">Configure múltiplos filtros para refinar sua busca</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAdvancedFilters(false)}
+                  className="text-white hover:text-teal-200 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-6 space-y-6">
+              {/* Filtro por Status */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Status de Pagamento
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['all', 'pending', 'paid'].map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => setStatusFilter(status)}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                        statusFilter === status
+                          ? status === 'all' 
+                            ? 'bg-teal-600 text-white shadow-md'
+                            : status === 'pending'
+                            ? 'bg-amber-500 text-white shadow-md'
+                            : 'bg-green-500 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {status === 'all' ? 'Todos' : status === 'pending' ? 'Pendente' : 'Pago'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Filtro por Data */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Período (Data do Procedimento)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Data Inicial
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFilter?.start || ''}
+                      onChange={(e) => setDateFilter(prev => ({ 
+                        start: e.target.value, 
+                        end: prev?.end || '' 
+                      }))}
+                      className="w-full px-3 py-2 text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Data Final
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFilter?.end || ''}
+                      onChange={(e) => setDateFilter(prev => ({ 
+                        start: prev?.start || '', 
+                        end: e.target.value 
+                      }))}
+                      className="w-full px-3 py-2 text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Filtro por Valor */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Valor do Procedimento
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Valor Mínimo (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={valueFilter?.min || ''}
+                      onChange={(e) => setValueFilter(prev => ({ 
+                        min: e.target.value, 
+                        max: prev?.max || '' 
+                      }))}
+                      className="w-full px-3 py-2 text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Valor Máximo (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Sem limite"
+                      value={valueFilter?.max || ''}
+                      onChange={(e) => setValueFilter(prev => ({ 
+                        min: prev?.min || '', 
+                        max: e.target.value 
+                      }))}
+                      className="w-full px-3 py-2 text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumo de Filtros Ativos */}
+              {(dateFilter?.start || dateFilter?.end || valueFilter?.min || valueFilter?.max || statusFilter !== 'all') && (
+                <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
+                  <p className="text-sm font-medium text-teal-900 mb-2">Filtros ativos:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {statusFilter !== 'all' && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                        Status: {statusFilter === 'pending' ? 'Pendente' : 'Pago'}
+                      </span>
+                    )}
+                    {dateFilter?.start && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                        De: {formatDate(dateFilter.start)}
+                      </span>
+                    )}
+                    {dateFilter?.end && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                        Até: {formatDate(dateFilter.end)}
+                      </span>
+                    )}
+                    {valueFilter?.min && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                        Mín: {formatCurrency(Number(valueFilter.min))}
+                      </span>
+                    )}
+                    {valueFilter?.max && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                        Máx: {formatCurrency(Number(valueFilter.max))}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer do Modal */}
+            <div className="bg-gray-50 border-t border-gray-200 p-4 rounded-b-xl sticky bottom-0">
+              <div className="flex flex-col sm:flex-row justify-between gap-3">
+                <button
+                  onClick={clearAllFilters}
+                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Limpar Todos os Filtros
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowAdvancedFilters(false)}
+                    className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    onClick={() => setShowAdvancedFilters(false)}
+                    className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors font-medium"
+                  >
+                    Aplicar Filtros
+                  </button>
+                </div>
               </div>
             </div>
           </div>

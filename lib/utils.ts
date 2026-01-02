@@ -12,12 +12,41 @@ export function formatCurrency(value: number): string {
   }).format(value)
 }
 
-export function formatDate(date: string | Date): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date
+export function formatDate(date: string | Date | null | undefined): string {
+  if (!date) return ''
+  
+  let dateObj: Date
+  
+  if (typeof date === 'string') {
+    // Se for uma string no formato ISO (YYYY-MM-DD), criar data no timezone local
+    // para evitar problemas de timezone que fazem a data aparecer um dia antes
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      // Formato ISO sem hora: criar no timezone local
+      const [year, month, day] = date.split('-').map(Number)
+      dateObj = new Date(year, month - 1, day)
+    } else if (/^\d{4}-\d{2}-\d{2}T/.test(date)) {
+      // Formato ISO com hora: usar diretamente mas ajustar para timezone local
+      const dateOnly = date.split('T')[0]
+      const [year, month, day] = dateOnly.split('-').map(Number)
+      dateObj = new Date(year, month - 1, day)
+    } else {
+      // Outros formatos: tentar criar normalmente
+      dateObj = new Date(date)
+    }
+  } else {
+    dateObj = date
+  }
+  
+  // Verificar se a data é válida
+  if (isNaN(dateObj.getTime())) {
+    return ''
+  }
+  
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
-    year: 'numeric'
+    year: 'numeric',
+    timeZone: 'America/Sao_Paulo' // Forçar timezone do Brasil
   }).format(dateObj)
 }
 
@@ -178,6 +207,76 @@ export function formatCPF(cpf: string): string {
 }
 
 /**
+ * Wrapper global para fetch com timeout padrão de 7s e retry automático
+ * @param url URL da requisição
+ * @param options Opções do fetch (incluindo timeout customizado)
+ * @returns Response da requisição
+ */
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit & { timeout?: number; maxRetries?: number } = {}
+): Promise<Response> {
+  const {
+    timeout = 7000, // 7 segundos padrão
+    maxRetries = 2, // 2 tentativas padrão
+    ...fetchOptions
+  } = options
+
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController()
+      let timeoutId: NodeJS.Timeout | null = null
+
+      // Configurar timeout apenas se não for 0 ou negativo
+      if (timeout > 0) {
+        timeoutId = setTimeout(() => {
+          controller.abort()
+        }, timeout)
+      }
+
+      try {
+        const response = await fetch(url, {
+          ...fetchOptions,
+          signal: controller.signal
+        })
+        
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+        }
+        
+        return response
+      } catch (error: any) {
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+        }
+        
+        // Se for erro de abort (timeout), criar erro mais descritivo
+        if (error.name === 'AbortError' || error.message === 'The user aborted a request.') {
+          throw new Error(`Timeout após ${timeout}ms ao buscar ${url}`)
+        }
+        
+        throw error
+      }
+    } catch (error: any) {
+      lastError = error
+
+      // Se não for a última tentativa, aguardar antes de tentar novamente
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 500)) // 500ms entre tentativas
+        continue
+      }
+
+      // Última tentativa falhou, lançar erro
+      throw error
+    }
+  }
+
+  throw lastError || new Error(`Erro ao buscar ${url} após ${maxRetries} tentativas`)
+}
+
+/**
  * Executa uma função com retry automático em caso de timeout ou erro
  * @param fn Função assíncrona a ser executada
  * @param options Opções de retry (maxRetries, timeout, delay)
@@ -193,9 +292,9 @@ export async function retryWithTimeout<T>(
   } = {}
 ): Promise<T> {
   const {
-    maxRetries = 3,
-    timeout = 8000, // 8 segundos padrão
-    delay = 1000, // 1 segundo entre tentativas
+    maxRetries = 2, // Reduzido de 3 para 2
+    timeout = 7000, // Padronizado para 7 segundos
+    delay = 500, // Reduzido de 1000 para 500ms
     onRetry
   } = options
 
