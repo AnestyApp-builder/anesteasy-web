@@ -28,6 +28,15 @@ interface SecretariaNotificationsContextType {
 
 const SecretariaNotificationsContext = createContext<SecretariaNotificationsContextType | undefined>(undefined)
 
+// Cache de notificações com TTL de 30 segundos
+const NOTIFICATIONS_CACHE_TTL = 30000 // 30 segundos
+let notificationsCache: {
+  data: Notification[]
+  linkRequests: LinkRequest[]
+  timestamp: number
+  secretariaId: string
+} | null = null
+
 export function SecretariaNotificationsProvider({ children, secretariaId }: { children: ReactNode; secretariaId: string | null }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [linkRequests, setLinkRequests] = useState<LinkRequest[]>([])
@@ -79,7 +88,7 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
     }
   }
 
-  const loadNotifications = async () => {
+  const loadNotifications = async (forceRefresh = false) => {
     if (!secretariaId) {
       setNotifications([])
       setIsLoading(false)
@@ -87,7 +96,20 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
     }
 
     try {
-      console.log('🔔 [NOTIFICATIONS] Carregando notificações para secretária:', secretariaId)
+      const now = Date.now()
+      
+      // Verificar cache se não for refresh forçado
+      if (!forceRefresh && notificationsCache && 
+          notificationsCache.secretariaId === secretariaId &&
+          (now - notificationsCache.timestamp) < NOTIFICATIONS_CACHE_TTL) {
+        console.log('📦 [NOTIFICATIONS] Usando cache de notificações')
+        setNotifications(notificationsCache.data)
+        setLinkRequests(notificationsCache.linkRequests)
+        setIsLoading(false)
+        return
+      }
+
+      console.log('🔔 [NOTIFICATIONS] Carregando notificações do banco para secretária:', secretariaId)
       
       // Carregar notificações reais
       const { data, error } = await supabase
@@ -103,12 +125,22 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
         setNotifications([])
       } else {
         console.log('✅ [NOTIFICATIONS] Notificações carregadas:', data?.length || 0)
-        console.log('   Notificações:', data)
-        setNotifications(data || [])
+        const notificationsData = data || []
+        setNotifications(notificationsData)
       }
 
       // Carregar solicitações pendentes
       await loadLinkRequests()
+      
+      // Salvar no cache após carregar tudo
+      // Usar o estado atualizado de linkRequests
+      const currentLinkRequests = linkRequests.length > 0 ? linkRequests : []
+      notificationsCache = {
+        data: notificationsData,
+        linkRequests: currentLinkRequests,
+        timestamp: Date.now(),
+        secretariaId: secretariaId
+      }
     } catch (error) {
       console.error('❌ [NOTIFICATIONS] Erro ao carregar notificações:', error)
       setNotifications([])
@@ -194,7 +226,8 @@ export function SecretariaNotificationsProvider({ children, secretariaId }: { ch
   }
 
   const refresh = async () => {
-    await loadNotifications()
+    // Forçar refresh ignorando cache
+    await loadNotifications(true)
   }
 
   return (

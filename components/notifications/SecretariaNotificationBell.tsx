@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useToast } from '@/contexts/ToastContext'
 import { Bell, X, Check, UserCheck, UserX, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/badge'
@@ -12,14 +13,9 @@ import { ptBR } from 'date-fns/locale'
 
 export function SecretariaNotificationBell() {
   const { notifications, linkRequests, unreadCount, markAsRead, markAllAsRead, isLoading } = useSecretariaNotifications()
+  const { addToast } = useToast()
   const [isOpen, setIsOpen] = useState(false)
   
-  // Debug: log das notificações
-  useEffect(() => {
-    console.log('🔔 [NOTIFICATION BELL] Notificações:', notifications)
-    console.log('🔔 [NOTIFICATION BELL] Contagem não lidas:', unreadCount)
-    console.log('🔔 [NOTIFICATION BELL] Carregando:', isLoading)
-  }, [notifications, unreadCount, isLoading])
 
   const handleAcceptLink = async (requestId: string, anestesistaId?: string) => {
     try {
@@ -28,7 +24,12 @@ export function SecretariaNotificationBell() {
       const accessToken = session?.access_token
 
       if (!accessToken) {
-        alert('Sessão expirada. Faça login novamente.')
+        addToast({
+          title: 'Sessão expirada',
+          description: 'Faça login novamente para continuar.',
+          variant: 'warning',
+          duration: 5000
+        })
         return
       }
 
@@ -57,11 +58,19 @@ export function SecretariaNotificationBell() {
           }, 1000)
         }
       } else {
-        alert(data.error || 'Erro ao aceitar vinculação')
+        addToast({
+          title: 'Erro ao aceitar',
+          description: data.error || 'Não foi possível aceitar a vinculação. Tente novamente.',
+          variant: 'error'
+        })
       }
     } catch (error) {
       console.error('Erro ao aceitar vinculação:', error)
-      alert('Erro ao aceitar vinculação. Tente novamente.')
+      addToast({
+        title: 'Erro ao aceitar',
+        description: 'Não foi possível aceitar a vinculação. Verifique sua conexão e tente novamente.',
+        variant: 'error'
+      })
     }
   }
 
@@ -72,7 +81,12 @@ export function SecretariaNotificationBell() {
       const accessToken = session?.access_token
 
       if (!accessToken) {
-        alert('Sessão expirada. Faça login novamente.')
+        addToast({
+          title: 'Sessão expirada',
+          description: 'Faça login novamente para continuar.',
+          variant: 'warning',
+          duration: 5000
+        })
         return
       }
 
@@ -95,11 +109,19 @@ export function SecretariaNotificationBell() {
           window.location.reload()
         }, 1000)
       } else {
-        alert(data.error || 'Erro ao recusar vinculação')
+        addToast({
+          title: 'Erro ao recusar',
+          description: data.error || 'Não foi possível recusar a vinculação. Tente novamente.',
+          variant: 'error'
+        })
       }
     } catch (error) {
       console.error('Erro ao recusar vinculação:', error)
-      alert('Erro ao recusar vinculação. Tente novamente.')
+      addToast({
+        title: 'Erro ao recusar',
+        description: 'Não foi possível recusar a vinculação. Verifique sua conexão e tente novamente.',
+        variant: 'error'
+      })
     }
   }
 

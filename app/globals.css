@@ -5,6 +5,17 @@
 /* Fundo padrão para páginas */
 html, body {
   background-color: #f1f5f9 !important;
+  /* Garantir que não haja fundo preto no carregamento inicial do PWA */
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height para mobile */
+}
+
+/* Evitar fundo preto no splash screen do PWA */
+body {
+  background-color: #f1f5f9 !important;
+  /* Garantir cor de fundo mesmo durante o carregamento */
+  -webkit-background-color: #f1f5f9;
+  -moz-background-color: #f1f5f9;
 }
 
 /* Fundo específico para área do usuário */
@@ -471,6 +482,123 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Melhorar focus indicators para acessibilidade */
+*:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Garantir contraste mínimo WCAG AA */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sistema de Espaçamento Baseado em 8px (Tarefa #11) */
+/* Utilidades para garantir espaçamentos consistentes */
+@layer utilities {
+  .space-system-1 { gap: 0.125rem; } /* 2px - muito pequeno */
+  .space-system-2 { gap: 0.25rem; }  /* 4px - pequeno */
+  .space-system-3 { gap: 0.5rem; }   /* 8px - base */
+  .space-system-4 { gap: 1rem; }     /* 16px - padrão */
+  .space-system-5 { gap: 1.5rem; }   /* 24px - médio */
+  .space-system-6 { gap: 2rem; }     /* 32px - grande */
+  .space-system-7 { gap: 2.5rem; }   /* 40px - muito grande */
+  .space-system-8 { gap: 3rem; }     /* 48px - extra grande */
+}
+
+/* Melhorias de Tipografia em Mobile (Tarefa #12) */
+@media (max-width: 768px) {
+  /* Aumentar tamanhos de fonte para melhor legibilidade em mobile */
+  body {
+    font-size: 16px; /* Base móvel otimizada */
+    line-height: 1.75; /* Aumentar line-height para melhor legibilidade */
+  }
+  
+  /* Títulos maiores em mobile */
+  h1 {
+    font-size: 1.875rem; /* 30px */
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+  }
+  
+  h2 {
+    font-size: 1.5rem; /* 24px */
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+  }
+  
+  h3 {
+    font-size: 1.25rem; /* 20px */
+    line-height: 1.4;
+  }
+  
+  /* Texto de corpo otimizado para mobile */
+  p, span, div {
+    font-size: 1rem; /* 16px mínimo para evitar zoom automático no iOS */
+    line-height: 1.6;
+  }
+  
+  /* Labels e textos pequenos mais legíveis */
+  label, .text-sm {
+    font-size: 0.9375rem; /* 15px */
+    line-height: 1.5;
+  }
+  
+  /* Texto muito pequeno limitado */
+  .text-xs {
+    font-size: 0.8125rem; /* 13px - mínimo recomendado */
+    line-height: 1.4;
+  }
+  
+  /* Botões com texto mais legível */
+  button {
+    font-size: 1rem; /* 16px */
+    line-height: 1.5;
+    font-weight: 500;
+  }
+  
+  /* Inputs e campos de formulário */
+  input, textarea, select {
+    font-size: 16px !important; /* 16px previne zoom automático no iOS Safari */
+    line-height: 1.5;
+  }
+  
+  /* Links mais fáceis de tocar */
+  a {
+    font-size: 1rem;
+    line-height: 1.6;
+    min-height: 44px; /* Área de toque mínima recomendada */
+    display: inline-flex;
+    align-items: center;
+  }
+  
+  /* Melhor espaçamento entre parágrafos em mobile */
+  p + p {
+    margin-top: 1rem; /* 16px */
+  }
+  
+  /* Espaçamento melhorado em listas */
+  li {
+    font-size: 1rem;
+    line-height: 1.6;
+    margin-bottom: 0.5rem; /* 8px */
+  }
+}
+
 /* Componentes customizados */
 @layer components {
   .btn-primary {
@@ -686,4 +814,9 @@ body {
     display: inline-block;
     vertical-align: top;
   }
+}
+
+/* Rotação da seta no VoiceRecorder quando details está aberto */
+details.voice-details[open] summary .voice-chevron {
+  transform: rotate(180deg);
 }

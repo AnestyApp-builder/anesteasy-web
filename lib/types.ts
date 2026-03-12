@@ -19,7 +19,7 @@ export interface ProcedureInsert {
   // Campos do paciente
   patient_name: string
   patient_age?: number
-  data_nascimento: string
+  data_nascimento?: string | null
   convenio?: string
   carteirinha?: string
   
@@ -65,6 +65,7 @@ export interface ProcedureInsert {
   // Campos de anestesia
   tecnica_anestesica?: string
   codigo_tssu?: string
+  grupo_anestesico?: string
 
   // Campos de feedback
   feedback_solicitado?: boolean

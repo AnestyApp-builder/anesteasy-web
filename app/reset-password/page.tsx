@@ -25,15 +25,16 @@ function ResetPasswordContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
+  // Extrair valores dos searchParams para evitar enumeração
+  const accessToken = searchParams.get('access_token')
+  const refreshToken = searchParams.get('refresh_token')
+  const type = searchParams.get('type')
+
   // Verificar se há token válido na URL ou se usuário está autenticado
   useEffect(() => {
     const checkToken = async () => {
       try {
         // Primeiro, verificar se há parâmetros de recuperação de senha na URL
-        const accessToken = searchParams.get('access_token')
-        const refreshToken = searchParams.get('refresh_token')
-        const type = searchParams.get('type')
-
         if (type === 'recovery' && accessToken && refreshToken) {
           // Configurar sessão com os tokens
           const { error } = await supabase.auth.setSession({
@@ -59,7 +60,7 @@ function ResetPasswordContent() {
     }
 
     checkToken()
-  }, [searchParams])
+  }, [accessToken, refreshToken, type])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,7 +110,6 @@ function ResetPasswordContent() {
       } else {
         setSuccess('Senha atualizada com sucesso! Redirecionando para login...')
         // Verificar se é secretaria para redirecionar corretamente
-        const type = searchParams.get('type')
         setTimeout(() => {
           if (type === 'secretaria') {
             router.push('/secretaria/login')

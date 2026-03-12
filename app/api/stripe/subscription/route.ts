@@ -70,7 +70,8 @@ export async function GET(request: NextRequest) {
     console.log('✅ Usuário autenticado:', user.id, user.email)
 
     // Buscar assinatura ativa do usuário
-    const { data: subscription, error: subError } = await supabaseAdmin
+    // Primeiro, tentar buscar assinatura com status 'active'
+    let { data: subscription, error: subError } = await supabaseAdmin
       .from('subscriptions')
       .select('*')
       .eq('user_id', user.id)
@@ -78,6 +79,26 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+
+    // Se não encontrar ativa, buscar a mais recente (pode estar pendente/trialing)
+    if (!subscription && !subError) {
+      console.log('ℹ️ Nenhuma assinatura ativa encontrada, buscando mais recente...')
+      const { data: recentSubscription, error: recentError } = await supabaseAdmin
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('status', ['active', 'trialing', 'pending'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      
+      if (recentSubscription) {
+        subscription = recentSubscription
+        console.log('📋 Assinatura recente encontrada com status:', subscription.status)
+      }
+      
+      subError = recentError
+    }
 
     if (subError) {
       console.error('❌ Erro ao buscar assinatura:', subError)
@@ -88,7 +109,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!subscription) {
-      console.log('ℹ️ Nenhuma assinatura ativa encontrada para o usuário')
+      console.log('ℹ️ Nenhuma assinatura encontrada para o usuário')
       return NextResponse.json(
         { error: 'Assinatura não encontrada' },
         { status: 404 }
@@ -192,13 +213,20 @@ export async function POST(request: NextRequest) {
     console.log('✅ Usuário autenticado (POST):', user.id, user.email)
 
     const body = await request.json()
-    const { plan_type, stripe_subscription_id, stripe_customer_id } = body
+    let { plan_type, stripe_subscription_id, stripe_customer_id } = body
 
     if (!plan_type || !stripe_subscription_id) {
       return NextResponse.json(
         { error: 'Dados incompletos' },
         { status: 400 }
       )
+    }
+
+    // Validar plan_type (constraint do banco: monthly, quarterly, annual)
+    const validTypes = ['monthly', 'quarterly', 'annual']
+    if (!validTypes.includes(plan_type)) {
+      console.warn(`⚠️ Plan type inválido: ${plan_type}, mapeando para 'monthly'`)
+      plan_type = 'monthly'
     }
 
     // Verificar se já existe assinatura ativa

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { authService, User } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { isSecretaria } from '@/lib/user-utils'
+import logger from '@/lib/logger'
 
 interface AuthContextType {
   user: User | null
@@ -39,31 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        console.log('👤 [AUTH] Carregando usuário:', session.user.id)
-        
         // Verificar se é secretária - se for, ignorar
         // Secretárias usam SecretariaAuthContext, não este contexto
+        // Otimização: verificar apenas uma vez usando a função isSecretaria
         try {
-          // Tentar verificar por ID primeiro
-          let isSec = false
-          try {
-            isSec = await isSecretaria(session.user.id)
-          } catch (e) {
-            // Se der erro, tentar por email
-            try {
-              const { data } = await supabase
-                .from('secretarias')
-                .select('id')
-                .eq('email', session.user.email)
-                .maybeSingle()
-              isSec = !!data
-            } catch (emailError) {
-              // Se ainda der erro, continuar como anestesista
-            }
-          }
+          const isSec = await isSecretaria(session.user.id)
           
           if (isSec) {
-            console.log('👩‍💼 [AUTH] É secretária, ignorando (usa SecretariaAuthContext)')
             if (mounted) {
               setUser(null)
               setIsEmailConfirmed(false)
@@ -75,68 +58,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Silenciar erro - continuar normalmente como anestesista
         }
 
-        // Buscar dados do usuário
+        // Buscar dados do usuário usando API route (bypassa RLS e evita erros 500)
         let userData = null
         try {
-          const result = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle()
+          const fetchResponse = await fetch('/api/admin/get-user-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: session.user.id })
+          })
           
-          if (result && !result.error && result.data) {
-            userData = result.data
+          if (fetchResponse.ok) {
+            const fetchResult = await fetchResponse.json()
+            if (fetchResult.exists && fetchResult.data) {
+              userData = fetchResult.data
+            }
           }
         } catch (error) {
-          // Se der erro, continuar sem dados - vamos criar dados básicos
-          console.warn('⚠️ [AUTH] Erro ao buscar dados do usuário, usando dados básicos')
+          // Se der erro, continuar sem dados - vamos tentar criar dados básicos
         }
 
         if (!userData) {
-          console.log('⚠️ [AUTH] Usuário não encontrado na tabela')
-          
           // Se o email foi confirmado mas o usuário não existe na tabela, tentar criar
           // Isso pode acontecer se a confirmação de email não criou o registro corretamente
           if (session.user.email_confirmed_at && !session.user.user_metadata?.role) {
             // Não é secretária, então deveria estar na tabela users
-            console.log('🔄 [AUTH] Tentando criar usuário na tabela users...')
-            
             try {
-              const trialEndsAt = new Date()
-              trialEndsAt.setDate(trialEndsAt.getDate() + 7)
-              
-              const { data: newUserData, error: createError } = await supabase
-                .from('users')
-                .insert({
-                  id: session.user.id,
+              const createResponse = await fetch('/api/admin/create-user-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId: session.user.id,
                   email: session.user.email || '',
                   name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
                   specialty: session.user.user_metadata?.specialty || 'Anestesiologia',
                   crm: session.user.user_metadata?.crm || '000000',
                   gender: session.user.user_metadata?.gender || null,
                   phone: session.user.user_metadata?.phone || null,
-                  cpf: session.user.user_metadata?.cpf || null,
-                  password_hash: '',
-                  subscription_plan: 'premium',
-                  subscription_status: 'active', // Status ativo (período de trial é controlado por trial_ends_at)
-                  trial_ends_at: trialEndsAt.toISOString()
+                  cpf: session.user.user_metadata?.cpf || null
                 })
-                .select()
-                .single()
+              })
               
-              if (createError) {
-                console.error('❌ [AUTH] Erro ao criar usuário na tabela:', createError)
-                // Continuar com dados básicos se não conseguir criar
-              } else if (newUserData) {
-                console.log('✅ [AUTH] Usuário criado na tabela users com sucesso')
-                userData = newUserData
+              if (createResponse.ok) {
+                const createResult = await createResponse.json()
+                if (createResult.data) {
+                  userData = createResult.data
+                }
               }
             } catch (createError) {
-              console.error('❌ [AUTH] Erro ao tentar criar usuário:', createError)
+              // Erro ao criar usuário - continuar com dados básicos
             }
           }
           
-          // Se ainda não tem userData, usar dados básicos
+          // Se ainda não tem userData, usar dados básicos do session.user
           if (!userData) {
             const basicUser = {
               id: session.user.id,
@@ -153,7 +126,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setIsEmailConfirmed(!!session.user.email_confirmed_at)
               localStorage.setItem('currentUser', JSON.stringify(basicUser))
               localStorage.setItem('isEmailConfirmed', (!!session.user.email_confirmed_at).toString())
-              console.log('✅ [AUTH] Usando dados básicos (usuário não encontrado na tabela)')
               setIsLoading(false)
             }
             return
@@ -177,11 +149,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsEmailConfirmed(emailConfirmed)
           localStorage.setItem('currentUser', JSON.stringify(currentUser))
           localStorage.setItem('isEmailConfirmed', emailConfirmed.toString())
-          console.log('✅ [AUTH] Usuário carregado')
           setIsLoading(false)
         }
       } catch (error) {
-        console.error('❌ [AUTH] Erro ao carregar usuário:', error)
         if (mounted) {
           setUser(null)
           setIsEmailConfirmed(false)
@@ -199,8 +169,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Token refresh falhou (normal quando não há sessão)
         return
       }
-
-      console.log('🔔 [AUTH] Evento:', event)
 
       try {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
@@ -226,19 +194,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           return
         }
-        console.warn('⚠️ [AUTH] Erro no listener de autenticação:', error)
       }
     })
 
     // Verificar sessão inicial
     const init = async () => {
       try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        // ✅ FIX CRÍTICO: Adicionar timeout em getSession()
+        let timeoutId: NodeJS.Timeout
+        const sessionPromise = supabase.auth.getSession()
+        const sessionTimeout = new Promise<{ data: { session: null }, error: { message: string } }>((resolve) => {
+          timeoutId = setTimeout(() => {
+            console.warn('⏱️ [AUTH CONTEXT] Timeout ao obter sessão inicial (10s)')
+            resolve({ 
+              data: { session: null }, 
+              error: { message: 'Timeout' }
+            })
+          }, 10000) // ✅ 10 segundos de timeout (aumentado para produção)
+        })
+
+        const { data: { session }, error: sessionError } = await Promise.race([
+          sessionPromise, 
+          sessionTimeout
+        ])
+
+        if (timeoutId) clearTimeout(timeoutId)
+
+        if (!mounted) return
         
         // Ignorar erros de refresh token não encontrado (estado normal quando não há sessão)
         if (sessionError) {
           const errorMessage = sessionError.message || ''
-          if (errorMessage.includes('Refresh Token') || errorMessage.includes('refresh_token')) {
+          if (errorMessage.includes('Refresh Token') || 
+              errorMessage.includes('refresh_token') ||
+              errorMessage.includes('Timeout')) {
             // Estado normal - não há sessão válida, continuar sem erro
             if (mounted) {
               setUser(null)
@@ -247,15 +236,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             return
           }
-          // Outros erros podem ser logados
-          console.warn('⚠️ [AUTH] Erro ao buscar sessão:', sessionError.message)
         }
         
         await loadUser(session)
       } catch (error: any) {
         // Ignorar erros de refresh token não encontrado
         const errorMessage = error?.message || ''
-        if (errorMessage.includes('Refresh Token') || errorMessage.includes('refresh_token')) {
+        if (errorMessage.includes('Refresh Token') || 
+            errorMessage.includes('refresh_token') ||
+            errorMessage.includes('Timeout')) {
           // Estado normal - não há sessão válida
           if (mounted) {
             setUser(null)
@@ -264,7 +253,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           return
         }
-        console.error('❌ [AUTH] Erro na inicialização:', error)
         if (mounted) {
           setUser(null)
           setIsEmailConfirmed(false)
@@ -283,8 +271,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      console.log('🔐 [AUTH] Login:', email)
-      
       const user = await authService.login(email, password)
       
       if (user) {
@@ -295,13 +281,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('currentUser', JSON.stringify(user))
         localStorage.setItem('isEmailConfirmed', emailConfirmed.toString())
         
-        console.log('✅ [AUTH] Login bem-sucedido')
         return true
       }
       
       return false
     } catch (error) {
-      console.error('❌ [AUTH] Erro no login:', error)
       return false
     }
   }
@@ -324,8 +308,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      console.log('🚪 [AUTH] Logout')
-      
       // Limpar estado imediatamente para feedback visual rápido
       setUser(null)
       setIsEmailConfirmed(false)
@@ -343,8 +325,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       // Fazer signOut (não aguardar para redirecionar mais rápido)
-      supabase.auth.signOut().catch(error => {
-        console.error('❌ [AUTH] Erro no signOut:', error)
+      supabase.auth.signOut().catch(() => {
+        // Erro no signOut
       })
       
       // Redirecionar imediatamente para login usando window.location para forçar reload completo
@@ -353,7 +335,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.location.href = '/login'
       }
     } catch (error) {
-      console.error('❌ [AUTH] Erro no logout:', error)
       // Mesmo com erro, redirecionar para login
       if (typeof window !== 'undefined') {
         window.location.href = '/login'
@@ -383,7 +364,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       return false
     } catch (error) {
-      console.error('❌ [AUTH] Erro ao atualizar usuário:', error)
       return false
     }
   }
@@ -405,7 +385,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       return false
     } catch (error) {
-      console.error('❌ [AUTH] Erro ao deletar conta:', error)
       return false
     }
   }

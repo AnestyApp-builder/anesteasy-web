@@ -87,6 +87,8 @@ function ConfiguracoesContent() {
   const [showRefundModal, setShowRefundModal] = useState(false)
   const [isProcessingRefund, setIsProcessingRefund] = useState(false)
   const [refundEligibility, setRefundEligibility] = useState<{eligible: boolean, daysUsed: number, reason?: string} | null>(null)
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [cancelImmediately, setCancelImmediately] = useState(false)
 
   // Verificar autenticação e redirecionar se necessário
   useEffect(() => {
@@ -104,11 +106,9 @@ function ConfiguracoesContent() {
           
           if (isSec) {
             // Secretária tentando acessar configurações de anestesista - bloquear acesso
-            console.warn('⚠️ Tentativa de acesso não autorizado: Secretária tentando acessar configurações de anestesista')
             router.push('/secretaria/dashboard')
           }
         } catch (error) {
-          console.error('Erro ao verificar tipo de usuário:', error)
         }
       }
 
@@ -169,7 +169,6 @@ function ConfiguracoesContent() {
           setSubscription(null)
         }
       } catch (error) {
-        console.error('Erro ao carregar assinatura:', error)
       } finally {
         setSubscriptionLoading(false)
       }
@@ -198,17 +197,11 @@ function ConfiguracoesContent() {
 
       // Timeout de segurança para evitar carregamento infinito
       const timeoutId = setTimeout(() => {
-        console.warn('⏱️ [CONFIG] Timeout ao carregar solicitações pendentes')
         setIsLoadingPendingRequest(false)
       }, 10000) // 10 segundos
 
       try {
-        console.log('🔍 [CONFIG] Buscando solicitações pendentes para anestesista:', user.id)
-        
         // Primeiro buscar solicitação de vinculação (secretária existente)
-        console.log('🔍 [CONFIG] Buscando solicitações de vinculação...')
-        console.log('   Anestesista ID:', user.id)
-        
         const { data: requestsData, error: requestsError } = await supabase
           .from('secretaria_link_requests')
           .select('id, secretaria_id, created_at')
@@ -217,23 +210,8 @@ function ConfiguracoesContent() {
           .order('created_at', { ascending: false })
           .limit(1)
 
-        console.log('📦 [CONFIG] Resultado da busca de solicitações:', {
-          requestsData,
-          requestsError,
-          count: requestsData?.length || 0,
-          hasData: !!requestsData && requestsData.length > 0
-        })
-
-        if (requestsError) {
-          console.error('❌ [CONFIG] Erro ao buscar solicitações:', requestsError)
-          console.error('   Detalhes do erro:', JSON.stringify(requestsError, null, 2))
-        }
-
         if (requestsData && requestsData.length > 0) {
           const request = requestsData[0]
-          console.log('✅ [CONFIG] Solicitação de vinculação encontrada:', request)
-          console.log('   Request ID:', request.id)
-          console.log('   Secretaria ID:', request.secretaria_id)
 
           // Buscar dados da secretária
           const { data: secretariaData, error: secretariaError } = await supabase
@@ -242,14 +220,7 @@ function ConfiguracoesContent() {
             .eq('id', request.secretaria_id)
             .single()
 
-          console.log('📋 [CONFIG] Resultado da busca da secretária:', {
-            secretariaData,
-            secretariaError,
-            hasData: !!secretariaData
-          })
-
           if (secretariaError) {
-            console.error('❌ [CONFIG] Erro ao buscar dados da secretária:', secretariaError)
             // Mesmo com erro, vamos tentar usar os dados que temos
             setPendingRequest({
               id: request.id,
@@ -264,8 +235,6 @@ function ConfiguracoesContent() {
           }
 
           if (secretariaData) {
-            console.log('✅ [CONFIG] Dados da secretária carregados:', secretariaData)
-
             setPendingRequest({
               id: request.id,
               secretaria_id: request.secretaria_id,
@@ -275,11 +244,9 @@ function ConfiguracoesContent() {
               type: 'link_request'
             })
             
-            console.log('✅ [CONFIG] Estado atualizado com solicitação de vinculação')
             setIsLoadingPendingRequest(false)
             return
           } else {
-            console.warn('⚠️ [CONFIG] Solicitação encontrada mas dados da secretária não disponíveis')
             // Mesmo sem dados completos, mostrar a solicitação
             setPendingRequest({
               id: request.id,
@@ -292,22 +259,12 @@ function ConfiguracoesContent() {
             setIsLoadingPendingRequest(false)
             return
           }
-        } else {
-          console.log('ℹ️ [CONFIG] Nenhuma solicitação de vinculação encontrada')
-          console.log('   Requests data:', requestsData)
-          console.log('   Requests error:', requestsError)
         }
 
         // Se não encontrou solicitação, buscar convites pendentes (secretária nova)
-        console.log('🔍 [CONFIG] Buscando convites pendentes...')
-        console.log('   User ID:', user.id)
-        console.log('   Auth UID:', (await supabase.auth.getUser()).data.user?.id)
-        
         // Primeiro verificar qual é o auth.uid() atual
         const { data: { user: authUser } } = await supabase.auth.getUser()
         const authUserId = authUser?.id
-        
-        console.log('   Comparando: user.id =', user.id, 'vs auth.uid() =', authUserId)
         
         // Usar authUserId se disponível, senão usar user.id
         const userIdToSearch = authUserId || user.id
@@ -319,24 +276,10 @@ function ConfiguracoesContent() {
           .is('used_at', null)
           .gt('expires_at', new Date().toISOString())
           .order('created_at', { ascending: false })
-          .limit(5) // Buscar mais para debug
-
-        console.log('📦 [CONFIG] Resultado da busca de convites:', { 
-          invitesData, 
-          invitesError,
-          count: invitesData?.length || 0
-        })
-
-        if (invitesError) {
-          console.error('❌ [CONFIG] Erro ao buscar convites:', invitesError)
-        }
+          .limit(5)
 
         if (invitesData && invitesData.length > 0) {
           const invite = invitesData[0]
-          console.log('✅ [CONFIG] Convite pendente encontrado:', invite)
-          console.log('   Convite anestesista_id:', invite.anestesista_id)
-          console.log('   Comparando com user.id:', user.id)
-          console.log('   Comparando com authUserId:', authUserId)
 
           setPendingRequest({
             id: invite.id,
@@ -345,15 +288,12 @@ function ConfiguracoesContent() {
             type: 'invite'
           })
           
-          console.log('✅ [CONFIG] Estado atualizado com convite pendente')
           setIsLoadingPendingRequest(false)
           return
         }
 
-        console.log('ℹ️ [CONFIG] Nenhuma solicitação ou convite pendente encontrado')
         setPendingRequest(null)
       } catch (error) {
-        console.error('❌ [CONFIG] Erro ao carregar solicitações pendentes:', error)
         setPendingRequest(null)
       } finally {
         clearTimeout(timeoutId) // Limpar timeout quando a função terminar
@@ -418,7 +358,6 @@ function ConfiguracoesContent() {
   
   // Debug: Log quando pendingRequest mudar
   useEffect(() => {
-    console.log('🔄 [CONFIG] Estado pendingRequest mudou:', pendingRequest)
   }, [pendingRequest])
 
   // Mostrar loading enquanto verifica autenticação
@@ -449,15 +388,10 @@ function ConfiguracoesContent() {
   // Função para salvar alterações
   const saveProfile = async () => {
     if (!user) {
-      console.error('❌ [CONFIG] saveProfile: Usuário não encontrado')
       setFeedbackMessage({ type: 'error', message: 'Erro: Usuário não encontrado. Faça login novamente.' })
       setTimeout(() => setFeedbackMessage(null), 5000)
       return
     }
-
-    console.log('💾 [CONFIG] Iniciando salvamento do perfil...')
-    console.log('📋 [CONFIG] Dados do formulário:', formData)
-    console.log('👤 [CONFIG] Usuário atual:', user)
 
     setIsSaving(true)
     setFeedbackMessage(null)
@@ -465,19 +399,14 @@ function ConfiguracoesContent() {
     try {
       const success = await updateUser(formData)
       
-      console.log('📊 [CONFIG] Resultado do updateUser:', success)
-      
       if (success) {
-        console.log('✅ [CONFIG] Perfil atualizado com sucesso!')
         setFeedbackMessage({ type: 'success', message: 'Perfil atualizado com sucesso!' })
         setTimeout(() => setFeedbackMessage(null), 3000)
       } else {
-        console.error('❌ [CONFIG] Falha ao atualizar perfil')
         setFeedbackMessage({ type: 'error', message: 'Erro ao atualizar perfil. Verifique o console para mais detalhes.' })
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('❌ [CONFIG] Erro ao salvar alterações:', error)
       setFeedbackMessage({ type: 'error', message: `Erro ao salvar alterações: ${error instanceof Error ? error.message : 'Erro desconhecido'}` })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
@@ -593,11 +522,9 @@ function ConfiguracoesContent() {
                     created_at: request.created_at || '',
                     type: 'link_request'
                   })
-                  console.log('✅ [CONFIG] Card de pendência atualizado após criar solicitação')
                 }
               }
             } catch (error) {
-              console.error('Erro ao recarregar solicitações pendentes:', error)
             }
           }
         } else {
@@ -613,7 +540,6 @@ function ConfiguracoesContent() {
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('Erro ao vincular secretária:', error)
       setFeedbackMessage({ type: 'error', message: 'Erro ao vincular secretária. Tente novamente.' })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
@@ -628,7 +554,6 @@ function ConfiguracoesContent() {
       setLinkCopied(true)
       setTimeout(() => setLinkCopied(false), 2000)
     } catch (error) {
-      console.error('Erro ao copiar link:', error)
     }
   }
 
@@ -682,39 +607,30 @@ function ConfiguracoesContent() {
     setFeedbackMessage(null)
 
     try {
-      console.log('🔐 [CONFIG] Iniciando alteração de senha...')
-      
       // Importar authService dinamicamente para evitar problemas de SSR
       const { authService } = await import('@/lib/auth')
       
-      console.log('📞 [CONFIG] Chamando authService.updatePassword...')
       const result = await authService.updatePassword(
         passwordForm.currentPassword,
         passwordForm.newPassword
       )
       
-      console.log('📊 [CONFIG] Resultado do updatePassword:', result)
-      
       if (result.success) {
-        console.log('✅ [CONFIG] Senha alterada com sucesso!')
         setFeedbackMessage({ type: 'success', message: 'Senha alterada com sucesso!' })
         setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
         setShowPasswordModal(false)
         setTimeout(() => setFeedbackMessage(null), 3000)
       } else {
-        console.error('❌ [CONFIG] Falha ao alterar senha:', result.message)
         setFeedbackMessage({ type: 'error', message: result.message || 'Erro ao alterar senha.' })
         setTimeout(() => setFeedbackMessage(null), 5000)
       }
     } catch (error) {
-      console.error('❌ [CONFIG] Erro ao alterar senha:', error)
       setFeedbackMessage({ 
         type: 'error', 
         message: `Erro interno ao alterar senha: ${error instanceof Error ? error.message : 'Erro desconhecido'}` 
       })
       setTimeout(() => setFeedbackMessage(null), 5000)
     } finally {
-      console.log('🏁 [CONFIG] Finalizando alteração de senha (finally)')
       setIsUpdatingPassword(false)
     }
   }
@@ -771,7 +687,6 @@ function ConfiguracoesContent() {
       }
 
     } catch (err: any) {
-      console.error('Erro ao agendar mudança de plano:', err)
       setFeedbackMessage({ 
         type: 'error', 
         message: err.message || 'Erro ao agendar mudança de plano' 
@@ -845,7 +760,6 @@ function ConfiguracoesContent() {
       }
 
     } catch (err: any) {
-      console.error('Erro ao processar reembolso:', err)
       setFeedbackMessage({ 
         type: 'error', 
         message: err.message || 'Erro ao processar reembolso' 
@@ -877,7 +791,7 @@ function ConfiguracoesContent() {
     annual: 850.00
   }
 
-  const handleCancelSubscription = async (cancelImmediately: boolean = false) => {
+  const handleCancelSubscription = async (immediately: boolean = false) => {
     if (!subscription) return
 
     // Verificar se já está cancelada
@@ -889,6 +803,16 @@ function ConfiguracoesContent() {
       setTimeout(() => setFeedbackMessage(null), 3000)
       return
     }
+
+    // Abrir modal de confirmação
+    setCancelImmediately(immediately)
+    setShowCancelModal(true)
+  }
+
+  const confirmCancelSubscription = async () => {
+    if (!subscription) return
+
+    setShowCancelModal(false)
 
     try {
       setIsCancelling(true)
@@ -966,7 +890,6 @@ function ConfiguracoesContent() {
       }
 
     } catch (err: any) {
-      console.error('Erro ao cancelar assinatura:', err)
       const errorMessage = err.message || 'Erro ao cancelar assinatura'
       // Verificar se o erro é porque já está cancelada
       if (errorMessage.toLowerCase().includes('canceled') || errorMessage.toLowerCase().includes('cancelada')) {
@@ -1219,7 +1142,6 @@ function ConfiguracoesContent() {
                             }
                           }
                         } catch (error) {
-                          console.error('Erro ao recarregar:', error)
                           setPendingRequest(null)
                         } finally {
                           setIsLoadingPendingRequest(false)
@@ -1406,7 +1328,7 @@ function ConfiguracoesContent() {
               {subscriptionLoading ? (
                 <div className="text-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-primary-500 mx-auto mb-2" />
-                  <p className="text-sm text-gray-600">Carregando informações do plano...</p>
+                  <p className="text-sm text-gray-600">Carregando informações da assinatura...</p>
                 </div>
               ) : !subscription ? (
                 <div className="text-center py-6">
@@ -1534,11 +1456,7 @@ function ConfiguracoesContent() {
                       )}
                       <Button
                         variant="outline"
-                        onClick={() => {
-                          if (confirm('Tem certeza que deseja cancelar sua assinatura? Ela será cancelada ao fim do período atual e você manterá o acesso até então.')) {
-                            handleCancelSubscription(false)
-                          }
-                        }}
+                        onClick={() => handleCancelSubscription(false)}
                         disabled={isCancelling || subscription.status === 'cancelled' || subscription.status === 'expired'}
                         className="w-full border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -1939,6 +1857,52 @@ function ConfiguracoesContent() {
               }}
             >
               Fechar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      {/* Modal de Confirmação de Cancelamento */}
+      <Modal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        title="Confirmar Cancelamento"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full">
+            <AlertTriangle className="w-8 h-8 text-red-600" />
+          </div>
+          
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              {cancelImmediately ? 'Cancelar Assinatura Imediatamente' : 'Cancelar Assinatura'}
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              {cancelImmediately 
+                ? 'Tem certeza que deseja cancelar sua assinatura imediatamente? Você perderá o acesso imediatamente e não poderá mais usar o sistema.'
+                : 'Tem certeza que deseja cancelar sua assinatura? Ela será cancelada ao fim do período atual e você manterá o acesso até então.'}
+            </p>
+            {!cancelImmediately && subscription?.current_period_end && (
+              <p className="text-xs text-gray-500 mb-4">
+                Você manterá o acesso até {new Date(subscription.current_period_end).toLocaleDateString('pt-BR')}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
+            <Button
+              variant="outline"
+              onClick={() => setShowCancelModal(false)}
+              className="flex-1 border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Não, manter assinatura
+            </Button>
+            <Button
+              onClick={confirmCancelSubscription}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+              disabled={isCancelling}
+            >
+              {isCancelling ? 'Cancelando...' : 'Sim, cancelar assinatura'}
             </Button>
           </div>
         </div>

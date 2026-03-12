@@ -28,7 +28,7 @@ export function Logo({ size = 'md', showText = true, className = '', textColor =
   
   return (
     <div className={`flex items-center justify-center space-x-3 ${className}`}>
-      {/* Ícone personalizado do AnestEasy */}
+      {/* Ícone personalizado do AnestEasy (mantém exatamente o desenho do icon.svg) */}
       <div 
         className={`${sizeClasses[size]} flex items-center justify-center`}
         style={{
@@ -42,7 +42,8 @@ export function Logo({ size = 'md', showText = true, className = '', textColor =
           appearance: 'none',
           outline: 'none',
           border: 'none',
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          backgroundColor: 'transparent'
         }}
       >
         <img 
@@ -54,7 +55,8 @@ export function Logo({ size = 'md', showText = true, className = '', textColor =
             objectFit: 'contain',
             userSelect: 'none', 
             WebkitUserSelect: 'none',
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            backgroundColor: 'transparent'
           }}
         />
       </div>

@@ -89,3 +89,10 @@ jspm_packages/
 # Supabase
 .supabase/
 .vercel
+
+# Google Cloud Credentials
+keys/
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json

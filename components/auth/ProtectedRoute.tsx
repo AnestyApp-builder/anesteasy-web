@@ -3,9 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import { isSecretaria } from '@/lib/user-utils'
-import { hasActiveSubscription } from '@/lib/subscription'
-import { retryWithTimeout } from '@/lib/utils'
+import { fetchWithTimeout } from '@/lib/utils'
 import { Navigation } from '@/components/layout/Navigation'
 
 interface ProtectedRouteProps {
@@ -13,129 +11,190 @@ interface ProtectedRouteProps {
   requireSubscription?: boolean // Se true, verifica assinatura ativa
 }
 
+interface AuthStatus {
+  ok: boolean
+  authenticated: boolean
+  email_confirmed: boolean
+  role: 'secretaria' | 'anestesista' | 'admin'
+  subscription_status: 'active' | 'trial' | 'expired' | 'none'
+  has_access: boolean
+}
+
 export function ProtectedRoute({ children, requireSubscription = true }: ProtectedRouteProps) {
-  const { isAuthenticated, isEmailConfirmed, isLoading, user } = useAuth()
+  const { isLoading, user } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  const [isCheckingSecretaria, setIsCheckingSecretaria] = useState(true)
-  const [isCheckingSubscription, setIsCheckingSubscription] = useState(false)
+  const [isChecking, setIsChecking] = useState(true)
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
 
   // Rotas que não requerem assinatura
   const publicRoutes = ['/planos', '/checkout']
 
-  // Timeout de segurança para evitar travamentos (especialmente em mobile)
   useEffect(() => {
-    // Se estiver autenticado e confirmado, mas travado em loading por muito tempo, redirecionar
-    if (isAuthenticated && isEmailConfirmed && user && (isCheckingSecretaria || isCheckingSubscription)) {
-      const safetyTimeout = setTimeout(() => {
-        console.warn('⚠️ [PROTECTED] Timeout de segurança - redirecionando para dashboard')
-        // Verificar se é secretária antes de redirecionar
-        isSecretaria(user.id)
-          .then((isSec) => {
-            if (isSec) {
-              router.replace('/secretaria/dashboard')
-            } else {
-              router.replace('/dashboard')
-            }
-          })
-          .catch(() => {
-            // Se der erro, redirecionar para dashboard padrão
-            router.replace('/dashboard')
-          })
-      }, 10000) // 10 segundos máximo
+    let mounted = true
+    let timeoutId: NodeJS.Timeout
 
-      return () => clearTimeout(safetyTimeout)
-    }
-  }, [isAuthenticated, isEmailConfirmed, user, isCheckingSecretaria, isCheckingSubscription, router])
+    const checkAuthStatus = async () => {
+      if (!mounted) return
 
-  useEffect(() => {
-    const checkUserType = async () => {
       if (isLoading) {
         return
       }
 
-      if (!isAuthenticated) {
-        // Usuário não autenticado - redirecionar para login
-        router.push('/login')
-        setIsCheckingSecretaria(false)
-        return
-      }
-
-      if (user && !isEmailConfirmed) {
-        // Usuário autenticado mas email não confirmado - redirecionar para página de espera
-        router.push('/confirm-email?email=' + encodeURIComponent(user.email))
-        setIsCheckingSecretaria(false)
-        return
-      }
-
-      // Verificar se é secretária - secretárias NÃO podem acessar rotas de anestesistas
-      if (user) {
+      // Verificar cache local primeiro para renderização instantânea
+      const cachedAuth = localStorage.getItem('auth_cache')
+      let cachedData: any = null
+      if (cachedAuth) {
         try {
-          // Usar retry com timeout maior para melhorar confiabilidade
-          const secretaria = await retryWithTimeout(
-            () => isSecretaria(user.id),
-            {
-              maxRetries: 2,
-              timeout: 5000, // 5 segundos
-              delay: 500,
-              onRetry: (attempt) => {
-                console.log(`🔄 [PROTECTED] Tentativa ${attempt} de verificar secretária...`)
-              }
+          cachedData = JSON.parse(cachedAuth)
+          // Cache válido por 15 minutos (aumentado de 5 para reduzir verificações)
+          if (Date.now() - cachedData.timestamp < 15 * 60 * 1000) {
+            if (mounted) {
+              setAuthStatus({
+                ok: true,
+                authenticated: true,
+                email_confirmed: cachedData.email_confirmed,
+                role: cachedData.role,
+                subscription_status: cachedData.subscription_status,
+                has_access: cachedData.has_access
+              })
+              setIsChecking(false)
             }
-          )
-          
-          if (secretaria) {
-            // Secretária tentando acessar rota de anestesista - redirecionar para dashboard da secretária
-            router.push('/secretaria/dashboard')
-            setIsCheckingSecretaria(false)
-            return
+            return // ✅ Usar cache e não fazer verificação no servidor
           }
         } catch (error) {
-          // Se der timeout após todas as tentativas, continuar como anestesista
-          console.warn('⚠️ Erro ao verificar secretária, continuando:', error)
-        }
-
-        // Verificar assinatura apenas para anestesistas e se a rota requer
-        if (requireSubscription && !publicRoutes.includes(pathname)) {
-          setIsCheckingSubscription(true)
-          
-          try {
-            // Usar retry com timeout maior para melhorar confiabilidade
-            const hasSubscription = await retryWithTimeout(
-              () => hasActiveSubscription(user.id),
-              {
-                maxRetries: 2,
-                timeout: 8000, // 8 segundos
-                delay: 1000,
-                onRetry: (attempt) => {
-                  console.log(`🔄 [PROTECTED] Tentativa ${attempt} de verificar assinatura...`)
-                }
-              }
-            )
-            
-            if (!hasSubscription) {
-              // Sem assinatura ativa - redirecionar para planos
-              router.push('/planos?required=true')
-              setIsCheckingSubscription(false)
-              setIsCheckingSecretaria(false)
-              return
-            }
-          } catch (error) {
-            // Se der timeout ou erro após todas as tentativas, permitir acesso (não bloquear)
-            console.warn('⚠️ Erro ao verificar assinatura, permitindo acesso:', error)
-          }
-          
-          setIsCheckingSubscription(false)
+          // Cache inválido, continuar com verificação
         }
       }
 
-      setIsCheckingSecretaria(false)
+      // Se não tem usuário autenticado, redirecionar para login
+      if (!user) {
+        if (mounted) {
+          router.push('/login')
+          setIsChecking(false)
+        }
+        return
+      }
+
+      try {
+        // ✅ FIX CRÍTICO: Adicionar timeout em getSession()
+        const { supabase } = await import('@/lib/supabase')
+        
+        const sessionPromise = supabase.auth.getSession()
+        const sessionTimeout = new Promise<{ data: { session: null } }>((resolve) => {
+          timeoutId = setTimeout(() => {
+            console.warn('⏱️ [AUTH] Timeout ao obter sessão (5s)')
+            resolve({ data: { session: null } })
+          }, 5000) // ✅ 5 segundos de timeout
+        })
+
+        const { data: { session } } = await Promise.race([sessionPromise, sessionTimeout])
+
+        if (timeoutId) clearTimeout(timeoutId)
+
+        if (!mounted) return
+        
+        if (!session?.access_token) {
+          router.push('/login')
+          setIsChecking(false)
+          return
+        }
+
+        // Chamar endpoint unificado /api/auth/status com timeout reduzido
+        const response = await fetchWithTimeout('/api/auth/status', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          timeout: 5000, // ✅ Reduzido de 7s para 5s
+          maxRetries: 1  // ✅ Reduzido de 2 para 1 tentativa
+        })
+
+        if (!mounted) return
+
+        if (!response.ok) {
+          // Se falhar, redirecionar para login
+          router.push('/login')
+          setIsChecking(false)
+          return
+        }
+
+        const status: AuthStatus = await response.json()
+
+        if (!mounted) return
+
+        // Atualizar cache com TTL maior
+        if (status.ok) {
+          localStorage.setItem('auth_cache', JSON.stringify({
+            role: status.role,
+            subscription_status: status.subscription_status,
+            email_confirmed: status.email_confirmed,
+            has_access: status.has_access,
+            timestamp: Date.now()
+          }))
+        }
+
+        setAuthStatus(status)
+
+        // Decisões de rota baseadas no status
+        if (!status.authenticated) {
+          router.push('/login')
+          setIsChecking(false)
+          return
+        }
+
+        if (!status.email_confirmed) {
+          router.push(`/confirm-email?email=${encodeURIComponent(user.email || '')}`)
+          setIsChecking(false)
+          return
+        }
+
+        // Secretária tentando acessar rota de anestesista
+        if (status.role === 'secretaria' && !pathname.startsWith('/secretaria')) {
+          router.push('/secretaria/dashboard')
+          setIsChecking(false)
+          return
+        }
+
+        // Verificar assinatura se necessário
+        if (requireSubscription && !publicRoutes.includes(pathname)) {
+          if (!status.has_access) {
+            router.push('/planos?required=true')
+            setIsChecking(false)
+            return
+          }
+        }
+
+        setIsChecking(false)
+      } catch (error) {
+        console.warn('⚠️ [AUTH] Erro na verificação, permitindo acesso temporário:', error)
+        // ✅ FIX: Em caso de erro, setar isChecking(false) para não ficar travado
+        if (mounted) {
+          setIsChecking(false)
+          // ✅ Permitir acesso com cache expirado em vez de bloquear
+          if (cachedData) {
+            setAuthStatus({
+              ok: true,
+              authenticated: true,
+              email_confirmed: cachedData.email_confirmed,
+              role: cachedData.role,
+              subscription_status: cachedData.subscription_status,
+              has_access: cachedData.has_access
+            })
+          }
+        }
+      }
     }
 
-    checkUserType()
-  }, [isAuthenticated, isEmailConfirmed, isLoading, router, user, requireSubscription, pathname])
+    checkAuthStatus()
 
-  if (isLoading || isCheckingSecretaria || isCheckingSubscription) {
+    // ✅ Cleanup adequado
+    return () => {
+      mounted = false
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [isLoading, user, router, pathname, requireSubscription])
+
+  if (isLoading || isChecking) {
     return (
       <div className="min-h-screen bg-white">
         {/* Navigation sempre visível em mobile */}
@@ -150,7 +209,7 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
     )
   }
 
-  if (!isAuthenticated || !isEmailConfirmed) {
+  if (!authStatus?.ok || !authStatus.authenticated || !authStatus.email_confirmed) {
     return null
   }
 

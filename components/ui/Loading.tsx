@@ -7,7 +7,9 @@ interface LoadingProps {
   fullScreen?: boolean
 }
 
-export function Loading({ size = 'md', text = 'Carregando...', fullScreen = false }: LoadingProps) {
+export function Loading({ size = 'md', text, fullScreen = false }: LoadingProps) {
+  // Se não fornecer texto, usar mensagem genérica mas amigável
+  const displayText = text || 'Carregando...'
   const sizeClasses = {
     sm: 'w-4 h-4',
     md: 'w-8 h-8',
@@ -23,9 +25,9 @@ export function Loading({ size = 'md', text = 'Carregando...', fullScreen = fals
   const content = (
     <div className="flex flex-col items-center justify-center space-y-2">
       <Loader2 className={`animate-spin text-primary-500 ${sizeClasses[size]}`} />
-      {text && (
+      {displayText && (
         <p className={`text-gray-600 ${textSizeClasses[size]}`}>
-          {text}
+          {displayText}
         </p>
       )}
     </div>

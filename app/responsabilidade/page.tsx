@@ -297,8 +297,8 @@ export default function Responsabilidade() {
                 </p>
                 <div className="bg-primary-50 p-4 rounded-lg">
                   <p className="text-gray-700">
-                    <strong>Email:</strong> contato@anesteasy.com.br<br />
-                    <strong>Telefone:</strong> (11) 99999-9999<br />
+                    <strong>Email:</strong> contato@anesteasyapp.com.br<br />
+                    <strong>Telefone:</strong> (34) 99212-3878<br />
                     <strong>Horário de atendimento:</strong> Segunda a sexta, 8h às 18h
                   </p>
                 </div>

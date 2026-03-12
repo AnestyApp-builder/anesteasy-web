@@ -35,8 +35,6 @@ const nextConfig = {
   // Compressão e otimização
   compress: true,
   poweredByHeader: false,
-  // Configuração do Turbopack para Next.js 16+
-  turbopack: {},
   webpack: (config, { isServer }) => {
     if (isServer) {
       // Configurações do webpack para o servidor

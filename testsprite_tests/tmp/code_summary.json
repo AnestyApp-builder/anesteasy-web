@@ -1,174 +1,364 @@
 {
   "tech_stack": [
     "TypeScript",
-    "Next.js 15",
+    "Next.js 15 (App Router)",
     "React 19",
     "Tailwind CSS",
-    "Supabase",
-    "PostgreSQL",
-    "Pagarme",
-    "Tesseract.js",
-    "Lucide React",
-    "Vercel"
+    "Supabase (PostgreSQL, Auth, Storage, Edge Functions, RLS)",
+    "Stripe",
+    "SMTP/Resend email",
+    "Tesseract.js OCR",
+    "Recharts"
   ],
   "features": [
     {
-      "name": "Sistema de Autenticação",
-      "description": "Sistema completo de autenticação com Supabase Auth, confirmação de email, login/logout, reset de senha e proteção de rotas. Suporta dois tipos de usuários: anestesistas e secretárias.",
+      "name": "Auth and User Management",
+      "description": "Registro, login, confirmação de email, recuperação de senha e gestão de perfis para anestesiologistas e secretárias, com controle de sessão e redirecionamento de acordo com o tipo de usuário.",
       "files": [
-        "contexts/AuthContext.tsx",
-        "contexts/SecretariaAuthContext.tsx",
-        "lib/auth.ts",
-        "app/login/page.tsx",
         "app/register/page.tsx",
-        "app/auth/confirm/route.ts",
+        "app/login/page.tsx",
         "app/forgot-password/page.tsx",
         "app/reset-password/page.tsx",
-        "components/auth/ProtectedRoute.tsx"
-      ]
+        "app/confirm-email/page.tsx",
+        "app/auth/confirm/route.ts",
+        "app/api/check-email-confirmation/route.ts",
+        "app/api/resend-confirmation/route.ts",
+        "app/api/delete-user/route.ts",
+        "lib/auth.ts",
+        "lib/user-utils.ts",
+        "lib/supabase.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "AnestEasy Auth API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/api/check-email-confirmation": {
+            "get": {
+              "summary": "Verifica se o email do usuário foi confirmado",
+              "responses": {
+                "200": {
+                  "description": "Email confirmado"
+                },
+                "400": {
+                  "description": "Parâmetros inválidos"
+                },
+                "401": {
+                  "description": "Não autorizado"
+                }
+              }
+            }
+          },
+          "/auth/confirm": {
+            "post": {
+              "summary": "Confirmação de email via link mágico Supabase",
+              "responses": {
+                "302": {
+                  "description": "Redireciona para página de sucesso ou erro"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     {
-      "name": "Dashboard Principal",
-      "description": "Dashboard interativo com métricas em tempo real, gráficos de receitas, procedimentos recentes e ações rápidas para anestesistas.",
+      "name": "Subscription and Billing",
+      "description": "Gestão de planos de assinatura, criação de sessão de checkout, portal de gerenciamento, atualização de planos, cancelamento e reembolso, com sincronização de status via webhooks Stripe.",
       "files": [
-        "app/dashboard/page.tsx"
-      ]
-    },
-    {
-      "name": "Gestão de Procedimentos",
-      "description": "Sistema completo para cadastro, edição e visualização de procedimentos anestésicos com OCR para captura de etiquetas, upload de imagens e histórico detalhado.",
-      "files": [
-        "app/procedimentos/page.tsx",
-        "app/procedimentos/novo/page.tsx",
-        "app/procedimentos/[id]/page.tsx",
-        "lib/procedures.ts"
-      ]
-    },
-    {
-      "name": "Sistema Financeiro",
-      "description": "Controle financeiro completo com receitas, despesas, relatórios e análise de performance financeira.",
-      "files": [
-        "app/financeiro/page.tsx"
-      ]
-    },
-    {
-      "name": "Relatórios",
-      "description": "Sistema de relatórios personalizáveis com exportação de dados e análises estatísticas.",
-      "files": [
-        "app/relatorios/page.tsx"
-      ]
-    },
-    {
-      "name": "Sistema de Assinaturas",
-      "description": "Integração com Pagarme para gestão de planos de assinatura, checkout hospedado e webhooks para processamento de pagamentos.",
-      "files": [
-        "app/assinatura/page.tsx",
         "app/planos/page.tsx",
         "app/checkout/page.tsx",
         "app/checkout/success/page.tsx",
-        "lib/pagarme.ts",
-        "lib/pagarme-subscriptions.ts",
+        "app/assinatura/page.tsx",
+        "app/api/stripe/checkout/route.ts",
+        "app/api/stripe/portal/route.ts",
+        "app/api/stripe/subscription/route.ts",
+        "app/api/stripe/subscription/cancel/route.ts",
+        "app/api/stripe/subscription/change-plan/route.ts",
+        "app/api/stripe/subscription/refund/route.ts",
+        "app/api/stripe/sync-subscription/route.ts",
+        "app/api/stripe/webhook/route.ts",
+        "app/api/stripe/test-webhook/route.ts",
+        "lib/stripe.ts",
         "lib/subscription.ts",
-        "lib/subscription-access.ts",
-        "components/subscription/SubscriptionStatus.tsx",
-        "app/api/pagarme/create-subscription/route.ts",
-        "app/api/webhooks/pagarme/route.ts"
-      ]
+        "lib/subscription-access.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "AnestEasy Subscription API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/api/stripe/checkout": {
+            "post": {
+              "summary": "Cria sessão de checkout de assinatura na Stripe",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "plan_type": {
+                          "type": "string",
+                          "enum": ["monthly", "quarterly", "annual"]
+                        }
+                      },
+                      "required": ["plan_type"]
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "Sessão de checkout criada com sucesso"
+                },
+                "400": {
+                  "description": "Dados inválidos"
+                },
+                "500": {
+                  "description": "Erro interno ao criar sessão"
+                }
+              }
+            }
+          },
+          "/api/stripe/subscription": {
+            "get": {
+              "summary": "Busca assinatura ativa do usuário autenticado",
+              "responses": {
+                "200": {
+                  "description": "Assinatura encontrada"
+                },
+                "401": {
+                  "description": "Não autorizado"
+                },
+                "404": {
+                  "description": "Assinatura não encontrada"
+                }
+              }
+            },
+            "post": {
+              "summary": "Registra nova assinatura após checkout Stripe",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "plan_type": {
+                          "type": "string"
+                        },
+                        "stripe_subscription_id": {
+                          "type": "string"
+                        },
+                        "stripe_customer_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["plan_type", "stripe_subscription_id"]
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "Assinatura criada com sucesso"
+                },
+                "400": {
+                  "description": "Dados inválidos ou assinatura já existente"
+                },
+                "500": {
+                  "description": "Erro ao criar assinatura"
+                }
+              }
+            }
+          },
+          "/api/stripe/subscription/cancel": {
+            "post": {
+              "summary": "Cancela assinatura ativa do usuário",
+              "responses": {
+                "200": {
+                  "description": "Assinatura cancelada com sucesso"
+                },
+                "400": {
+                  "description": "Requisição inválida"
+                },
+                "500": {
+                  "description": "Erro ao cancelar assinatura"
+                }
+              }
+            }
+          },
+          "/api/stripe/webhook": {
+            "post": {
+              "summary": "Recebe eventos de webhook da Stripe para atualizar status de assinatura",
+              "responses": {
+                "200": {
+                  "description": "Webhook processado com sucesso"
+                },
+                "400": {
+                  "description": "Assinatura inválida ou payload incorreto"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     {
-      "name": "Sistema de Secretárias",
-      "description": "Sistema separado para secretárias com dashboard próprio, gestão de procedimentos vinculados e notificações específicas.",
+      "name": "Procedures Management with OCR",
+      "description": "CRUD de procedimentos anestésicos com dados de paciente, equipe, status, além de upload e recuperação de imagens e extração de dados via OCR.",
       "files": [
+        "app/procedimentos/page.tsx",
+        "app/procedimentos/novo/page.tsx",
+        "app/admin/recover-images/page.tsx",
+        "app/api/recover-images/route.ts",
+        "app/api/fix-rls-procedures/route.ts",
+        "lib/procedures.ts",
+        "lib/image-recovery.ts",
+        "lib/direct-storage-recovery.ts",
+        "lib/database-recovery.ts",
+        "lib/mime-utils.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "AnestEasy Procedures API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/api/recover-images": {
+            "post": {
+              "summary": "Recupera imagens de procedimentos a partir do storage ou banco",
+              "responses": {
+                "200": {
+                  "description": "Processo de recuperação iniciado/completado"
+                },
+                "500": {
+                  "description": "Erro durante a recuperação de imagens"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Financial Management and Reports",
+      "description": "Controle de receitas e despesas, metas financeiras, gráficos analíticos e relatórios exportáveis em PDF/CSV.",
+      "files": [
+        "app/financeiro/page.tsx",
+        "app/relatorios/page.tsx",
+        "lib/goals.ts",
+        "lib/reports.ts",
+        "lib/anestesistas.ts",
+        "lib/shifts.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "AnestEasy Finance and Reports API",
+          "version": "1.0.0"
+        },
+        "paths": {}
+      }
+    },
+    {
+      "name": "Secretary Portal and Access Control",
+      "description": "Gestão de secretárias pelo anestesiologista, convites por email, redefinição de senha de secretária e portal separado com permissões restritas.",
+      "files": [
+        "app/secretaria/layout.tsx",
         "app/secretaria/login/page.tsx",
         "app/secretaria/dashboard/page.tsx",
-        "app/secretaria/procedimentos/page.tsx",
-        "app/secretaria/procedimentos/[id]/page.tsx",
         "app/secretaria/configuracoes/page.tsx",
-        "app/secretaria/notificacoes/page.tsx",
-        "contexts/SecretariaContext.tsx",
-        "contexts/SecretariaNotificationsContext.tsx",
-        "lib/secretarias.ts"
-      ]
+        "app/secretaria/procedimentos/[id]/page.tsx",
+        "app/secretaria/anestesista/[id]/page.tsx",
+        "app/secretaria/register/[token]/page.tsx",
+        "app/api/secretaria/generate-invite/route.ts",
+        "app/api/secretaria/validate-invite/route.ts",
+        "app/api/secretaria/use-invite/route.ts",
+        "app/api/secretaria/accept-link/route.ts",
+        "app/api/secretaria/reject-link/route.ts",
+        "app/api/reset-secretaria-password/route.ts",
+        "app/api/send-secretaria-welcome/route.ts",
+        "lib/secretarias.ts",
+        "lib/feedback.ts",
+        "lib/subscription-access.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "AnestEasy Secretary Management API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/api/secretaria/generate-invite": {
+            "post": {
+              "summary": "Gera convite de secretaria vinculado a um anestesiologista e envia email",
+              "responses": {
+                "200": {
+                  "description": "Convite gerado com sucesso"
+                },
+                "400": {
+                  "description": "Dados inválidos"
+                }
+              }
+            }
+          },
+          "/api/secretaria/validate-invite": {
+            "get": {
+              "summary": "Valida token de convite de secretaria",
+              "responses": {
+                "200": {
+                  "description": "Convite válido"
+                },
+                "400": {
+                  "description": "Convite inválido ou expirado"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     {
-      "name": "Configurações de Usuário",
-      "description": "Página de configurações para gerenciar perfil, preferências do sistema e exclusão de conta.",
+      "name": "Email and SMTP Testing",
+      "description": "Envio de emails transacionais via SMTP/Resend e rotas de teste para validar configuração de envio.",
       "files": [
-        "app/configuracoes/page.tsx"
-      ]
-    },
-    {
-      "name": "Sistema de Notificações",
-      "description": "Sistema de notificações em tempo real para alertas e atualizações importantes.",
-      "files": [
-        "components/notifications/NotificationBell.tsx",
-        "components/notifications/NotificationItem.tsx",
-        "components/notifications/NotificationList.tsx"
-      ]
-    },
-    {
-      "name": "Componentes UI",
-      "description": "Biblioteca de componentes reutilizáveis baseados em Tailwind CSS incluindo botões, inputs, cards, modais e outros elementos de interface.",
-      "files": [
-        "components/ui/Button.tsx",
-        "components/ui/Input.tsx",
-        "components/ui/Card.tsx",
-        "components/ui/Modal.tsx",
-        "components/ui/Progress.tsx",
-        "components/ui/Logo.tsx",
-        "components/ui/LoadingSpinner.tsx",
-        "components/ui/Select.tsx",
-        "components/ui/Textarea.tsx"
-      ]
-    },
-    {
-      "name": "Layout e Navegação",
-      "description": "Sistema de layout responsivo com navegação principal, sidebar e componentes de estrutura da aplicação.",
-      "files": [
-        "app/layout.tsx",
-        "components/layout/Navigation.tsx",
-        "components/layout/Sidebar.tsx"
-      ]
-    },
-    {
-      "name": "Utilitários e Helpers",
-      "description": "Funções utilitárias para formatação, validação, manipulação de dados e integração com APIs externas.",
-      "files": [
+        "app/test-smtp/page.tsx",
+        "app/api/test-smtp/route.ts",
+        "app/api/test-smtp-auth/route.ts",
+        "app/api/test-smtp-direct/route.ts",
         "lib/utils.ts",
-        "lib/supabase.ts",
-        "lib/types.ts",
-        "lib/user-utils.ts"
-      ]
-    },
-    {
-      "name": "OCR e Processamento de Imagens",
-      "description": "Sistema de OCR usando Tesseract.js para captura automática de dados de etiquetas médicas e processamento de imagens.",
-      "files": [
-        "lib/ocr.ts"
-      ]
-    },
-    {
-      "name": "Páginas Institucionais",
-      "description": "Páginas de conteúdo institucional como política de privacidade, termos de uso e responsabilidades.",
-      "files": [
-        "app/page.tsx",
-        "app/politica-privacidade/page.tsx",
-        "app/termos/page.tsx",
-        "app/responsabilidade/page.tsx"
-      ]
-    },
-    {
-      "name": "APIs e Rotas",
-      "description": "APIs REST para integração com serviços externos, webhooks e processamento de dados do backend.",
-      "files": [
-        "app/api/auth/confirm/route.ts",
-        "app/api/procedures/route.ts",
-        "app/api/upload/route.ts",
-        "app/api/ocr/route.ts",
-        "app/api/pagarme/plans/route.ts",
-        "app/api/pagarme/create-subscription/route.ts",
-        "app/api/webhooks/pagarme/route.ts"
-      ]
+        "supabase/edge-functions/send-email/index.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "AnestEasy Email Test API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/api/test-smtp": {
+            "post": {
+              "summary": "Teste de envio de email usando configuração SMTP padrão",
+              "responses": {
+                "200": {
+                  "description": "Email enviado com sucesso"
+                },
+                "500": {
+                  "description": "Falha ao enviar email"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
+

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { fetchWithTimeout } from '@/lib/utils'
 
 interface VersionData {
   version: string
@@ -19,10 +20,25 @@ export function VersionInfo() {
   const [hasUpdate, setHasUpdate] = useState(false)
 
   useEffect(() => {
+    let mounted = true
+
     // Carregar versão inicial
-    fetch('/version.json', { cache: 'no-cache' })
-      .then(res => res.json())
-      .then(data => {
+    const loadVersion = async () => {
+      try {
+        const response = await fetchWithTimeout('/version.json', {
+          cache: 'no-cache',
+          timeout: 5000, // 5 segundos para version.json
+          maxRetries: 1 // Apenas 1 retry para version.json
+        })
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        
+        const data = await response.json()
+        
+        if (!mounted) return
+        
         setVersion(data)
         // Salvar timestamp atual no localStorage
         const currentBuildId = localStorage.getItem('buildId')
@@ -30,13 +46,29 @@ export function VersionInfo() {
           setHasUpdate(true)
         }
         localStorage.setItem('buildId', data.buildId)
-      })
-      .catch(err => console.error('Erro ao carregar version.json:', err))
+      } catch (err) {
+        // Silenciar erro - version.json pode não existir em desenvolvimento
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ version.json não encontrado (normal em desenvolvimento):', err)
+        }
+      }
+    }
+
+    loadVersion()
 
     // Verificar por atualizações a cada 2 minutos
     const interval = setInterval(async () => {
       try {
-        const response = await fetch('/version.json', { cache: 'no-cache' })
+        const response = await fetchWithTimeout('/version.json', {
+          cache: 'no-cache',
+          timeout: 5000,
+          maxRetries: 1
+        })
+        
+        if (!response.ok) {
+          return // Ignorar se não conseguir verificar
+        }
+        
         const data = await response.json()
         
         if (version && data.buildId !== version.buildId) {
@@ -44,14 +76,22 @@ export function VersionInfo() {
             antiga: version.buildId,
             nova: data.buildId
           })
-          setHasUpdate(true)
+          if (mounted) {
+            setHasUpdate(true)
+          }
         }
       } catch (err) {
-        console.error('Erro ao verificar versão:', err)
+        // Silenciar erro - não crítico
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ Erro ao verificar versão (não crítico):', err)
+        }
       }
     }, 120000) // 2 minutos
 
-    return () => clearInterval(interval)
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
   }, [version])
 
   const handleReload = () => {

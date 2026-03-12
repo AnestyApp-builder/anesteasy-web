@@ -6,7 +6,7 @@
 |-----------|-----------|
 | **Produto** | AnestEasy - Sistema de Gestão para Anestesiologistas |
 | **Versão** | 1.0 |
-| **Data** | Novembro 2024 |
+| **Data** | Janeiro 2025 |
 | **Status** | Produção |
 | **Responsável** | Equipe de Desenvolvimento AnestEasy |
 
@@ -97,7 +97,7 @@ Ser a principal plataforma de gestão para anestesiologistas no Brasil, oferecen
 - **Edge Functions**: Funções serverless
 
 **Integrações:**
-- **Pagar.me**: Gateway de pagamento para assinaturas
+- **Stripe**: Gateway de pagamento para assinaturas
 - **Resend/SMTP**: Serviço de envio de emails
 - **Tesseract.js**: OCR para digitalização de documentos
 - **Recharts**: Biblioteca de gráficos e visualizações
@@ -112,7 +112,7 @@ Ser a principal plataforma de gestão para anestesiologistas no Brasil, oferecen
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Frontend      │    │   Supabase      │    │   Integrações   │
-│   (Next.js)     │◄──►│   (Backend)     │◄──►│   (Pagar.me)    │
+│   (Next.js)     │◄──►│   (Backend)     │◄──►│   (Stripe)       │
 │                 │    │                 │    │   (Email)       │
 │ • Dashboard     │    │ • PostgreSQL    │    │   (OCR)         │
 │ • Procedimentos │    │ • Auth          │    │                 │
@@ -261,18 +261,20 @@ Ser a principal plataforma de gestão para anestesiologistas no Brasil, oferecen
 ### 4.8 Sistema de Assinaturas
 
 **Funcionalidades:**
-- Integração com Pagar.me
-- Planos de assinatura flexíveis
+- Integração com Stripe
+- Planos de assinatura flexíveis (mensal, trimestral, anual)
 - Checkout hospedado seguro
+- Customer Portal para gestão de assinaturas
 - Gestão de cobranças recorrentes
 - Controle de acesso baseado em assinatura
 - Webhooks para atualizações automáticas
+- Suporte a códigos promocionais
 
 **Planos Disponíveis:**
-- Plano Básico
-- Plano Profissional
-- Plano Premium
-- Período de teste gratuito
+- **Plano Mensal**: R$ 79,00/mês
+- **Plano Trimestral**: R$ 225,00/trimestre (5% de desconto, economia de R$ 12,00)
+- **Plano Anual**: R$ 850,00/ano (10% de desconto, economia de R$ 98,00)
+- **Período de teste gratuito**: 7 dias
 
 ---
 
@@ -353,7 +355,7 @@ Ser a principal plataforma de gestão para anestesiologistas no Brasil, oferecen
 - ✅ Gestão financeira básica
 - ✅ Sistema de relatórios
 - ✅ Integração com secretárias
-- ✅ Sistema de assinaturas
+- ✅ Sistema de assinaturas com Stripe
 
 ### 8.2 Próximas Versões
 
@@ -408,10 +410,10 @@ Ser a principal plataforma de gestão para anestesiologistas no Brasil, oferecen
 - **Parcerias**: Comissões com integrações
 
 ### 10.2 Estrutura de Preços
-- **Plano Básico**: R$ 97/mês
-- **Plano Profissional**: R$ 197/mês
-- **Plano Premium**: R$ 297/mês
-- **Teste Gratuito**: 14 dias
+- **Plano Mensal**: R$ 79,00/mês
+- **Plano Trimestral**: R$ 225,00/trimestre (5% de desconto)
+- **Plano Anual**: R$ 850,00/ano (10% de desconto)
+- **Teste Gratuito**: 7 dias
 
 ### 10.3 Projeções Financeiras
 - **Ano 1**: R$ 500K ARR
@@ -507,11 +509,12 @@ Ser a principal plataforma de gestão para anestesiologistas no Brasil, oferecen
 
 ---
 
-**Documento criado em**: Novembro 2024  
-**Última atualização**: Novembro 2024  
+**Documento criado em**: Janeiro 2025  
+**Última atualização**: Janeiro 2025  
 **Versão**: 1.0  
 **Status**: Aprovado para implementação
 
 ---
 
 *Este PRD é um documento vivo e será atualizado conforme a evolução do produto e feedback dos usuários.*
+

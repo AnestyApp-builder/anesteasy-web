@@ -1,125 +1,166 @@
-# 🔐 Variáveis de Ambiente para Vercel
+# 🔐 Variáveis de Ambiente para Vercel - AnestEasy
 
-## 📋 Lista Completa de Variáveis
+## 📋 Lista Completa de Variáveis Necessárias
 
-Configure estas variáveis no dashboard da Vercel em **Settings → Environment Variables**
+### ✅ OBRIGATÓRIAS (Core)
 
----
-
-## 🔵 Supabase
-
-```env
+#### Supabase
+```
 NEXT_PUBLIC_SUPABASE_URL=https://zmtwwajyhusyrugobxur.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptdHd3YWp5aHVzeXJ1Z29ieHVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczMzYzNzAsImV4cCI6MjA3MjkxMjM3MH0.NC6t2w_jFWTMJjVv5FmPLouVyOVgCTBReCr0zOA2dx8
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (sua service role key)
+SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key-aqui
 ```
 
-**Onde obter:**
-- `NEXT_PUBLIC_SUPABASE_URL`: Dashboard Supabase → Settings → API → Project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Dashboard Supabase → Settings → API → anon public key
-- `SUPABASE_SERVICE_ROLE_KEY`: Dashboard Supabase → Settings → API → service_role key (secret)
+**Como obter:**
+1. Acesse: https://app.supabase.com/project/zmtwwajyhusyrugobxur/settings/api
+2. Copie:
+   - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
+   - **service_role key** (secret) → `SUPABASE_SERVICE_ROLE_KEY`
 
 ---
 
-## 💳 Stripe
-
-```env
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_... (ou pk_test_... para teste)
-STRIPE_SECRET_KEY=sk_live_... (ou sk_test_... para teste)
+#### Stripe (Pagamentos)
+```
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_... ou pk_test_...
+STRIPE_SECRET_KEY=sk_live_... ou sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRICE_ID_MONTHLY=price_...
 STRIPE_PRICE_ID_QUARTERLY=price_...
 STRIPE_PRICE_ID_ANNUAL=price_...
 ```
 
-**Onde obter:**
-- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Dashboard Stripe → Developers → API Keys → Publishable key
-- `STRIPE_SECRET_KEY`: Dashboard Stripe → Developers → API Keys → Secret key (reveal)
-- `STRIPE_WEBHOOK_SECRET`: Dashboard Stripe → Developers → Webhooks → Seu endpoint → Signing secret
-- `STRIPE_PRICE_ID_*`: Dashboard Stripe → Products → Seu produto → Price IDs
+**Como obter:**
+1. Acesse: https://dashboard.stripe.com
+2. Developers → API Keys → Copie Publishable e Secret
+3. Products → Copie os Price IDs dos planos
+4. Webhooks → Copie o Webhook Secret
 
 ---
 
-## 🌍 Base URL
-
-```env
+#### URLs da Aplicação
+```
 NEXT_PUBLIC_BASE_URL=https://anesteasy.com.br
 ```
-
-**Importante:**
-- Use a URL de produção após configurar domínio customizado
-- Para preview: use a URL da Vercel (ex: `https://anest-easy-xxx.vercel.app`)
+(ou sua URL de produção)
 
 ---
 
-## ⏰ Cron (Opcional)
+### ⚙️ OPCIONAIS (Funcionalidades Específicas)
 
-```env
-CRON_SECRET=seu-secret-aleatorio-aqui
+#### OpenAI (IA para extração de dados)
+```
+OPENAI_API_KEY=sk-...
+```
+**Onde obter:** https://platform.openai.com/api-keys
+
+---
+
+#### Google Vision API (OCR)
+```
+GOOGLE_VISION_API_KEY=AIza...
+```
+**Onde obter:** https://console.cloud.google.com/apis/credentials
+
+---
+
+#### SMTP/Email (Resend ou SMTP direto)
+```
+RESEND_API_KEY=re_...
+```
+OU
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=seu-email@gmail.com
+SMTP_PASSWORD=sua-senha-app
+SMTP_FROM=noreply@anesteasy.com.br
 ```
 
-**Gerar secret:**
+---
+
+## 🚀 Como Configurar na Vercel
+
+### Método 1: Via Dashboard (Recomendado)
+
+1. Acesse: https://vercel.com/seu-projeto/settings/environment-variables
+2. Para cada variável:
+   - Clique em **"Add Another"**
+   - Cole o **Key** (nome da variável)
+   - Cole o **Value** (valor)
+   - Selecione os ambientes: **Production, Preview, Development**
+   - Clique em **"Save"**
+
+### Método 2: Via CLI (Rápido)
+
 ```bash
-# No terminal
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# Instalar Vercel CLI (se não tiver)
+npm i -g vercel
+
+# Fazer login
+vercel login
+
+# Adicionar variáveis (substitua os valores)
+vercel env add NEXT_PUBLIC_SUPABASE_URL production
+vercel env add SUPABASE_SERVICE_ROLE_KEY production
+vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
+vercel env add STRIPE_SECRET_KEY production
+vercel env add STRIPE_WEBHOOK_SECRET production
+vercel env add STRIPE_PRICE_ID_MONTHLY production
+vercel env add STRIPE_PRICE_ID_QUARTERLY production
+vercel env add STRIPE_PRICE_ID_ANNUAL production
+vercel env add NEXT_PUBLIC_BASE_URL production
 ```
+
+---
+
+## ⚠️ IMPORTANTE
+
+1. **Service Role Key**: Esta é a chave mais importante! Sem ela, o upload de arquivos não funcionará.
+2. **Stripe Keys**: Use chaves de **PRODUÇÃO** (`pk_live_...`, `sk_live_...`) na Vercel
+3. **Price IDs**: Os IDs são diferentes entre teste e produção
+4. **Webhook Secret**: Configure um webhook na Stripe apontando para sua URL de produção
 
 ---
 
 ## ✅ Checklist de Configuração
 
-Antes de fazer deploy, certifique-se de que:
-
-- [ ] Todas as variáveis estão configuradas
-- [ ] Variáveis estão marcadas para **Production**, **Preview** e **Development**
-- [ ] `STRIPE_WEBHOOK_SECRET` está correto
-- [ ] `NEXT_PUBLIC_BASE_URL` aponta para a URL correta
-- [ ] `SUPABASE_SERVICE_ROLE_KEY` está configurada (não pode estar vazia)
-
----
-
-## 🔒 Segurança
-
-**NUNCA:**
-- ❌ Commite variáveis no Git
-- ❌ Compartilhe secrets publicamente
-- ❌ Use a mesma secret em múltiplos ambientes sem necessidade
-
-**SEMPRE:**
-- ✅ Use Environment Variables da Vercel
-- ✅ Use secrets diferentes para produção e desenvolvimento
-- ✅ Revise permissões regularmente
+- [ ] `NEXT_PUBLIC_SUPABASE_URL` configurada
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` configurada ⚠️ **CRÍTICA**
+- [ ] `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` configurada
+- [ ] `STRIPE_SECRET_KEY` configurada
+- [ ] `STRIPE_WEBHOOK_SECRET` configurada
+- [ ] `STRIPE_PRICE_ID_MONTHLY` configurado
+- [ ] `STRIPE_PRICE_ID_QUARTERLY` configurado
+- [ ] `STRIPE_PRICE_ID_ANNUAL` configurado
+- [ ] `NEXT_PUBLIC_BASE_URL` configurada
+- [ ] Todas marcadas para **Production, Preview, Development**
 
 ---
 
-## 📝 Como Adicionar na Vercel
+## 🔍 Verificar se Está Funcionando
 
-1. Acesse: https://vercel.com/dashboard
-2. Selecione seu projeto
-3. Vá em **Settings** → **Environment Variables**
-4. Clique em **Add New**
-5. Preencha:
-   - **Key**: Nome da variável (ex: `STRIPE_SECRET_KEY`)
-   - **Value**: Valor da variável
-   - **Environments**: Selecione Production, Preview, Development
-6. Clique em **Save**
-7. Repita para todas as variáveis
+Após configurar, faça um redeploy:
+```bash
+vercel --prod
+```
+
+Ou via Dashboard: Settings → Deployments → Redeploy
 
 ---
 
-## 🔄 Após Adicionar Variáveis
+## 🆘 Problemas Comuns
 
-**Importante:** Após adicionar/atualizar variáveis:
-1. Faça um novo deploy (ou aguarde o próximo deploy automático)
-2. As variáveis só estarão disponíveis após o deploy
+### "Upload não funciona"
+→ Verifique se `SUPABASE_SERVICE_ROLE_KEY` está configurada
+
+### "Erro de autenticação"
+→ Verifique se `NEXT_PUBLIC_SUPABASE_URL` está correta
+
+### "Stripe não funciona"
+→ Verifique se todas as chaves do Stripe estão configuradas
 
 ---
 
-## 🧪 Testar Variáveis
-
-Após o deploy, teste se as variáveis estão corretas:
-
-1. Acesse: `https://seu-dominio.com/api/debug/subscription?email=seu@email.com`
-2. Verifique se não há erros relacionados a variáveis de ambiente
-3. Teste um checkout para verificar se Stripe está funcionando
+**Precisa dos valores?** Entre em contato ou verifique:
+- Supabase: https://app.supabase.com/project/zmtwwajyhusyrugobxur/settings/api
+- Stripe: https://dashboard.stripe.com/apikeys
 

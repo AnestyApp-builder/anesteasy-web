@@ -23,6 +23,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Button } from '@/components/ui/Button'
 import { procedureService } from '@/lib/procedures'
 import { goalService } from '@/lib/goals'
+import { shiftService } from '@/lib/shifts'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
 import { ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts'
@@ -76,13 +77,31 @@ function FinanceiroContent() {
     
     setLoading(true)
     try {
-      const statsData = await procedureService.getProcedureStats(user.id)
-      setStats(statsData)
+      const [statsData, shiftStats] = await Promise.all([
+        procedureService.getProcedureStats(user.id),
+        shiftService.getShiftStats(user.id)
+      ])
       
-      // Carregar dados dos procedimentos para o gráfico
-      const procedures = await procedureService.getProcedures(user.id)
-      calculateProcedureChartData(procedures)
-      calculateMonthlyRevenueData(procedures)
+      // Combinar estatísticas de procedimentos e plantões
+      const combinedStats = {
+        total: statsData.total + shiftStats.total,
+        completed: statsData.completed + shiftStats.completed,
+        pending: statsData.pending + shiftStats.pending,
+        cancelled: statsData.cancelled + shiftStats.cancelled,
+        totalValue: statsData.totalValue + shiftStats.totalValue,
+        completedValue: statsData.completedValue + shiftStats.completedValue,
+        pendingValue: statsData.pendingValue + shiftStats.pendingValue
+      }
+      
+      setStats(combinedStats)
+      
+      // Carregar dados dos procedimentos e plantões para o gráfico
+      const [procedures, shifts] = await Promise.all([
+        procedureService.getProcedures(user.id),
+        shiftService.getShifts(user.id)
+      ])
+      calculateProcedureChartData(procedures, shifts)
+      calculateMonthlyRevenueData(procedures, shifts)
     } catch (error) {
       
     } finally {
@@ -90,12 +109,26 @@ function FinanceiroContent() {
     }
   }
 
-  const calculateProcedureChartData = (procedures: any[]) => {
-    const stats = {
+  const calculateProcedureChartData = (procedures: any[], shifts: any[] = []) => {
+    const procedureStats = {
       total: procedures.length,
       paid: procedures.filter(p => p.payment_status === 'paid').length,
       pending: procedures.filter(p => p.payment_status === 'pending').length,
       cancelled: procedures.filter(p => p.payment_status === 'cancelled').length
+    }
+    
+    const shiftStats = {
+      total: shifts.length,
+      paid: shifts.filter(s => s.payment_status === 'paid').length,
+      pending: shifts.filter(s => s.payment_status === 'pending').length,
+      cancelled: shifts.filter(s => s.payment_status === 'cancelled').length
+    }
+    
+    const stats = {
+      total: procedureStats.total + shiftStats.total,
+      paid: procedureStats.paid + shiftStats.paid,
+      pending: procedureStats.pending + shiftStats.pending,
+      cancelled: procedureStats.cancelled + shiftStats.cancelled
     }
 
     const chartData = [
@@ -132,7 +165,7 @@ function FinanceiroContent() {
     setProcedureChartData(chartData)
   }
 
-  const calculateMonthlyRevenueData = (procedures: any[]) => {
+  const calculateMonthlyRevenueData = (procedures: any[], shifts: any[] = []) => {
     // Obter os últimos 6 meses
     const months: { date: Date; name: string; receita: number }[] = []
     const currentDate = new Date()
@@ -148,15 +181,30 @@ function FinanceiroContent() {
 
     // Calcular receita por mês baseada nos procedimentos pagos
     procedures.forEach(procedure => {
-      if (procedure.payment_status === 'paid' && procedure.procedure_date) {
-        const procedureDate = new Date(procedure.procedure_date)
+      if (procedure.payment_status === 'paid' && procedure.payment_date) {
+        const paymentDate = new Date(procedure.payment_date)
         const monthIndex = months.findIndex(month => 
-          month.date.getMonth() === procedureDate.getMonth() && 
-          month.date.getFullYear() === procedureDate.getFullYear()
+          month.date.getMonth() === paymentDate.getMonth() && 
+          month.date.getFullYear() === paymentDate.getFullYear()
         )
         
         if (monthIndex !== -1) {
           months[monthIndex].receita += procedure.procedure_value || 0
+        }
+      }
+    })
+
+    // Calcular receita por mês baseada nos plantões pagos
+    shifts.forEach(shift => {
+      if (shift.payment_status === 'paid' && shift.payment_date) {
+        const paymentDate = new Date(shift.payment_date)
+        const monthIndex = months.findIndex(month => 
+          month.date.getMonth() === paymentDate.getMonth() && 
+          month.date.getFullYear() === paymentDate.getFullYear()
+        )
+        
+        if (monthIndex !== -1) {
+          months[monthIndex].receita += shift.shift_value || 0
         }
       }
     })
@@ -293,13 +341,13 @@ function FinanceiroContent() {
       diasRestantes: daysRemaining
     })
     
-    // Calcular valor atual do período (apenas procedimentos pagos no período atual)
-    // Buscar procedimentos do período atual
+    // Calcular valor atual do período (procedimentos e plantões pagos no período atual)
     let currentValue = 0
     try {
-      const procedures = await procedureService.getProcedures(user.id)
-      const startDateStr = startDate.toISOString().split('T')[0]
-      const endDateStr = endDate.toISOString().split('T')[0]
+      const [procedures, shifts] = await Promise.all([
+        procedureService.getProcedures(user.id),
+        shiftService.getShifts(user.id)
+      ])
       
       // Filtrar procedimentos pagos no período atual
       const periodProcedures = procedures.filter((proc: any) => {
@@ -310,11 +358,26 @@ function FinanceiroContent() {
       })
       
       // Somar valores dos procedimentos do período
-      currentValue = periodProcedures.reduce((sum: number, proc: any) => {
+      const proceduresValue = periodProcedures.reduce((sum: number, proc: any) => {
         return sum + (proc.procedure_value || 0)
       }, 0)
       
-      console.log(`📊 Meta: Valor atual do período: R$ ${currentValue.toFixed(2)} (${periodProcedures.length} procedimentos)`)
+      // Filtrar plantões pagos no período atual
+      const periodShifts = shifts.filter((shift: any) => {
+        if (shift.payment_status !== 'paid' || !shift.payment_date) return false
+        
+        const paymentDate = new Date(shift.payment_date)
+        return paymentDate >= startDate && paymentDate < endDate
+      })
+      
+      // Somar valores dos plantões do período
+      const shiftsValue = periodShifts.reduce((sum: number, shift: any) => {
+        return sum + (shift.shift_value || 0)
+      }, 0)
+      
+      currentValue = proceduresValue + shiftsValue
+      
+      console.log(`📊 Meta: Valor atual do período: R$ ${currentValue.toFixed(2)} (${periodProcedures.length} procedimentos + ${periodShifts.length} plantões)`)
     } catch (error) {
       console.error('Erro ao calcular valor do período:', error)
       // Fallback: usar valor total se houver erro
@@ -417,8 +480,8 @@ function FinanceiroContent() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={() => {
                 // Redireciona para procedimentos com filtros ativados para registrar pagamentos
-                // Mostra apenas procedimentos pendentes e não lançados que precisam ter pagamento registrado
-                router.push('/procedimentos?status=pending,not_launched');
+                // Mostra apenas procedimentos pendentes (inclui cancelled) que precisam ter pagamento registrado
+                router.push('/procedimentos?status=pending');
               }}
             >
               <Banknote className="w-4 h-4 mr-2" />

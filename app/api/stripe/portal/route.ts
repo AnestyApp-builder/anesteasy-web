@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     // URL de retorno
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
-    const returnUrl = `${baseUrl}/assinatura`
+    const returnUrl = `${baseUrl}/planos`
 
     console.log('📤 Criando Customer Portal Session na Stripe...')
 

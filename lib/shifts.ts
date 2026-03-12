@@ -14,6 +14,10 @@ export interface Shift {
   recurrence_end_date?: string
   parent_shift_id?: string
   is_generated?: boolean
+  shift_value?: number
+  sobreaviso_type?: 'fixo' | 'variavel'
+  payment_status?: 'pending' | 'paid' | 'cancelled'
+  payment_date?: string
   created_at: string
   updated_at: string
 }
@@ -31,6 +35,10 @@ export interface ShiftInsert {
   recurrence_end_date?: string
   parent_shift_id?: string
   is_generated?: boolean
+  shift_value?: number
+  sobreaviso_type?: 'fixo' | 'variavel'
+  payment_status?: 'pending' | 'paid' | 'cancelled'
+  payment_date?: string
 }
 
 export interface ShiftUpdate {
@@ -45,6 +53,10 @@ export interface ShiftUpdate {
   recurrence_end_date?: string
   parent_shift_id?: string
   is_generated?: boolean
+  shift_value?: number
+  sobreaviso_type?: 'fixo' | 'variavel'
+  payment_status?: 'pending' | 'paid' | 'cancelled'
+  payment_date?: string
 }
 
 export const shiftService = {
@@ -266,15 +278,17 @@ export const shiftService = {
   },
 
   getShiftTypeIcon(type: string): string {
+    // Esta função não é mais usada, mantida para compatibilidade
+    // Os ícones agora são renderizados como componentes SVG
     switch (type) {
       case 'hospital_fixo':
-        return '🏥'
+        return 'hospital'
       case 'sobreaviso':
-        return '📞'
+        return 'phone'
       case 'cirurgia_eletiva':
-        return '⚕️'
+        return 'activity'
       default:
-        return '📅'
+        return 'calendar'
     }
   },
 
@@ -493,6 +507,109 @@ export const shiftService = {
     } catch (error) {
       
       return false
+    }
+  },
+
+  // Obter estatísticas dos plantões (valores financeiros)
+  async getShiftStats(userId: string): Promise<{
+    total: number
+    completed: number
+    pending: number
+    cancelled: number
+    totalValue: number
+    completedValue: number
+    pendingValue: number
+  }> {
+    try {
+      const { data, error } = await supabase
+        .from('shifts')
+        .select('id, payment_status, shift_value')
+        .eq('user_id', userId)
+
+      if (error) {
+        
+        return {
+          total: 0,
+          completed: 0,
+          pending: 0,
+          cancelled: 0,
+          totalValue: 0,
+          completedValue: 0,
+          pendingValue: 0
+        }
+      }
+
+      const stats = {
+        total: data.length,
+        completed: 0,
+        pending: 0,
+        cancelled: 0,
+        totalValue: 0,
+        completedValue: 0,
+        pendingValue: 0
+      }
+
+      // Processar cada plantão
+      for (const shift of data) {
+        const value = shift.shift_value || 0
+        stats.totalValue += value
+        
+        switch (shift.payment_status) {
+          case 'paid':
+            stats.completed++
+            stats.completedValue += value
+            break
+          case 'pending':
+            stats.pending++
+            stats.pendingValue += value
+            break
+          case 'cancelled':
+            stats.cancelled++
+            // Incluir cancelled no pendingValue (não recebido)
+            stats.pendingValue += value
+            break
+          default:
+            // Se não tiver status definido, considerar como pendente
+            stats.pending++
+            stats.pendingValue += value
+        }
+      }
+
+      return stats
+    } catch (error) {
+      
+      return {
+        total: 0,
+        completed: 0,
+        pending: 0,
+        cancelled: 0,
+        totalValue: 0,
+        completedValue: 0,
+        pendingValue: 0
+      }
+    }
+  },
+
+  // Buscar plantões por período com valores
+  async getShiftsWithValuesByPeriod(userId: string, startDate: string, endDate: string): Promise<Shift[]> {
+    try {
+      const { data, error } = await supabase
+        .from('shifts')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('start_date', startDate)
+        .lte('end_date', endDate)
+        .order('start_date', { ascending: true })
+
+      if (error) {
+        
+        return []
+      }
+
+      return data || []
+    } catch (error) {
+      
+      return []
     }
   }
 }

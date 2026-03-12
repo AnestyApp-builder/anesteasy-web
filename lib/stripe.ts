@@ -18,7 +18,7 @@ if (!stripeSecretKey) {
 
 export const stripe = stripeSecretKey 
   ? new Stripe(stripeSecretKey, {
-      apiVersion: '2024-12-18.acacia',
+      apiVersion: '2023-10-16',
       typescript: true,
     })
   : null as any
@@ -42,7 +42,8 @@ export const PLAN_NAMES = {
 export const STRIPE_PRICE_IDS = {
   monthly: process.env.STRIPE_PRICE_ID_MONTHLY || '',
   quarterly: process.env.STRIPE_PRICE_ID_QUARTERLY || '',
-  annual: process.env.STRIPE_PRICE_ID_ANNUAL || ''
+  annual: process.env.STRIPE_PRICE_ID_ANNUAL || '',
+  daily: process.env.STRIPE_PRICE_ID_DAILY || ''
 }
 
 /**
@@ -53,13 +54,15 @@ export async function createCheckoutSession({
   userEmail,
   planType,
   successUrl,
-  cancelUrl
+  cancelUrl,
+  isDaily = false
 }: {
   userId: string
   userEmail: string
-  planType: 'monthly' | 'quarterly' | 'annual'
+  planType: 'monthly' | 'quarterly' | 'annual' | 'daily'
   successUrl: string
   cancelUrl: string
+  isDaily?: boolean
 }): Promise<Stripe.Checkout.Session> {
   
   if (!stripe) {
@@ -72,40 +75,111 @@ export async function createCheckoutSession({
   // Obter Price ID do plano
   const priceId = STRIPE_PRICE_IDS[planType]
   
+  console.log('🔍 Verificando Price ID para planType:', planType)
+  console.log('🔍 STRIPE_PRICE_IDS disponíveis:', Object.keys(STRIPE_PRICE_IDS))
+  console.log('🔍 Price ID encontrado:', priceId ? `${priceId.substring(0, 20)}...` : 'NÃO ENCONTRADO')
+  
   if (!priceId) {
-    throw new Error(`Price ID não configurado para o plano ${planType}. Configure STRIPE_PRICE_ID_${planType.toUpperCase()} no .env.local`)
+    const errorMsg = `Price ID não configurado para o plano ${planType}. Configure STRIPE_PRICE_ID_${planType.toUpperCase()} no .env.local`
+    console.error('❌', errorMsg)
+    throw new Error(errorMsg)
   }
   
+  // Verificar o tipo do price para determinar o modo correto
+  let mode: 'payment' | 'subscription' = 'subscription'
+  let priceType: 'one_time' | 'recurring' | null = null
+  
+  try {
+    // Verificar o tipo do price no Stripe
+    const price = await stripe.prices.retrieve(priceId)
+    priceType = price.type as 'one_time' | 'recurring'
+    console.log('📋 Tipo do Price:', priceType)
+    
+    // Determinar o modo baseado no tipo do price e se é daily
+    if (isDaily) {
+      // Para daily, preferir 'payment' se o price for 'one_time'
+      // Caso contrário, usar 'subscription' se o price for 'recurring'
+      if (priceType === 'one_time') {
+        mode = 'payment'
+      } else if (priceType === 'recurring') {
+        mode = 'subscription'
+        console.log('⚠️ Price é do tipo recurring, usando mode subscription para plano daily')
+      }
+    } else {
+      // Para planos normais, sempre usar subscription
+      mode = 'subscription'
+    }
+  } catch (priceError: any) {
+    console.error('❌ Erro ao verificar price ID:', priceError)
+    // Se não conseguir verificar, usar modo padrão baseado em isDaily
+    mode = isDaily ? 'payment' : 'subscription'
+    console.warn('⚠️ Não foi possível verificar o tipo do price, usando modo padrão:', mode)
+  }
+  
+  console.log('📋 Modo de checkout:', mode)
+  console.log('📋 Is Daily:', isDaily)
+  
   // Criar sessão de checkout
-  const session = await stripe.checkout.sessions.create({
-    customer: customer.id,
-    mode: 'subscription',
-    payment_method_types: ['card'],
-    line_items: [
-      {
-        price: priceId,
-        quantity: 1,
-      },
-    ],
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    metadata: {
-      user_id: userId,
-      plan_type: planType,
-    },
-    subscription_data: {
+  try {
+    const sessionConfig: Stripe.Checkout.SessionCreateParams = {
+      customer: customer.id,
+      mode: mode,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       metadata: {
         user_id: userId,
-        plan_type: planType,
+        plan_type: isDaily ? 'test' : planType,
+        is_daily: isDaily ? 'true' : 'false'
       },
-    },
-    // Permitir códigos promocionais
-    allow_promotion_codes: true,
-    // Coletar endereço de cobrança
-    billing_address_collection: 'required',
-  })
-  
-  return session
+      billing_address_collection: isDaily && mode === 'payment' ? 'auto' : 'required',
+    }
+
+    // Adicionar payment_intent_data apenas para pagamentos únicos (daily com one_time)
+    if (isDaily && mode === 'payment') {
+      sessionConfig.payment_intent_data = {
+        metadata: {
+          user_id: userId,
+          plan_type: 'test',
+          is_daily: 'true'
+        }
+      }
+    }
+
+    // Adicionar subscription_data para subscriptions (incluindo daily com recurring)
+    if (mode === 'subscription') {
+      sessionConfig.subscription_data = {
+        metadata: {
+          user_id: userId,
+          plan_type: isDaily ? 'test' : planType,
+          is_daily: isDaily ? 'true' : 'false'
+        },
+      }
+      // Para daily, não permitir códigos promocionais (já que é um teste)
+      if (!isDaily) {
+        sessionConfig.allow_promotion_codes = true
+      }
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionConfig)
+    
+    console.log('✅ Sessão de checkout criada com sucesso:', session.id)
+    console.log('📋 Payment Intent ID:', session.payment_intent)
+    console.log('📋 Subscription ID:', session.subscription)
+    return session
+  } catch (sessionError: any) {
+    console.error('❌ Erro ao criar sessão de checkout:', sessionError)
+    console.error('📋 Erro do Stripe:', sessionError.message)
+    console.error('📋 Tipo do erro:', sessionError.type)
+    console.error('📋 Código do erro:', sessionError.code)
+    throw new Error(`Erro ao criar checkout: ${sessionError.message || 'Erro desconhecido'}`)
+  }
 }
 
 /**

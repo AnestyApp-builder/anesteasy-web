@@ -289,7 +289,7 @@ export default function Register() {
             <Input
               label="Nome completo"
               type="text"
-              placeholder={activeTab === 'anestesista' ? 'Dr. João Silva' : 'Maria Silva'}
+              placeholder={activeTab === 'anestesista' ? 'Ex: Dr. João Silva' : 'Ex: Maria Silva'}
               icon={<User className="w-5 h-5" />}
               value={activeTab === 'anestesista' ? anestesistaForm.name : secretariaForm.name}
               onChange={(e) => {
@@ -305,7 +305,7 @@ export default function Register() {
             <Input
               label="Email"
               type="email"
-              placeholder="seu@email.com"
+              placeholder="Ex: seu.email@exemplo.com"
               icon={<Mail className="w-5 h-5" />}
               value={activeTab === 'anestesista' ? anestesistaForm.email : secretariaForm.email}
               onChange={(e) => {
@@ -321,7 +321,7 @@ export default function Register() {
             <Input
               label="CPF"
               type="text"
-              placeholder="000.000.000-00"
+              placeholder="Ex: 000.000.000-00 (somente números e pontos)"
               icon={<CreditCard className="w-5 h-5" />}
               value={(() => {
                 const cpfValue = activeTab === 'anestesista' ? anestesistaForm.cpf : secretariaForm.cpf
@@ -358,7 +358,7 @@ export default function Register() {
                   <Input
                     label="CRM"
                     type="text"
-                    placeholder="123456"
+                    placeholder="Ex: 123456 (CRM completo)"
                     value={anestesistaForm.crm}
                     onChange={(e) => setAnestesistaForm({ ...anestesistaForm, crm: e.target.value })}
                     required
@@ -388,7 +388,7 @@ export default function Register() {
                   <Input
                     label="Telefone"
                     type="tel"
-                    placeholder="(11) 99999-9999"
+                    placeholder="Ex: (11) 99999-9999"
                     value={anestesistaForm.phone}
                     onChange={(e) => setAnestesistaForm({ ...anestesistaForm, phone: e.target.value })}
                     required

@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/contexts/ToastContext'
+import { getFullErrorMessage } from '@/lib/error-messages'
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
@@ -19,27 +21,15 @@ export default function Login() {
     password: ''
   })
   const { isLoading, user, isAuthenticated } = useAuth()
+  const { addToast } = useToast()
   const router = useRouter()
 
   // Redirecionar se já estiver logado - SIMPLES E DIRETO
   useEffect(() => {
     if (!isLoading && isAuthenticated && user) {
-      console.log('✅ Já autenticado, redirecionando para dashboard')
       router.replace('/dashboard')
     }
   }, [isLoading, isAuthenticated, user, router])
-
-  // Mostrar loading enquanto verifica autenticação inicial
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
-        </div>
-      </div>
-    )
-  }
 
   // Não renderizar se já estiver logado
   if (isAuthenticated && user) {
@@ -69,8 +59,6 @@ export default function Login() {
     setIsSubmitting(true)
 
     try {
-      console.log('🔐 Iniciando login para:', formData.email)
-      
       // Importar diretamente o supabase para fazer login simples
       const { supabase } = await import('@/lib/supabase')
       
@@ -80,8 +68,6 @@ export default function Login() {
       })
 
       if (authError) {
-        console.error('❌ Erro no login:', authError.message)
-        
         if (authError.message.includes('Invalid login credentials')) {
           setError('Email ou senha incorretos')
         } else if (authError.message.includes('Email not confirmed')) {
@@ -99,47 +85,70 @@ export default function Login() {
         return
       }
 
-      console.log('✅ Login bem-sucedido')
-      
-      // Verificar se é secretária ou anestesista
-      let isSecretaria = false
+      // Obter token de acesso para usar no cache
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      // Chamar /api/auth/status para obter informações completas
+      let authStatus: any = null
       try {
-        // Tentar verificar por email primeiro (mais rápido)
-        const emailResult = await supabase
-          .from('secretarias')
-          .select('id')
-          .eq('email', data.user.email)
-          .maybeSingle()
-        
-        if (emailResult?.data) {
-          isSecretaria = true
-        } else {
-          // Se não encontrou por email, tentar por ID
-          const idResult = await supabase
-            .from('secretarias')
-            .select('id')
-            .eq('id', data.user.id)
-            .maybeSingle()
-          isSecretaria = !!idResult?.data
+        if (accessToken) {
+          const { fetchWithTimeout } = await import('@/lib/utils')
+          const statusResponse = await fetchWithTimeout('/api/auth/status', {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            },
+            timeout: 7000,
+            maxRetries: 2
+          })
+          
+          if (statusResponse.ok) {
+            authStatus = await statusResponse.json()
+            
+            // Armazenar cache local para renderização instantânea
+            if (authStatus.ok) {
+              localStorage.setItem('auth_cache', JSON.stringify({
+                role: authStatus.role,
+                subscription_status: authStatus.subscription_status,
+                email_confirmed: authStatus.email_confirmed,
+                has_access: authStatus.has_access,
+                timestamp: Date.now()
+              }))
+            }
+          }
         }
       } catch (error) {
-        // Se der erro, assumir anestesista
-        console.warn('⚠️ Erro ao verificar tipo de usuário, assumindo anestesista')
-        isSecretaria = false
+        // Se falhar, continuar sem cache (middleware vai verificar)
+        console.warn('Erro ao obter status de autenticação:', error)
       }
 
-      // Redirecionar baseado no tipo imediatamente usando window.location para forçar reload
-      if (isSecretaria) {
-        console.log('👩‍💼 É secretária, redirecionando para dashboard de secretária')
+      // Atualizar last_login_at em background (não bloquear login)
+      if (authStatus?.role === 'anestesista') {
+        fetch('/api/admin/update-login-time', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: data.user.id })
+        }).catch(() => {
+          // Ignorar erros - não crítico
+        })
+      }
+
+      // Redirecionar imediatamente baseado no role do cache ou assumir dashboard padrão
+      const role = authStatus?.role || 'anestesista'
+      if (role === 'secretaria') {
         window.location.href = '/secretaria/dashboard'
       } else {
-        console.log('👨‍⚕️ É anestesista, redirecionando para dashboard de anestesista')
         window.location.href = '/dashboard'
       }
       
     } catch (error: any) {
-      console.error('❌ Erro no login:', error)
-      setError('Erro ao fazer login. Tente novamente')
+      const errorMsg = getFullErrorMessage(error)
+      setError(errorMsg.message)
+      addToast({
+        title: errorMsg.message,
+        description: errorMsg.action,
+        variant: errorMsg.variant || 'error'
+      })
       setIsSubmitting(false)
     }
   }

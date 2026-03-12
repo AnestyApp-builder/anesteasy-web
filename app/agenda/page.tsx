@@ -13,7 +13,10 @@ import {
   X,
   CheckCircle,
   AlertTriangle,
-  Menu
+  Menu,
+  Building2,
+  Phone,
+  Activity
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
@@ -23,7 +26,7 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/badge'
 import { shiftService, Shift } from '@/lib/shifts'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatDate, formatTime, formatShiftDates } from '@/lib/utils'
+import { formatDate, formatTime, formatShiftDates, formatCurrency } from '@/lib/utils'
 
 function AgendaContent() {
   const { user } = useAuth()
@@ -55,7 +58,11 @@ function AgendaContent() {
     description: '',
     is_recurring: false,
     recurrence_type: 'weekly' as 'weekly' | 'monthly',
-    recurrence_end_date: ''
+    recurrence_end_date: '',
+    shift_value: '',
+    sobreaviso_type: '' as '' | 'fixo' | 'variavel',
+    payment_status: 'pending' as 'pending' | 'paid' | 'cancelled',
+    payment_date: ''
   })
 
   useEffect(() => {
@@ -151,7 +158,11 @@ function AgendaContent() {
       description: '',
       is_recurring: false,
       recurrence_type: 'weekly',
-      recurrence_end_date: ''
+      recurrence_end_date: '',
+      shift_value: '',
+      sobreaviso_type: '',
+      payment_status: 'pending',
+      payment_date: ''
     })
     setShowModal(true)
   }
@@ -174,6 +185,15 @@ function AgendaContent() {
       return `${year}-${month}-${day}T${hours}:${minutes}`
     }
     
+    // Formatar data de pagamento se existir
+    const paymentDate = shift.payment_date ? new Date(shift.payment_date) : null
+    const formatDateForInput = (date: Date) => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    
     setFormData({
       title: shift.title,
       start_date: formatForInput(startDate),
@@ -183,7 +203,11 @@ function AgendaContent() {
       description: shift.description || '',
       is_recurring: shift.is_recurring || false,
       recurrence_type: shift.recurrence_type || 'weekly',
-      recurrence_end_date: recurrenceEndDate ? formatForInput(recurrenceEndDate) : ''
+      recurrence_end_date: recurrenceEndDate ? formatForInput(recurrenceEndDate) : '',
+      shift_value: shift.shift_value ? shift.shift_value.toString() : '',
+      sobreaviso_type: shift.sobreaviso_type || '',
+      payment_status: shift.payment_status || 'pending',
+      payment_date: paymentDate ? formatDateForInput(paymentDate) : ''
     })
     setShowModal(true)
   }
@@ -334,7 +358,11 @@ function AgendaContent() {
         description: formData.description.trim() || undefined,
         is_recurring: formData.is_recurring,
         recurrence_type: formData.is_recurring ? formData.recurrence_type : undefined,
-        recurrence_end_date: formData.is_recurring && formData.recurrence_end_date ? new Date(formData.recurrence_end_date).toISOString() : undefined
+        recurrence_end_date: formData.is_recurring && formData.recurrence_end_date ? new Date(formData.recurrence_end_date).toISOString() : undefined,
+        shift_value: formData.shift_value ? parseFloat(formData.shift_value.replace(',', '.')) : undefined,
+        sobreaviso_type: formData.shift_type === 'sobreaviso' ? (formData.sobreaviso_type || undefined) : undefined,
+        payment_status: formData.payment_status,
+        payment_date: formData.payment_date ? new Date(formData.payment_date).toISOString() : undefined
       }
 
       if (editingShift) {
@@ -628,15 +656,24 @@ function AgendaContent() {
             <div className="flex flex-wrap gap-4">
               <div className="flex items-center space-x-2">
                 <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                <span className="text-sm text-gray-700">🏥 Plantão Hospital Fixo</span>
+                <div className="flex items-center space-x-1">
+                  <Building2 className="w-4 h-4 text-teal-600" />
+                  <span className="text-sm text-gray-700">Plantão Hospital Fixo</span>
+                </div>
               </div>
               <div className="flex items-center space-x-2">
                 <div className="w-4 h-4 bg-amber-500 rounded"></div>
-                <span className="text-sm text-gray-700">📞 Plantão Sobreaviso</span>
+                <div className="flex items-center space-x-1">
+                  <Phone className="w-4 h-4 text-teal-600" />
+                  <span className="text-sm text-gray-700">Plantão Sobreaviso</span>
+                </div>
               </div>
               <div className="flex items-center space-x-2">
                 <div className="w-4 h-4 bg-green-500 rounded"></div>
-                <span className="text-sm text-gray-700">⚕️ Cirurgias Eletivas</span>
+                <div className="flex items-center space-x-1">
+                  <Activity className="w-4 h-4 text-teal-600" />
+                  <span className="text-sm text-gray-700">Cirurgias Eletivas</span>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -687,9 +724,9 @@ function AgendaContent() {
                       }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                     >
-                      <option value="hospital_fixo">🏥 Hospital Fixo</option>
-                      <option value="sobreaviso">📞 Sobreaviso</option>
-                      <option value="cirurgia_eletiva">⚕️ Cirurgias Eletivas</option>
+                      <option value="hospital_fixo">Hospital Fixo</option>
+                      <option value="sobreaviso">Sobreaviso</option>
+                      <option value="cirurgia_eletiva">Cirurgias Eletivas</option>
                     </select>
                   </div>
 
@@ -704,6 +741,72 @@ function AgendaContent() {
                         onChange={(e) => setFormData(prev => ({ ...prev, hospital_name: e.target.value }))}
                         placeholder="Ex: Hospital São Paulo"
                         required
+                      />
+                    </div>
+                  )}
+
+                  {formData.shift_type === 'sobreaviso' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tipo de Sobreaviso *
+                      </label>
+                      <select
+                        value={formData.sobreaviso_type}
+                        onChange={(e) => setFormData(prev => ({ 
+                          ...prev, 
+                          sobreaviso_type: e.target.value as 'fixo' | 'variavel'
+                        }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        required
+                      >
+                        <option value="">Selecione o tipo</option>
+                        <option value="fixo">Sobreaviso com Valor Fixo</option>
+                        <option value="variavel">Sobreaviso com Valor Variável</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Valor do Plantão (R$)
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.shift_value}
+                      onChange={(e) => setFormData(prev => ({ ...prev, shift_value: e.target.value }))}
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Status de Pagamento
+                    </label>
+                    <select
+                      value={formData.payment_status}
+                      onChange={(e) => setFormData(prev => ({ 
+                        ...prev, 
+                        payment_status: e.target.value as 'pending' | 'paid' | 'cancelled'
+                      }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    >
+                      <option value="pending">Pendente</option>
+                      <option value="paid">Pago</option>
+                      <option value="cancelled">Cancelado</option>
+                    </select>
+                  </div>
+
+                  {formData.payment_status === 'paid' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Data de Pagamento
+                      </label>
+                      <Input
+                        type="date"
+                        value={formData.payment_date}
+                        onChange={(e) => setFormData(prev => ({ ...prev, payment_date: e.target.value }))}
                       />
                     </div>
                   )}
@@ -997,9 +1100,13 @@ function AgendaContent() {
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                              <div className="flex items-center space-x-3 mb-2">
-                               <span className="text-2xl">
-                                 {shift.shift_type === 'hospital_fixo' ? '🏥' : shift.shift_type === 'cirurgia_eletiva' ? '⚕️' : '📞'}
-                               </span>
+                               {shift.shift_type === 'hospital_fixo' ? (
+                                 <Building2 className="w-6 h-6 text-teal-600" />
+                               ) : shift.shift_type === 'cirurgia_eletiva' ? (
+                                 <Activity className="w-6 h-6 text-teal-600" />
+                               ) : (
+                                 <Phone className="w-6 h-6 text-teal-600" />
+                               )}
                                <h3 className="text-lg font-semibold text-gray-900">{shift.title}</h3>
                                <span className={`
                                  px-3 py-1 rounded-full text-sm font-medium text-white
@@ -1026,6 +1133,35 @@ function AgendaContent() {
                                 <div className="flex items-center space-x-2">
                                   <MapPin className="w-4 h-4" />
                                   <span>{shift.hospital_name}</span>
+                                </div>
+                              )}
+
+                              {shift.shift_value && shift.shift_value > 0 && (
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-semibold text-teal-600">
+                                    Valor: {formatCurrency(shift.shift_value)}
+                                  </span>
+                                  {shift.payment_status === 'paid' && (
+                                    <Badge className="bg-green-100 text-green-800">
+                                      Pago
+                                    </Badge>
+                                  )}
+                                  {shift.payment_status === 'pending' && (
+                                    <Badge className="bg-amber-100 text-amber-800">
+                                      Pendente
+                                    </Badge>
+                                  )}
+                                  {shift.payment_status === 'cancelled' && (
+                                    <Badge className="bg-red-100 text-red-800">
+                                      Cancelado
+                                    </Badge>
+                                  )}
+                                </div>
+                              )}
+
+                              {shift.sobreaviso_type && (
+                                <div className="text-xs text-gray-500">
+                                  Tipo: {shift.sobreaviso_type === 'fixo' ? 'Sobreaviso com Valor Fixo' : 'Sobreaviso com Valor Variável'}
                                 </div>
                               )}
                               

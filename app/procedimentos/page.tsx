@@ -566,7 +566,8 @@ function ProcedimentosContent() {
     
     setLoading(true)
     try {
-      const data = await procedureService.getProcedures(user.id)
+      // Limitar quantidade inicial para evitar travamentos em contas com muitos anos de uso
+      const data = await procedureService.getProcedures(user.id, { limit: 500 })
       setProcedures(data)
       
       // OTIMIZAÇÃO: Lazy loading - não carregar anexos automaticamente

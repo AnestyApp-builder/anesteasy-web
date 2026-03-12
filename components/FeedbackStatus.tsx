@@ -55,7 +55,7 @@ export function FeedbackStatus({ procedureId }: FeedbackStatusProps) {
         <CardHeader>
           <CardTitle className="flex items-center">
             <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-            Carregando Feedback...
+            Carregando status do feedback...
           </CardTitle>
         </CardHeader>
       </Card>

@@ -169,7 +169,7 @@ export function SubscriptionCard({ userId }: SubscriptionCardProps) {
               className="w-full"
             >
               <Calendar className="w-4 h-4 mr-2" />
-              Gerenciar Assinatura
+              Ver Planos
             </Button>
           </div>
         )}

@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
 
     const { plan_id } = await request.json()
 
-    // Validar plano
-    if (!plan_id || !['monthly', 'quarterly', 'annual'].includes(plan_id)) {
+    // Validar plano (incluindo 'test' que usa daily)
+    if (!plan_id || !['monthly', 'quarterly', 'annual', 'test'].includes(plan_id)) {
       return NextResponse.json(
         { error: 'Plano inválido' },
         { status: 400 }
@@ -72,19 +72,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verificar se já tem assinatura ativa
-    const { data: existingSubscription } = await supabaseAdmin
-      .from('subscriptions')
-      .select('id, status')
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .maybeSingle()
+    // Para plano 'test', não verificar se já tem assinatura ativa
+    // (permite comprar dias adicionais mesmo tendo assinatura)
+    if (plan_id !== 'test') {
+      // Verificar se já tem assinatura ativa
+      const { data: existingSubscription } = await supabaseAdmin
+        .from('subscriptions')
+        .select('id, status')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle()
 
-    if (existingSubscription) {
-      return NextResponse.json(
-        { error: 'Você já possui uma assinatura ativa' },
-        { status: 400 }
-      )
+      if (existingSubscription) {
+        return NextResponse.json(
+          { error: 'Você já possui uma assinatura ativa' },
+          { status: 400 }
+        )
+      }
     }
 
     // URLs de retorno
@@ -93,30 +97,48 @@ export async function POST(request: NextRequest) {
     const cancelUrl = `${baseUrl}/planos?checkout=cancelled`
 
     console.log('📤 Criando Checkout Session na Stripe...')
+    console.log('📋 Plan ID recebido:', plan_id)
+
+    // Para plano 'test', usar o price_id daily
+    const actualPlanType = plan_id === 'test' ? 'daily' : plan_id
+    const isDaily = plan_id === 'test'
+    
+    console.log('📋 Actual Plan Type:', actualPlanType)
+    console.log('📋 Is Daily:', isDaily)
+    console.log('📋 STRIPE_PRICE_ID_DAILY:', process.env.STRIPE_PRICE_ID_DAILY ? 'Configurado' : 'NÃO CONFIGURADO')
 
     // Criar sessão de checkout na Stripe
-    const session = await createCheckoutSession({
-      userId: user.id,
-      userEmail: user.email || '',
-      planType: plan_id,
-      successUrl,
-      cancelUrl
-    })
+    try {
+      const session = await createCheckoutSession({
+        userId: user.id,
+        userEmail: user.email || '',
+        planType: actualPlanType as 'monthly' | 'quarterly' | 'annual' | 'daily',
+        successUrl,
+        cancelUrl,
+        isDaily: isDaily // Flag para indicar que é compra de 1 dia
+      })
 
-    console.log('✅ Checkout Session criada:', session.id)
+      console.log('✅ Checkout Session criada:', session.id)
+      console.log('🔗 Checkout URL:', session.url)
 
     // Criar registro de assinatura pendente no banco
     // Nota: Não criar aqui, deixar o webhook criar quando o pagamento for confirmado
     // Isso evita problemas se o usuário cancelar o checkout
     console.log('ℹ️ Assinatura será criada pelo webhook quando o pagamento for confirmado')
 
-    return NextResponse.json({
-      checkout_url: session.url,
-      session_id: session.id
-    })
+      return NextResponse.json({
+        checkout_url: session.url,
+        session_id: session.id
+      })
+    } catch (checkoutError: any) {
+      console.error('❌ Erro ao criar sessão de checkout:', checkoutError)
+      console.error('📋 Erro completo:', JSON.stringify(checkoutError, null, 2))
+      throw checkoutError
+    }
 
   } catch (error: any) {
     console.error('❌ Erro ao criar checkout:', error)
+    console.error('📋 Stack trace:', error.stack)
     return NextResponse.json(
       { 
         error: error.message || 'Erro ao processar checkout',

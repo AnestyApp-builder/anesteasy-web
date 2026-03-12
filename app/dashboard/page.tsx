@@ -152,7 +152,8 @@ export default function Dashboard() {
       const [statsData, proceduresData, shiftStats, shiftsData] = await retryWithTimeout(
         () => Promise.all([
           procedureService.getProcedureStats(user.id),
-          procedureService.getProcedures(user.id),
+          // Dashboard não precisa de todos os registros; limitar para melhorar desempenho
+          procedureService.getProcedures(user.id, { limit: 300 }),
           shiftService.getShiftStats(user.id),
           shiftService.getShifts(user.id)
         ]),

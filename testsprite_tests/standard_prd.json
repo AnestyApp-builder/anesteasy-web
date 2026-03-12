@@ -20,7 +20,7 @@
     "Módulo financeiro para controle de receitas, despesas, status de pagamento, metas e análise de performance.",
     "Sistema avançado de relatórios com exportação em PDF e CSV, e filtros personalizáveis.",
     "Gestão de secretárias com permissões específicas, dashboard dedicado e notificações integradas.",
-    "Integração com Pagar.me para gerenciamento de planos de assinatura, checkout seguro e webhooks para atualização de pagamentos.",
+    "Integração com Stripe para gerenciamento de planos de assinatura, checkout seguro e webhooks para atualização de pagamentos.",
     "Sistema de notificações em tempo real para alertas e atualizações.",
     "Componentes UI reativos e responsivos baseados em Tailwind CSS, garantindo uma experiência consistente.",
     "Sistema de OCR usando Tesseract.js para digitalização e processamento de documentos médicas."
@@ -32,7 +32,7 @@
     "Usuário gerencia finanças, incluindo registro de receitas e despesas, e acompanha metas financeiras.",
     "Usuário gera relatórios personalizados com filtros por data, tipo de procedimento e status.",
     "Anestesiologista cadastra e vincula secretárias, definindo permissões e acompanhando notificações e alterações.",
-    "Usuário assina planos via checkout integrado do Pagar.me, com controle de acesso baseado em assinatura.",
+    "Usuário assina planos via checkout integrado do Stripe, com controle de acesso baseado em assinatura.",
     "Sistema envia notificações em tempo real para alertas, atualizações e eventos importantes.",
     "Usuário acessa configurações para gerenciar perfil, preferências e excluir conta, garantindo personalização e controle."
   ],
@@ -41,7 +41,7 @@
     "Validação rigorosa de autenticação, incluindo confirmação de email e expiração de sessão.",
     "Confidencialidade dos dados garantida por criptografia e políticas RLS, em conformidade com LGPD.",
     "Funcionalidades principais implementadas e testadas, incluindo cadastro de procedimentos, gestão financeira e relatórios.",
-    "Integração com Pagar.me funcionando corretamente para planos e pagamentos recorrentes, com tratamento de webhooks.",
+    "Integração com Stripe funcionando corretamente para planos e pagamentos recorrentes, com tratamento de webhooks.",
     "Interface responsiva, acessível e consistente com design system, suportando dispositivos móveis e desktops.",
     "Sistema de notificações funcionando em tempo real com atualizações instantâneas.",
     "OCR deve capturar dados de etiquetas com precisão suficiente para preencher campos automaticamente.",
@@ -56,7 +56,7 @@
       "Tailwind CSS",
       "Supabase",
       "PostgreSQL",
-      "Pagarme",
+      "Stripe",
       "Tesseract.js",
       "Lucide React",
       "Vercel"
@@ -110,19 +110,18 @@
       },
       {
         "name": "Sistema de Assinaturas",
-        "description": "Integração com Pagarme para gestão de planos de assinatura, checkout hospedado e webhooks para processamento de pagamentos.",
+        "description": "Integração com Stripe para gestão de planos de assinatura, checkout hospedado e webhooks para processamento de pagamentos.",
         "files": [
           "app/assinatura/page.tsx",
           "app/planos/page.tsx",
           "app/checkout/page.tsx",
           "app/checkout/success/page.tsx",
-          "lib/pagarme.ts",
-          "lib/pagarme-subscriptions.ts",
+          "lib/stripe.ts",
           "lib/subscription.ts",
           "lib/subscription-access.ts",
           "components/subscription/SubscriptionStatus.tsx",
-          "app/api/pagarme/create-subscription/route.ts",
-          "app/api/webhooks/pagarme/route.ts"
+          "app/api/stripe/checkout/route.ts",
+          "app/api/stripe/webhook/route.ts"
         ]
       },
       {
@@ -215,9 +214,9 @@
           "app/api/procedures/route.ts",
           "app/api/upload/route.ts",
           "app/api/ocr/route.ts",
-          "app/api/pagarme/plans/route.ts",
-          "app/api/pagarme/create-subscription/route.ts",
-          "app/api/webhooks/pagarme/route.ts"
+          "app/api/stripe/checkout/route.ts",
+          "app/api/stripe/subscription/route.ts",
+          "app/api/stripe/webhook/route.ts"
         ]
       }
     ]

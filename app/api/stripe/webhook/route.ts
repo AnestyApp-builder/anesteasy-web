@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import { constructWebhookEvent, stripe } from '@/lib/stripe'
 import Stripe from 'stripe'
 
+// Configuração do runtime para garantir que rode no Node.js (não Edge)
+export const runtime = 'nodejs'
+export const maxDuration = 30
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -20,38 +24,53 @@ function validatePlanType(planType: string | undefined | null): 'monthly' | 'qua
     return planType as 'monthly' | 'quarterly' | 'annual'
   }
   // Se for 'test' ou outro valor inválido, mapear para 'monthly'
-  if (planType && planType !== 'monthly' && planType !== 'quarterly' && planType !== 'annual') {
-    console.warn(`⚠️ Plan type inválido: ${planType}, mapeando para 'monthly'`)
-  }
+  // Plan type inválido mapeado para 'monthly'
   return 'monthly'
+}
+
+/**
+ * Converte timestamp do Stripe (em segundos) para Date de forma segura
+ * Retorna uma data válida ou a data atual como fallback
+ */
+function stripeTimestampToDate(timestamp: number | null | undefined): Date {
+  if (timestamp == null || isNaN(timestamp)) {
+    return new Date() // Fallback para data atual
+  }
+  
+  // Verificar se o timestamp está em segundos (Stripe) ou milissegundos
+  // Timestamps do Stripe geralmente são menores que 1e12 (segundos)
+  const timestampMs = timestamp < 1e12 ? timestamp * 1000 : timestamp
+  const date = new Date(timestampMs)
+  
+  // Validar se a data é válida
+  if (isNaN(date.getTime())) {
+    return new Date() // Fallback para data atual se inválida
+  }
+  
+  return date
 }
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
+  let processingTime = 0
   
   try {
+    // Obter body raw (importante para validação de assinatura do Stripe)
     const body = await request.text()
     const signature = request.headers.get('stripe-signature')
 
-    console.log('📥 Webhook recebido - Headers:', {
-      'stripe-signature': signature ? 'presente' : 'ausente',
-      'content-type': request.headers.get('content-type'),
-      'user-agent': request.headers.get('user-agent')
-    })
-
     if (!signature) {
-      console.error('❌ Assinatura do webhook não encontrada')
-      console.error('📋 Headers recebidos:', Object.fromEntries(request.headers.entries()))
+      processingTime = Date.now() - startTime
       return NextResponse.json(
-        { error: 'Assinatura do webhook ausente' },
+        { error: 'Assinatura do webhook ausente', processing_time_ms: processingTime },
         { status: 400 }
       )
     }
 
     if (!webhookSecret) {
-      console.error('❌ STRIPE_WEBHOOK_SECRET não configurado')
+      processingTime = Date.now() - startTime
       return NextResponse.json(
-        { error: 'Configuração do webhook incompleta' },
+        { error: 'Configuração do webhook incompleta', processing_time_ms: processingTime },
         { status: 500 }
       )
     }
@@ -60,56 +79,75 @@ export async function POST(request: NextRequest) {
     let event: Stripe.Event
     try {
       event = constructWebhookEvent(body, signature, webhookSecret)
-      console.log('✅ Assinatura do webhook validada com sucesso')
     } catch (error: any) {
-      console.error('❌ Erro ao validar assinatura do webhook:', error.message)
+      processingTime = Date.now() - startTime
       return NextResponse.json(
-        { error: `Assinatura inválida: ${error.message}` },
+        { error: `Assinatura inválida: ${error.message}`, processing_time_ms: processingTime },
         { status: 400 }
       )
     }
 
-    console.log('🔔 Webhook Stripe recebido:', event.type, 'ID:', event.id)
-    console.log('⏱️ Tempo de validação:', Date.now() - startTime, 'ms')
-    console.log('📋 Dados do evento:', JSON.stringify(event.data.object, null, 2))
+    // Webhook Stripe recebido e validado
 
     // Processar diferentes tipos de eventos
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session)
-        break
+    console.log('📦 Processando evento:', event.type, 'Event ID:', event.id)
+    
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          console.log('📋 Processando checkout.session.completed...')
+          await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session)
+          console.log('✅ checkout.session.completed processado com sucesso')
+          break
 
-      case 'payment_intent.succeeded':
-        // Para pagamentos únicos (daily), também processar via payment_intent
-        await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent)
-        break
+        case 'payment_intent.succeeded':
+          console.log('💰 Processando payment_intent.succeeded...')
+          // Para pagamentos únicos (daily), também processar via payment_intent
+          await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent)
+          console.log('✅ payment_intent.succeeded processado com sucesso')
+          break
 
-      case 'customer.subscription.created':
-        await handleSubscriptionCreated(event.data.object as Stripe.Subscription)
-        break
+        case 'customer.subscription.created':
+          console.log('📦 Processando customer.subscription.created...')
+          await handleSubscriptionCreated(event.data.object as Stripe.Subscription)
+          console.log('✅ customer.subscription.created processado com sucesso')
+          break
 
-      case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(event.data.object as Stripe.Subscription)
-        break
+        case 'customer.subscription.updated':
+          console.log('🔄 Processando customer.subscription.updated...')
+          await handleSubscriptionUpdated(event.data.object as Stripe.Subscription)
+          console.log('✅ customer.subscription.updated processado com sucesso')
+          break
 
-      case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
-        break
+        case 'customer.subscription.deleted':
+          console.log('🗑️ Processando customer.subscription.deleted...')
+          await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
+          console.log('✅ customer.subscription.deleted processado com sucesso')
+          break
 
-      case 'invoice.paid':
-        await handleInvoicePaid(event.data.object as Stripe.Invoice)
-        break
+        case 'invoice.paid':
+          console.log('💳 Processando invoice.paid...')
+          await handleInvoicePaid(event.data.object as Stripe.Invoice)
+          console.log('✅ invoice.paid processado com sucesso')
+          break
 
-      case 'invoice.payment_failed':
-        await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice)
-        break
+        case 'invoice.payment_failed':
+          console.log('❌ Processando invoice.payment_failed...')
+          await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice)
+          console.log('✅ invoice.payment_failed processado com sucesso')
+          break
 
-      default:
-        console.log('ℹ️ Evento não tratado:', event.type)
+        default:
+          console.log('ℹ️ Evento não tratado:', event.type)
+          // Evento não tratado
+      }
+    } catch (handlerError: any) {
+      console.error('❌ Erro ao processar evento:', event.type, handlerError)
+      console.error('❌ Stack trace:', handlerError.stack)
+      throw handlerError // Re-throw para ser capturado no catch externo
     }
-
-    const processingTime = Date.now() - startTime
-    console.log(`✅ Webhook processado com sucesso em ${processingTime}ms`)
+    
+    processingTime = Date.now() - startTime
     
     return NextResponse.json({ 
       received: true,
@@ -118,11 +156,10 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
-    const processingTime = Date.now() - startTime
-    console.error('❌ Erro no webhook:', error)
-    console.error(`⏱️ Tempo até erro: ${processingTime}ms`)
+    // Erro no webhook
+    processingTime = Date.now() - startTime
     return NextResponse.json(
-      { error: error.message || 'Erro ao processar webhook' },
+      { error: error.message || 'Erro ao processar webhook', processing_time_ms: processingTime },
       { status: 500 }
     )
   }
@@ -130,26 +167,22 @@ export async function POST(request: NextRequest) {
 
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
   const handlerStartTime = Date.now()
-  console.log('✅ Checkout concluído:', session.id)
-  console.log('📋 Metadata da sessão:', JSON.stringify(session.metadata, null, 2))
-  console.log('👤 Customer ID:', session.customer)
-  console.log('📝 Subscription ID:', session.subscription)
-  console.log('💳 Payment Status:', session.payment_status)
-  console.log('💵 Mode:', session.mode)
+  console.log('📋 [handleCheckoutSessionCompleted] Iniciando processamento. Session ID:', session.id)
+  console.log('📋 [handleCheckoutSessionCompleted] Metadata:', JSON.stringify(session.metadata))
+  console.log('📋 [handleCheckoutSessionCompleted] Mode:', session.mode, 'Payment Status:', session.payment_status)
+  console.log('📋 [handleCheckoutSessionCompleted] Subscription ID:', session.subscription)
 
   const userId = session.metadata?.user_id
   const planType = validatePlanType(session.metadata?.plan_type)
   const isDaily = session.metadata?.is_daily === 'true'
 
-  if (!userId) {
-    console.error('❌ user_id não encontrado no metadata')
-    console.error('📋 Metadata completo:', session.metadata)
-    return
-  }
+  console.log('📋 [handleCheckoutSessionCompleted] User ID:', userId, 'Plan Type:', planType, 'Is Daily:', isDaily)
 
-  console.log('👤 User ID encontrado:', userId)
-  console.log('📦 Plan Type:', planType)
-  console.log('📅 Is Daily:', isDaily)
+  if (!userId) {
+    console.error('❌ [handleCheckoutSessionCompleted] user_id não encontrado nos metadata da session')
+    console.error('❌ [handleCheckoutSessionCompleted] Metadata completo:', JSON.stringify(session.metadata))
+    throw new Error('user_id não encontrado nos metadata da checkout session')
+  }
 
   // ⚡ OTIMIZAÇÃO: Liberar acesso IMEDIATAMENTE quando checkout é concluído
   // Para pagamentos únicos (payment mode) ou assinaturas (subscription mode)
@@ -157,31 +190,28 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   
   // Validação de segurança mais flexível
   if (session.payment_status !== 'paid' && session.mode === 'payment') {
-    // Para pagamentos únicos, exigir paid
-    console.warn('⚠️ Pagamento único ainda não confirmado, aguardando...')
-    console.log('📋 Payment Status:', session.payment_status)
-    return
+    console.warn('⚠️ [handleCheckoutSessionCompleted] Payment status não é "paid" para mode "payment". Status:', session.payment_status)
+    // Para pagamentos únicos, exigir paid - mas não retornar silenciosamente
+    // Continuar para verificar se é subscription
   }
 
   if (session.mode === 'subscription' && !session.subscription) {
-    console.warn('⚠️ Modo subscription mas sem subscription_id, aguardando...')
-    return
+    console.error('❌ [handleCheckoutSessionCompleted] Mode é "subscription" mas session.subscription é null/undefined')
+    throw new Error('Subscription ID não encontrado na checkout session (mode: subscription)')
   }
-
-  console.log('✅ Validações passadas - liberando acesso!')
 
   // Se for pagamento daily (compra de 1 dia), processar de forma diferente
   if (isDaily) {
-    console.log('📅 Processando pagamento daily - adicionando 1 dia à conta')
+    // Processando pagamento daily
     
     // Se for subscription (recurring price), cancelar a subscription no Stripe após processar
     if (session.subscription && stripe) {
       try {
         // Cancelar a subscription no Stripe imediatamente (não queremos cobrança recorrente)
         await stripe.subscriptions.cancel(session.subscription as string)
-        console.log('✅ Subscription cancelada no Stripe (daily - não deve ser recorrente)')
+        // Subscription cancelada no Stripe (daily)
       } catch (cancelError) {
-        console.warn('⚠️ Não foi possível cancelar subscription no Stripe:', cancelError)
+        // Não foi possível cancelar subscription
       }
     }
     
@@ -201,7 +231,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
       
       // Se a assinatura já expirou, começar de agora
       if (baseDate < now) {
-        console.log('⚠️ Assinatura expirada, reiniciando período de agora')
+        // Assinatura expirada, reiniciando período
         baseDate = now
       }
       
@@ -269,18 +299,19 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   // Buscar subscription criada (apenas para planos normais)
   const subscriptionId = session.subscription as string
 
-  if (!subscriptionId) {
-    console.error('❌ subscription_id não encontrado na sessão')
-    console.error('📋 Sessão completa:', JSON.stringify(session, null, 2))
-    return
-  }
+  console.log('📋 [handleCheckoutSessionCompleted] Verificando subscription ID:', subscriptionId)
 
-  console.log('📝 Subscription ID encontrado:', subscriptionId)
+  if (!subscriptionId) {
+    console.error('❌ [handleCheckoutSessionCompleted] Subscription ID não encontrado na session')
+    console.error('❌ [handleCheckoutSessionCompleted] Session mode:', session.mode)
+    console.error('❌ [handleCheckoutSessionCompleted] Session subscription:', session.subscription)
+    throw new Error('Subscription ID não encontrado na checkout session')
+  }
 
   // ⚡ OTIMIZAÇÃO: Não verificar status da subscription no Stripe aqui
   // A validação já foi feita no checkout.session.completed
   // Criar assinatura imediatamente para liberar acesso rápido
-  console.log('✅ Subscription será criada/atualizada imediatamente')
+  // Subscription será criada/atualizada imediatamente
 
   // Buscar assinatura existente (pode ser pending ou já active)
   const { data: existingSubscription, error: existingError } = await supabase
@@ -296,7 +327,28 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   }
 
   if (existingSubscription) {
-    console.log('📋 Assinatura existente encontrada:', existingSubscription.id, 'Status:', existingSubscription.status)
+    console.log('📋 [handleCheckoutSessionCompleted] Assinatura existente encontrada:', existingSubscription.id, 'Status:', existingSubscription.status)
+    console.log('📋 [handleCheckoutSessionCompleted] Stripe Subscription ID atual:', existingSubscription.stripe_subscription_id)
+    console.log('📋 [handleCheckoutSessionCompleted] Novo Stripe Subscription ID:', subscriptionId)
+    
+    // Buscar dados completos do Stripe para atualizar períodos corretamente
+    let periodStart = currentPeriodStart
+    let periodEnd = currentPeriodEnd
+    
+    try {
+      if (stripe) {
+        console.log('📋 [handleCheckoutSessionCompleted] Buscando dados da subscription no Stripe...')
+        const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId)
+        periodStart = stripeTimestampToDate(stripeSubscription.current_period_start).toISOString()
+        periodEnd = stripeTimestampToDate(stripeSubscription.current_period_end).toISOString()
+        console.log('✅ [handleCheckoutSessionCompleted] Períodos obtidos do Stripe:', {
+          start: periodStart,
+          end: periodEnd
+        })
+      }
+    } catch (stripeError: any) {
+      console.warn('⚠️ [handleCheckoutSessionCompleted] Erro ao buscar dados do Stripe, usando períodos padrão calculados:', stripeError.message)
+    }
     
     // Atualizar assinatura existente
     const { data: updatedSubscription, error: updateError } = await supabase
@@ -306,6 +358,8 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
         stripe_subscription_id: subscriptionId,
         stripe_customer_id: session.customer as string,
         plan_type: validatePlanType(planType || existingSubscription.plan_type),
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
         updated_at: new Date().toISOString()
       })
       .eq('id', existingSubscription.id)
@@ -313,12 +367,23 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
       .single()
 
     if (updateError) {
-      console.error('❌ Erro ao atualizar assinatura:', updateError)
+      console.error('❌ [handleCheckoutSessionCompleted] ERRO ao atualizar assinatura existente:', updateError)
+      console.error('❌ [handleCheckoutSessionCompleted] Detalhes do erro:', {
+        message: updateError.message,
+        code: updateError.code,
+        details: updateError.details,
+        hint: updateError.hint
+      })
+      throw updateError
     } else {
-      console.log('✅ Assinatura atualizada:', updatedSubscription?.id)
+      console.log('✅ [handleCheckoutSessionCompleted] Assinatura existente atualizada:', updatedSubscription?.id)
+      console.log('✅ [handleCheckoutSessionCompleted] Períodos atualizados:', {
+        start: periodStart,
+        end: periodEnd
+      })
     }
   } else {
-    console.log('📝 Criando nova assinatura no banco...')
+    console.log('📝 [handleCheckoutSessionCompleted] Criando nova assinatura no banco...')
     // Criar nova assinatura
     const amount = session.amount_total ? session.amount_total / 100 : 0
 
@@ -352,8 +417,8 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
         if (stripe) {
           const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId)
           return {
-            start: new Date(stripeSubscription.current_period_start * 1000).toISOString(),
-            end: new Date(stripeSubscription.current_period_end * 1000).toISOString()
+            start: stripeTimestampToDate(stripeSubscription.current_period_start).toISOString(),
+            end: stripeTimestampToDate(stripeSubscription.current_period_end).toISOString()
           }
         }
       } catch (error) {
@@ -390,28 +455,37 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
             updated_at: new Date().toISOString()
           })
           .eq('id', newSubscription.id)
-        console.log('✅ Períodos atualizados com dados precisos do Stripe')
+        // Períodos atualizados
       }
     })
 
     if (insertError) {
-      console.error('❌ Erro ao criar assinatura:', insertError)
-      console.error('📋 Dados que tentaram ser inseridos:', {
+      console.error('❌ [handleCheckoutSessionCompleted] ERRO CRÍTICO ao criar assinatura:', insertError)
+      console.error('❌ [handleCheckoutSessionCompleted] Detalhes do erro:', {
+        message: insertError.message,
+        code: insertError.code,
+        details: insertError.details,
+        hint: insertError.hint
+      })
+      console.error('❌ [handleCheckoutSessionCompleted] Dados que tentaram ser inseridos:', {
         user_id: userId,
         plan_type: validatePlanType(planType),
         amount: amount,
         status: 'active',
         stripe_subscription_id: subscriptionId,
-        stripe_customer_id: session.customer as string,
+        stripe_customer_id: session.customer,
         current_period_start: currentPeriodStart,
         current_period_end: currentPeriodEnd
       })
+      throw insertError // Lançar erro para ser capturado no catch externo
     } else {
-      console.log('✅ Nova assinatura criada:', newSubscription?.id)
+      console.log('✅ [handleCheckoutSessionCompleted] Assinatura criada com sucesso:', newSubscription?.id)
     }
   }
 
   // Atualizar usuário
+  console.log('📋 [handleCheckoutSessionCompleted] Atualizando usuário com plano:', planType || 'monthly')
+  
   const { error: userUpdateError } = await supabase
     .from('users')
     .update({
@@ -421,36 +495,43 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     .eq('id', userId)
 
   if (userUpdateError) {
-    console.error('❌ Erro ao atualizar usuário:', userUpdateError)
+    console.error('❌ [handleCheckoutSessionCompleted] Erro ao atualizar usuário:', userUpdateError)
+    console.error('❌ [handleCheckoutSessionCompleted] Detalhes do erro:', {
+      message: userUpdateError.message,
+      code: userUpdateError.code,
+      details: userUpdateError.details
+    })
+    // Não lançar erro aqui pois a assinatura já foi criada
+    // Mas logar para diagnóstico
   } else {
-    console.log('✅ Usuário atualizado com sucesso')
+    console.log('✅ [handleCheckoutSessionCompleted] Usuário atualizado com sucesso')
   }
-
-  const handlerTime = Date.now() - handlerStartTime
-  console.log(`⚡ Checkout processado em ${handlerTime}ms - Acesso liberado!`)
 }
 
 async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
-  console.log('📝 Assinatura criada:', subscription.id)
-  console.log('📋 Status da subscription:', subscription.status)
-
+  console.log('📦 [handleSubscriptionCreated] Iniciando processamento. Subscription ID:', subscription.id)
+  console.log('📦 [handleSubscriptionCreated] Metadata:', JSON.stringify(subscription.metadata))
+  
   const userId = subscription.metadata?.user_id
   const planType = validatePlanType(subscription.metadata?.plan_type)
 
+  console.log('📦 [handleSubscriptionCreated] User ID:', userId, 'Plan Type:', planType)
+
   if (!userId) {
-    console.error('❌ user_id não encontrado no metadata')
-    return
+    console.error('❌ [handleSubscriptionCreated] user_id não encontrado nos metadata da subscription')
+    console.error('❌ [handleSubscriptionCreated] Metadata completo:', JSON.stringify(subscription.metadata))
+    throw new Error('user_id não encontrado nos metadata da subscription')
   }
 
-  // Calcular período
-  const periodStart = new Date(subscription.current_period_start * 1000)
-  const periodEnd = new Date(subscription.current_period_end * 1000)
+  // Calcular período (validação segura de timestamps)
+  const periodStart = stripeTimestampToDate(subscription.current_period_start)
+  const periodEnd = stripeTimestampToDate(subscription.current_period_end)
 
   // ⚡ OTIMIZAÇÃO: Ativar imediatamente se status for active ou trialing
   const shouldActivate = subscription.status === 'active' || subscription.status === 'trialing'
   const dbStatus = shouldActivate ? 'active' : subscription.status
 
-  console.log(`⚡ Status no banco será: ${dbStatus} (Stripe status: ${subscription.status})`)
+  // Status no banco será: dbStatus
 
   // Buscar assinatura existente
   const { data: existingSubscription } = await supabase
@@ -461,8 +542,10 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
     .maybeSingle()
 
   if (existingSubscription) {
+    console.log('📦 [handleSubscriptionCreated] Assinatura existente encontrada:', existingSubscription.id)
+    
     // Atualizar assinatura existente
-    await supabase
+    const { error: updateError } = await supabase
       .from('subscriptions')
       .update({
         status: dbStatus,
@@ -472,12 +555,19 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
       })
       .eq('id', existingSubscription.id)
 
-    console.log('✅ Assinatura existente atualizada com status:', dbStatus)
+    if (updateError) {
+      console.error('❌ [handleSubscriptionCreated] Erro ao atualizar assinatura existente:', updateError)
+      throw updateError
+    }
+
+    console.log('✅ [handleSubscriptionCreated] Assinatura existente atualizada com status:', dbStatus)
   } else {
+    console.log('📦 [handleSubscriptionCreated] Criando nova assinatura no banco...')
+    
     // Criar nova assinatura
     const amount = subscription.items.data[0]?.price.unit_amount || 0
 
-    await supabase
+    const { data: newSubscription, error: insertError } = await supabase
       .from('subscriptions')
       .insert({
         user_id: userId,
@@ -489,13 +579,38 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
         current_period_start: periodStart.toISOString(),
         current_period_end: periodEnd.toISOString()
       })
+      .select()
+      .single()
 
-    console.log('✅ Nova assinatura criada com status:', dbStatus)
+    if (insertError) {
+      console.error('❌ [handleSubscriptionCreated] ERRO CRÍTICO ao criar assinatura:', insertError)
+      console.error('❌ [handleSubscriptionCreated] Detalhes do erro:', {
+        message: insertError.message,
+        code: insertError.code,
+        details: insertError.details,
+        hint: insertError.hint
+      })
+      console.error('❌ [handleSubscriptionCreated] Dados que tentaram ser inseridos:', {
+        user_id: userId,
+        plan_type: validatePlanType(planType),
+        amount: amount / 100,
+        status: dbStatus,
+        stripe_subscription_id: subscription.id,
+        stripe_customer_id: subscription.customer,
+        current_period_start: periodStart.toISOString(),
+        current_period_end: periodEnd.toISOString()
+      })
+      throw insertError
+    }
+
+    console.log('✅ [handleSubscriptionCreated] Nova assinatura criada com status:', dbStatus, 'ID:', newSubscription?.id)
   }
 
   // ⚡ Atualizar usuário imediatamente se status for ativo
   if (shouldActivate) {
-    await supabase
+    console.log('📦 [handleSubscriptionCreated] Atualizando usuário com plano ativo...')
+    
+    const { error: userUpdateError } = await supabase
       .from('users')
       .update({
         subscription_plan: validatePlanType(planType),
@@ -503,7 +618,12 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
       })
       .eq('id', userId)
     
-    console.log('✅ Usuário atualizado - acesso liberado!')
+    if (userUpdateError) {
+      console.error('❌ [handleSubscriptionCreated] Erro ao atualizar usuário:', userUpdateError)
+      // Não lançar erro aqui pois a assinatura já foi criada/atualizada
+    } else {
+      console.log('✅ [handleSubscriptionCreated] Usuário atualizado - acesso liberado!')
+    }
   }
 }
 
@@ -513,9 +633,9 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   const userId = subscription.metadata?.user_id
   const planType = validatePlanType(subscription.metadata?.plan_type)
 
-  // Calcular período
-  const periodStart = new Date(subscription.current_period_start * 1000)
-  const periodEnd = new Date(subscription.current_period_end * 1000)
+  // Calcular período (validação segura de timestamps)
+  const periodStart = stripeTimestampToDate(subscription.current_period_start)
+  const periodEnd = stripeTimestampToDate(subscription.current_period_end)
 
   // Buscar assinatura no banco
   const { data: dbSubscription } = await supabase
@@ -537,7 +657,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
       plan_type: validatePlanType(planType || dbSubscription.plan_type),
       current_period_start: periodStart.toISOString(),
       current_period_end: periodEnd.toISOString(),
-      ...(subscription.canceled_at && { cancelled_at: new Date(subscription.canceled_at * 1000).toISOString() }),
+      ...(subscription.canceled_at && { cancelled_at: stripeTimestampToDate(subscription.canceled_at).toISOString() }),
       updated_at: new Date().toISOString()
     })
     .eq('id', dbSubscription.id)

@@ -53,10 +53,10 @@ function CheckoutSuccessPageContent() {
             setSubscriptionStatus('active')
             setLoading(false)
             
-            // Redirecionar para /assinatura após 1 segundo
+            // Redirecionar para /planos após 1 segundo
             setTimeout(() => {
               if (mounted) {
-                router.push('/assinatura')
+                router.push('/planos')
               }
             }, 1000)
             return
@@ -218,7 +218,7 @@ function CheckoutSuccessPageContent() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link href="/assinatura" className="flex-1">
+                <Link href="/planos" className="flex-1">
                   <Button className="w-full">
                     Ver Minha Assinatura
                     <ArrowRight className="w-4 h-4 ml-2" />

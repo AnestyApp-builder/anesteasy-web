@@ -91,10 +91,16 @@ export async function POST(request: NextRequest) {
       .eq('stripe_subscription_id', stripeSubscription.id)
       .maybeSingle()
 
-    const planType = stripeSubscription.metadata?.plan_type || 
-                     (stripeSubscription.items.data[0]?.price.id === process.env.STRIPE_PRICE_ID_MONTHLY ? 'monthly' :
-                      stripeSubscription.items.data[0]?.price.id === process.env.STRIPE_PRICE_ID_QUARTERLY ? 'quarterly' :
-                      stripeSubscription.items.data[0]?.price.id === process.env.STRIPE_PRICE_ID_ANNUAL ? 'annual' : 'monthly')
+    // Mapear plan_type para valores válidos (constraint do banco: monthly, quarterly, annual)
+    let planType = stripeSubscription.metadata?.plan_type || 
+                   (stripeSubscription.items.data[0]?.price.id === process.env.STRIPE_PRICE_ID_MONTHLY ? 'monthly' :
+                    stripeSubscription.items.data[0]?.price.id === process.env.STRIPE_PRICE_ID_QUARTERLY ? 'quarterly' :
+                    stripeSubscription.items.data[0]?.price.id === process.env.STRIPE_PRICE_ID_ANNUAL ? 'annual' : 'monthly')
+    // Se for 'test' ou outro valor inválido, mapear para 'monthly'
+    if (!['monthly', 'quarterly', 'annual'].includes(planType)) {
+      console.warn(`⚠️ Plan type inválido: ${planType}, mapeando para 'monthly'`)
+      planType = 'monthly'
+    }
 
     const amount = stripeSubscription.items.data[0]?.price.unit_amount ? 
                    stripeSubscription.items.data[0].price.unit_amount / 100 : 0

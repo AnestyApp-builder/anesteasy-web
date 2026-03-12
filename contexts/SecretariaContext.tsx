@@ -19,6 +19,14 @@ interface SecretariaContextType {
 
 const SecretariaContext = createContext<SecretariaContextType | undefined>(undefined)
 
+// Cache de notificações para anestesistas com TTL de 30 segundos
+const NOTIFICATIONS_CACHE_TTL = 30000 // 30 segundos
+let anestesistaNotificationsCache: {
+  data: Notification[]
+  timestamp: number
+  userId: string
+} | null = null
+
 export function SecretariaProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [secretaria, setSecretaria] = useState<Secretaria | null>(null)
@@ -47,14 +55,32 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Carregar notificações
-  const loadNotifications = async () => {
+  // Carregar notificações com cache
+  const loadNotifications = async (forceRefresh = false) => {
     if (!user) return
 
     try {
+      const now = Date.now()
       
+      // Verificar cache se não for refresh forçado
+      if (!forceRefresh && anestesistaNotificationsCache && 
+          anestesistaNotificationsCache.userId === user.id &&
+          (now - anestesistaNotificationsCache.timestamp) < NOTIFICATIONS_CACHE_TTL) {
+        console.log('📦 [NOTIFICATIONS] Usando cache de notificações (anestesista)')
+        setNotifications(anestesistaNotificationsCache.data)
+        return
+      }
+
+      console.log('🔔 [NOTIFICATIONS] Carregando notificações do banco (anestesista):', user.id)
       const notificationsData = await secretariaService.getNotifications(user.id)
       setNotifications(notificationsData)
+      
+      // Atualizar cache
+      anestesistaNotificationsCache = {
+        data: notificationsData,
+        timestamp: now,
+        userId: user.id
+      }
       
     } catch (error) {
       setNotifications([])
@@ -123,9 +149,9 @@ export function SecretariaProvider({ children }: { children: ReactNode }) {
     await loadSecretaria()
   }
 
-  // Atualizar notificações
+  // Atualizar notificações (forçar refresh)
   const refreshNotifications = async (): Promise<void> => {
-    await loadNotifications()
+    await loadNotifications(true)
   }
 
   // Marcar notificação como lida

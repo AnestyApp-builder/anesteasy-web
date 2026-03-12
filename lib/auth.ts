@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { User } from './types'
+import logger from './logger'
 
 export interface AuthState {
   user: User | null
@@ -15,14 +16,12 @@ export const authService = {
     try {
       // Normalizar email (trim e lowercase)
       const normalizedEmail = email.trim().toLowerCase()
-      console.log('🔐 [AUTH SERVICE] Iniciando login para:', normalizedEmail)
       
       // Limpar qualquer sessão existente antes de tentar login
       try {
         await supabase.auth.signOut()
       } catch (signOutError) {
         // Ignorar erros no signOut
-        console.log('⚠️ [AUTH SERVICE] Erro ao limpar sessão (pode ser ignorado):', signOutError)
       }
       
       // Fazer login com Supabase Auth
@@ -32,37 +31,26 @@ export const authService = {
       })
 
       if (authError) {
-        console.error('❌ [AUTH SERVICE] Erro no login Supabase Auth:', {
-          message: authError.message,
-          status: authError.status,
-          name: authError.name,
-          code: (authError as any).code
-        })
+        logger.error('Erro no login:', authError.message)
         
         // Limpar qualquer sessão corrompida
         try {
           await supabase.auth.signOut()
         } catch (signOutError) {
-          console.error('Erro ao fazer signOut após erro de login:', signOutError)
+          // Ignorar erro
         }
         
         return null
       }
 
       if (!authData?.user) {
-        console.error('❌ [AUTH SERVICE] authData.user é null')
         return null
       }
-
-      console.log('✅ [AUTH SERVICE] Login Supabase Auth bem-sucedido. User ID:', authData.user.id)
 
       // Verificar se email foi confirmado no Supabase Auth
       if (!authData.user.email_confirmed_at) {
-        console.error('❌ [AUTH SERVICE] Email não confirmado para usuário:', authData.user.id)
         return null
       }
-
-      console.log('✅ [AUTH SERVICE] Email confirmado')
 
       // Buscar dados do usuário na tabela users
       const { data: userData, error: userError } = await supabase
@@ -72,18 +60,12 @@ export const authService = {
         .maybeSingle()
 
       if (userError) {
-        console.error('❌ [AUTH SERVICE] Erro ao buscar usuário na tabela users:', {
-          error: userError,
-          userId: authData.user.id
-        })
+        logger.error('Erro ao buscar usuário:', userError.message)
         return null
       }
 
       if (!userData) {
-        console.error('❌ [AUTH SERVICE] Usuário não encontrado na tabela users:', authData.user.id)
-        
         // Tentar criar o registro automaticamente se não existir
-        console.log('🔄 [AUTH SERVICE] Tentando criar registro na tabela users automaticamente...')
         
         try {
           const { data: newUserData, error: createError } = await supabase
@@ -105,19 +87,23 @@ export const authService = {
             .single()
 
           if (createError) {
-            console.error('❌ [AUTH SERVICE] Erro ao criar registro automaticamente:', createError)
+            logger.error('Erro ao criar registro:', createError.message)
             return null
           }
 
           if (newUserData) {
-            console.log('✅ [AUTH SERVICE] Registro criado automaticamente na tabela users')
-            
-            // Atualizar last_login_at para o usuário recém-criado
-            const now = new Date().toISOString()
-            await supabase
-              .from('users')
-              .update({ last_login_at: now })
-              .eq('id', authData.user.id)
+            // Atualizar last_login_at usando API route (bypassa RLS e evita recursão infinita)
+            try {
+              const updateResponse = await fetch('/api/admin/update-login-time', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: authData.user.id })
+              })
+              
+              // Não bloquear login se falhar
+            } catch (error) {
+              // Não bloquear login se falhar
+            }
             
             return {
               id: newUserData.id,
@@ -129,42 +115,23 @@ export const authService = {
             }
           }
         } catch (createError) {
-          console.error('❌ [AUTH SERVICE] Erro ao tentar criar registro:', createError)
+          logger.error('Erro ao tentar criar registro:', createError)
           return null
         }
         
         return null
       }
 
-      console.log('✅ [AUTH SERVICE] Usuário encontrado na tabela users:', {
-        id: userData.id,
-        email: userData.email,
-        name: userData.name,
-        subscription_status: userData.subscription_status
-      })
-
-      // Atualizar last_login_at
-      const now = new Date().toISOString()
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ last_login_at: now })
-        .eq('id', authData.user.id)
-
-      if (updateError) {
-        console.warn('⚠️ [AUTH SERVICE] Erro ao atualizar last_login_at:', updateError)
-        // Não bloquear o login se falhar a atualização
-      } else {
-        console.log('✅ [AUTH SERVICE] last_login_at atualizado:', now)
-      }
-
-      // Verificar subscription_status - se não for 'active', ainda permitir login mas logar aviso
-      if (userData.subscription_status !== 'active') {
-        console.warn('⚠️ [AUTH SERVICE] Usuário com subscription_status diferente de active:', {
-          userId: userData.id,
-          status: userData.subscription_status
+      // Atualizar last_login_at usando API route (bypassa RLS e evita recursão infinita)
+      try {
+        const updateResponse = await fetch('/api/admin/update-login-time', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: authData.user.id })
         })
-        // Ainda permitir login mesmo com status diferente de 'active'
-        // A validação de acesso será feita nas rotas protegidas
+        // Não bloquear login se falhar
+      } catch (error) {
+        // Não bloquear login se falhar
       }
 
       const user = {
@@ -176,11 +143,10 @@ export const authService = {
         gender: userData.gender || null
       }
 
-      console.log('✅ [AUTH SERVICE] Retornando usuário:', user)
       return user
 
     } catch (error) {
-      console.error('❌ [AUTH SERVICE] Erro interno no login:', error)
+      logger.error('Erro interno no login:', error)
       return null
     }
   },
@@ -342,7 +308,7 @@ export const authService = {
       const { error } = await supabase.auth.signOut()
       
       if (error) {
-        console.error('Erro ao fazer signOut:', error)
+        logger.error('Erro ao fazer signOut:', error)
         // Continuar mesmo com erro para garantir limpeza
       }
       
@@ -357,7 +323,7 @@ export const authService = {
         })
       }
     } catch (error) {
-      console.error('Erro ao fazer logout:', error)
+      logger.error('Erro ao fazer logout:', error)
       // Continuar mesmo com erro
     }
   },
@@ -365,19 +331,15 @@ export const authService = {
   // Verificar se email foi confirmado (validação dupla)
   async isEmailConfirmed(userId: string): Promise<boolean> {
     try {
-      console.log('📧 [AUTH SERVICE] Verificando se email foi confirmado para:', userId)
-      
       // Buscar dados do usuário no Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.getUser()
 
       if (authError || !authData.user) {
-        console.error('❌ [AUTH SERVICE] Erro ao obter usuário do Supabase Auth:', authError)
         return false
       }
 
       // Verificar se o email foi confirmado no Supabase Auth
       const supabaseConfirmed = !!authData.user.email_confirmed_at
-      console.log('📧 [AUTH SERVICE] Email confirmado no Supabase Auth:', supabaseConfirmed)
       
       if (!supabaseConfirmed) {
         return false
@@ -391,21 +353,17 @@ export const authService = {
         .maybeSingle()
 
       if (userError) {
-        console.error('❌ [AUTH SERVICE] Erro ao buscar usuário na tabela users:', userError)
         return false
       }
 
       if (!userData) {
-        console.error('❌ [AUTH SERVICE] Usuário não encontrado na tabela users')
         return false
       }
-
-      console.log('✅ [AUTH SERVICE] Email confirmado e usuário existe na tabela. Status:', userData.subscription_status)
       
       // Retornar true se email foi confirmado e usuário existe (não verificar subscription_status)
       return supabaseConfirmed
     } catch (error) {
-      console.error('❌ [AUTH SERVICE] Erro ao verificar email confirmado:', error)
+      logger.error('Erro ao verificar email confirmado:', error)
       return false
     }
   },
@@ -437,14 +395,8 @@ export const authService = {
         return null
       }
 
-      // Verificar subscription_status - se não for 'active', ainda permitir mas logar aviso
-      if (userData.subscription_status !== 'active') {
-        console.warn('Usuário com subscription_status diferente de active:', {
-          userId: userData.id,
-          status: userData.subscription_status
-        })
-        // Ainda permitir - a validação de acesso será feita nas rotas protegidas
-      }
+      // Verificar subscription_status - se não for 'active', ainda permitir
+      // A validação de acesso será feita nas rotas protegidas
 
       return {
         id: userData.id,
@@ -455,7 +407,7 @@ export const authService = {
         gender: userData.gender || null
       }
     } catch (error) {
-      console.error('Erro ao obter usuário atual:', error)
+      logger.error('Erro ao obter usuário atual:', error)
       return null
     }
   },
@@ -482,7 +434,7 @@ export const authService = {
         }
       } catch (error) {
         // Ignorar erro na verificação de secretaria, continuar com redirect padrão
-        console.error('Erro ao verificar secretaria:', error)
+        logger.error('Erro ao verificar secretaria:', error)
       }
 
       // Tentar enviar email de recuperação
@@ -499,7 +451,7 @@ export const authService = {
         message: 'Se o email estiver cadastrado, você receberá um link de recuperação em breve. Verifique sua caixa de entrada e pasta de spam.' 
       }
     } catch (error) {
-      console.error('Erro interno ao resetar senha:', error)
+      logger.error('Erro interno ao resetar senha:', error)
       // Mesmo em caso de erro, retornar mensagem genérica de sucesso por segurança
       return { 
         success: true, 
@@ -511,62 +463,40 @@ export const authService = {
   // Atualizar senha
   async updatePassword(currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
     try {
-      console.log('🔐 [AUTH SERVICE] Iniciando atualização de senha...')
-      
       // Primeiro, verificar se a senha atual está correta
       // Obtendo o email do usuário atual
       const { data: { user: authUser }, error: getUserError } = await supabase.auth.getUser()
       
       if (getUserError || !authUser?.email) {
-        console.error('❌ [AUTH SERVICE] Erro ao obter usuário:', getUserError)
         return { success: false, message: 'Erro ao verificar autenticação. Faça login novamente.' }
       }
       
-      console.log('✅ [AUTH SERVICE] Usuário obtido:', authUser.email)
-      
-      // Salvar a sessão atual antes de fazer signIn
-      const { data: { session: currentSession } } = await supabase.auth.getSession()
-      
       // Verificar se a senha atual está correta fazendo um signIn
-      console.log('🔍 [AUTH SERVICE] Verificando senha atual...')
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: authUser.email,
         password: currentPassword
       })
       
       if (signInError) {
-        console.error('❌ [AUTH SERVICE] Senha atual incorreta:', signInError)
         if (signInError.message?.includes('Invalid login credentials')) {
           return { success: false, message: 'Senha atual incorreta. Verifique e tente novamente.' }
         }
         return { success: false, message: 'Erro ao verificar senha atual. Tente novamente.' }
       }
       
-      console.log('✅ [AUTH SERVICE] Senha atual verificada com sucesso')
-      
       // Agora atualizar para a nova senha
-      console.log('🔄 [AUTH SERVICE] Atualizando para nova senha...')
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       })
 
       if (updateError) {
-        console.error('❌ [AUTH SERVICE] Erro ao atualizar senha:', updateError)
-        console.error('   Detalhes do erro:', JSON.stringify(updateError, null, 2))
+        logger.error('Erro ao atualizar senha:', updateError.message)
         return { success: false, message: `Erro ao atualizar senha: ${updateError.message || 'Tente novamente.'}` }
-      }
-
-      console.log('✅ [AUTH SERVICE] Senha atualizada com sucesso!')
-      
-      // Verificar se a sessão ainda está ativa após a atualização
-      const { data: { session: newSession } } = await supabase.auth.getSession()
-      if (!newSession) {
-        console.warn('⚠️ [AUTH SERVICE] Sessão não encontrada após atualização, mas senha foi alterada')
       }
       
       return { success: true, message: 'Senha atualizada com sucesso!' }
     } catch (error) {
-      console.error('❌ [AUTH SERVICE] Erro interno ao atualizar senha:', error)
+      logger.error('Erro interno ao atualizar senha:', error)
       return { success: false, message: `Erro interno: ${error instanceof Error ? error.message : 'Tente novamente.'}` }
     }
   },
@@ -581,21 +511,14 @@ export const authService = {
     gender?: string 
   }): Promise<User | null> {
     try {
-      console.log('🔄 [AUTH SERVICE] Iniciando atualização de usuário:', { userId, userData })
-      
       // Se o email está sendo atualizado, também atualizar no Supabase Auth
       if (userData.email !== undefined) {
-        console.log('📧 [AUTH SERVICE] Atualizando email no Supabase Auth...')
         const { error: authUpdateError } = await supabase.auth.updateUser({
           email: userData.email
         })
         
         if (authUpdateError) {
-          console.error('❌ [AUTH SERVICE] Erro ao atualizar email no Supabase Auth:', authUpdateError)
-          // Continuar mesmo com erro, pois pode ser que o email já esteja em uso
-          // Mas vamos logar o erro para debug
-        } else {
-          console.log('✅ [AUTH SERVICE] Email atualizado no Supabase Auth')
+          logger.error('Erro ao atualizar email:', authUpdateError.message)
         }
       }
       
@@ -611,8 +534,6 @@ export const authService = {
       if (userData.phone !== undefined) updateData.phone = userData.phone
       if (userData.gender !== undefined) updateData.gender = userData.gender
       
-      console.log('📝 [AUTH SERVICE] Dados para atualização:', updateData)
-      
       // Atualizar dados na tabela users
       const { data: updatedUser, error: updateError } = await supabase
         .from('users')
@@ -622,13 +543,11 @@ export const authService = {
         .single()
 
       if (updateError) {
-        console.error('❌ [AUTH SERVICE] Erro ao atualizar usuário na tabela:', updateError)
-        console.error('   Detalhes do erro:', JSON.stringify(updateError, null, 2))
+        logger.error('Erro ao atualizar usuário:', updateError.message)
         return null
       }
 
       if (updatedUser) {
-        console.log('✅ [AUTH SERVICE] Usuário atualizado com sucesso na tabela:', updatedUser)
         const user: User = {
           id: updatedUser.id,
           email: updatedUser.email,
@@ -641,10 +560,9 @@ export const authService = {
         return user
       }
 
-      console.error('❌ [AUTH SERVICE] updatedUser é null após atualização')
       return null
     } catch (error) {
-      console.error('❌ [AUTH SERVICE] Erro interno ao atualizar usuário:', error)
+      logger.error('Erro interno ao atualizar usuário:', error)
       return null
     }
   },
@@ -666,7 +584,6 @@ export const authService = {
         .maybeSingle()
 
       if (existingAnestesista) {
-        console.error('Email já cadastrado como anestesista. Um email de anestesista não pode ser usado como secretária.')
         return { success: false }
       }
 
@@ -678,7 +595,6 @@ export const authService = {
         .maybeSingle()
 
       if (existingSecretaria) {
-        console.error('Email já cadastrado como secretaria')
         return { success: false }
       }
 
@@ -691,7 +607,6 @@ export const authService = {
           .maybeSingle()
 
         if (existingSecretariaByCpf) {
-          console.error('CPF já cadastrado como secretaria')
           return { success: false }
         }
       }
@@ -712,12 +627,11 @@ export const authService = {
       })
 
       if (authError) {
-        console.error('Erro ao criar conta de autenticação:', authError)
+        logger.error('Erro ao criar conta de autenticação:', authError.message)
         return { success: false }
       }
 
       if (!authData.user) {
-        console.error('Usuário não criado no Supabase Auth')
         return { success: false }
       }
 
@@ -730,7 +644,6 @@ export const authService = {
         .maybeSingle()
       
       if (existingUserIncorrect) {
-        console.warn('⚠️ [AUTH SERVICE] Secretária tem registro incorreto na tabela users. Removendo...')
         await supabase
           .from('users')
           .delete()
@@ -751,7 +664,7 @@ export const authService = {
         })
 
       if (secretariaError) {
-        console.error('Erro ao criar registro na tabela secretarias:', secretariaError)
+        logger.error('Erro ao criar registro na tabela secretarias:', secretariaError.message)
         
         // Se o erro for de constraint de status, tentar valores alternativos
         if (secretariaError.code === '23514' && secretariaError.message?.includes('status')) {
@@ -790,17 +703,12 @@ export const authService = {
   // Excluir conta do usuário
   async deleteAccount(userId: string): Promise<{ success: boolean; message: string }> {
     try {
-      console.log('🗑️ [AUTH SERVICE] Iniciando exclusão de conta para:', userId)
-      
       // Verificar se é secretaria ou anestesista
       const { isSecretaria } = await import('@/lib/user-utils')
       const isSecretariaUser = await isSecretaria(userId)
-      
-      console.log('👤 [AUTH SERVICE] Tipo de usuário:', isSecretariaUser ? 'Secretaria' : 'Anestesista')
 
       if (isSecretariaUser) {
         // É SECRETARIA - excluir da tabela secretarias e relacionamentos
-        console.log('👩‍💼 [AUTH SERVICE] Excluindo secretaria...')
         
         // 1. Excluir relacionamentos
         await supabase
@@ -826,12 +734,11 @@ export const authService = {
           .eq('id', userId)
 
         if (secretariaError) {
-          console.error('❌ [AUTH SERVICE] Erro ao excluir secretaria:', secretariaError)
+          logger.error('Erro ao excluir secretaria:', secretariaError.message)
           return { success: false, message: 'Erro ao excluir dados da secretaria.' }
         }
       } else {
         // É ANESTESISTA - excluir da tabela users e relacionamentos
-        console.log('👨‍⚕️ [AUTH SERVICE] Excluindo anestesista...')
         
         // 1. Excluir dados relacionados do usuário
         const tablesToClean = [
@@ -863,13 +770,12 @@ export const authService = {
           .eq('id', userId)
 
         if (userError) {
-          console.error('❌ [AUTH SERVICE] Erro ao excluir anestesista:', userError)
+          logger.error('Erro ao excluir anestesista:', userError.message)
           return { success: false, message: 'Erro ao excluir dados do usuário.' }
         }
       }
 
       // 4. Excluir do Supabase Auth via API (para ambos os tipos)
-      console.log('🔐 [AUTH SERVICE] Excluindo do Supabase Auth...')
       try {
         const response = await fetch('/api/delete-user', {
           method: 'POST',
@@ -882,20 +788,17 @@ export const authService = {
         const result = await response.json()
 
         if (!response.ok) {
-          console.error('❌ [AUTH SERVICE] Erro ao excluir do Auth:', result)
+          logger.error('Erro ao excluir do Auth:', result)
           return { success: false, message: 'Erro ao excluir conta de autenticação.' }
         }
-        
-        console.log('✅ [AUTH SERVICE] Usuário excluído do Supabase Auth com sucesso')
       } catch (apiError) {
-        console.error('❌ [AUTH SERVICE] Erro na API de exclusão:', apiError)
+        logger.error('Erro na API de exclusão:', apiError)
         return { success: false, message: 'Erro ao excluir conta de autenticação.' }
       }
 
-      console.log('✅ [AUTH SERVICE] Conta excluída com sucesso!')
       return { success: true, message: 'Conta excluída com sucesso!' }
     } catch (error) {
-      console.error('❌ [AUTH SERVICE] Erro interno ao excluir conta:', error)
+      logger.error('Erro interno ao excluir conta:', error)
       return { success: false, message: 'Erro interno. Tente novamente.' }
     }
   }

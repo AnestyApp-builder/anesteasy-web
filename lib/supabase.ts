@@ -884,6 +884,47 @@ export type Database = {
           }
         ]
       }
+      app_errors: {
+        Row: {
+          id: string
+          user_id: string | null
+          screen: string
+          action: string
+          error_message: string
+          device: string
+          app_version: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          screen: string
+          action: string
+          error_message: string
+          device?: string
+          app_version?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string | null
+          screen?: string
+          action?: string
+          error_message?: string
+          device?: string
+          app_version?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_errors_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never

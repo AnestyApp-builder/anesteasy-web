@@ -22,7 +22,8 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
-  Users
+  Users,
+  Info
 } from 'lucide-react'
 import Link from 'next/link'
 import { Layout } from '@/components/layout/Layout'
@@ -37,18 +38,47 @@ import { procedureService } from '@/lib/procedures'
 import { feedbackService } from '@/lib/feedback'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSecretaria } from '@/contexts/SecretariaContext'
+import { useToast } from '@/contexts/ToastContext'
+import { getFullErrorMessage } from '@/lib/error-messages'
 import { formatCurrency } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import { uploadToSupabaseStorage, getPublicUrl } from '@/lib/supabase-upload'
+import { getCorrectMimeType } from '@/lib/mime-utils'
+import { parseFicha } from '@/utils/parseFicha'
+import { validarArquivos, LIMITES_UPLOAD, formatarTamanhoArquivo } from '@/lib/validation-utils'
+import dynamic from 'next/dynamic'
+
+// Lazy load componentes pesados - só carregam quando necessário
+// Corrigir imports para evitar erro React #306
+const UploadFicha = dynamic(() => import('@/components/UploadFicha'), { 
+  ssr: false,
+  loading: () => <div className="p-4 text-center text-gray-400">Carregando...</div>
+})
+const OCRResultDisplay = dynamic(() => import('@/components/OCRResultDisplay'), { 
+  ssr: false,
+  loading: () => <div className="p-4 text-center text-gray-400">Carregando...</div>
+})
+// VoiceRecorder e VoiceExtractionDisplay são named exports, não default
+const VoiceRecorder = dynamic(() => import('@/components/VoiceRecorder').then(mod => ({ default: mod.VoiceRecorder })), { 
+  ssr: false,
+  loading: () => <div className="p-4 text-center text-gray-400">Carregando...</div>
+})
+const VoiceExtractionDisplay = dynamic(() => import('@/components/VoiceExtractionDisplay').then(mod => ({ default: mod.VoiceExtractionDisplay })), { 
+  ssr: false,
+  loading: () => <div className="p-4 text-center text-gray-400">Carregando...</div>
+})
 
 interface FormData {
   // 1. Identificação do Procedimento
   nomePaciente: string
   dataNascimento: string
+  dataProcedimento: string
   convenio: string
   carteirinha: string
   tipoProcedimento: string
   tecnicaAnestesica: string
   codigoTSSU: string
+  grupoAnestesico: string
   especialidadeCirurgiao: string
   nomeCirurgiao: string
   nomeEquipe: string
@@ -141,6 +171,20 @@ const ESPECIALIDADES = [
   'Outro'
 ]
 
+// Lista de tipos de procedimento disponíveis
+const TIPOS_PROCEDIMENTO = [
+  'Cesariana',
+  'Parto Normal',
+  'Cirurgia Geral',
+  'Cirurgia Ortopédica',
+  'Cirurgia Plástica',
+  'Cirurgia Vascular',
+  'Cirurgia Neurológica',
+  'Cirurgia Cardíaca',
+  'Cirurgia Digestiva',
+  'Outro'
+]
+
 // Lista de tipos de anestesia com códigos TSSU
 const TIPOS_ANESTESIA = [
   { codigo: '30701010', nome: 'Anestesia geral' },
@@ -169,14 +213,17 @@ const TIPOS_ANESTESIA = [
 function NovoProcedimentoContent() {
   const { user } = useAuth()
   const { secretaria, linkSecretaria } = useSecretaria()
+  const { addToast } = useToast()
   const [formData, setFormData] = useState<FormData>({
     nomePaciente: '',
     dataNascimento: '',
+    dataProcedimento: '',
     convenio: '',
     carteirinha: '',
     tipoProcedimento: '',
     tecnicaAnestesica: '',
     codigoTSSU: '',
+    grupoAnestesico: '',
     especialidadeCirurgiao: '',
     nomeCirurgiao: '',
     nomeEquipe: '',
@@ -219,8 +266,15 @@ function NovoProcedimentoContent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [info, setInfo] = useState('')
   const [feedbackType, setFeedbackType] = useState<'error' | 'success' | 'info' | null>(null)
-  const [currentSection, setCurrentSection] = useState(0) // Começar com OCR (seção 0)
+  const [currentSection, setCurrentSection] = useState(0)
+  const [voiceTranscription, setVoiceTranscription] = useState<string | undefined>(undefined)
+  const [voiceExtractedFields, setVoiceExtractedFields] = useState<Record<string, any> | undefined>(undefined)
+  const [ocrRawText, setOcrRawText] = useState<string>('')
+  const [ocrConfidence, setOcrConfidence] = useState<number | undefined>(undefined)
+  const [ocrCamposPreenchidos, setOcrCamposPreenchidos] = useState<string[]>([])
+  const [ocrCamposFaltando, setOcrCamposFaltando] = useState<string[]>([])
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [successData, setSuccessData] = useState<{
     paciente: string
@@ -235,18 +289,16 @@ function NovoProcedimentoContent() {
   const [buscaAnestesia, setBuscaAnestesia] = useState('')
   const [showSecretariaModal, setShowSecretariaModal] = useState(false)
   const [secretariasVinculadas, setSecretariasVinculadas] = useState<Array<{ id: string; nome: string; email: string }>>([])
+  const [showOcrInfo, setShowOcrInfo] = useState(false)
 
   // Função para carregar secretárias vinculadas
   const loadSecretarias = React.useCallback(async () => {
-    if (!user?.id) {
-      console.log('⚠️ [SECRETARIAS] Usuário não disponível')
+    if (!user?.id || !supabase) {
       setSecretariasVinculadas([])
       return
     }
 
     try {
-      console.log('🔍 [SECRETARIAS] Carregando secretárias vinculadas para anestesista:', user.id)
-      
       const { data, error } = await supabase
         .from('anestesista_secretaria')
         .select(`
@@ -259,41 +311,33 @@ function NovoProcedimentoContent() {
         .eq('anestesista_id', user.id)
 
       if (error) {
-        console.error('❌ [SECRETARIAS] Erro ao carregar secretárias:', error)
-        console.error('   Detalhes:', JSON.stringify(error, null, 2))
         setSecretariasVinculadas([])
         return
       }
-
-      console.log('📦 [SECRETARIAS] Dados recebidos:', data)
 
       const secretarias = (data || [])
         .map(item => item.secretarias)
         .filter(Boolean) as Array<{ id: string; nome: string; email: string }>
       
-      console.log('✅ [SECRETARIAS] Secretárias encontradas:', secretarias.length)
-      console.log('   Lista:', secretarias.map(s => `${s.nome} (${s.email})`))
-      
       setSecretariasVinculadas(secretarias)
 
       // Se houver apenas uma secretária vinculada, selecionar automaticamente
       if (secretarias.length === 1 && !formData.secretariaId) {
-        console.log('🔄 [SECRETARIAS] Selecionando automaticamente a única secretária vinculada')
         setFormData(prev => ({
           ...prev,
           secretariaId: secretarias[0].id
         }))
       }
     } catch (error) {
-      console.error('❌ [SECRETARIAS] Erro inesperado ao carregar secretárias:', error)
       setSecretariasVinculadas([])
     }
   }, [user?.id, formData.secretariaId])
 
-  // Buscar todas as secretárias vinculadas ao anestesista
+  // Buscar todas as secretárias vinculadas ao anestesista (apenas uma vez no mount)
   useEffect(() => {
     loadSecretarias()
-  }, [loadSecretarias])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Carregar apenas uma vez no mount
 
   // Definir secretaria automaticamente se houver uma vinculada (compatibilidade com código antigo)
   useEffect(() => {
@@ -303,7 +347,43 @@ function NovoProcedimentoContent() {
         secretariaId: secretaria.id
       }))
     }
-  }, [secretaria])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secretaria?.id]) // Apenas quando o ID da secretária mudar
+
+  // Prevenir scroll do body quando modais estão abertos (importante no mobile)
+  useEffect(() => {
+    if (showSuccessModal || showSecretariaModal) {
+      document.body.style.overflow = 'hidden'
+      document.body.style.position = 'fixed'
+      document.body.style.width = '100%'
+    } else {
+      document.body.style.overflow = ''
+      document.body.style.position = ''
+      document.body.style.width = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+      document.body.style.position = ''
+      document.body.style.width = ''
+    }
+  }, [showSuccessModal, showSecretariaModal])
+
+  // Fechar tooltip de OCR ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (showOcrInfo && !target.closest('.ocr-info-container')) {
+        setShowOcrInfo(false)
+      }
+    }
+    if (showOcrInfo) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showOcrInfo])
+
 
   // Função otimizada para atualizar formData
   const updateFormData = React.useCallback((field: keyof FormData, value: any) => {
@@ -351,15 +431,22 @@ function NovoProcedimentoContent() {
     if (type === 'error') {
       setError(message)
       setSuccess('')
+      setInfo('')
     } else if (type === 'success') {
       setSuccess(message)
       setError('')
+      setInfo('')
+    } else if (type === 'info') {
+      setInfo(message)
+      setError('')
+      setSuccess('')
     }
   }
 
   const clearFeedback = () => {
     setError('')
     setSuccess('')
+    setInfo('')
     setFeedbackType(null)
   }
 
@@ -430,6 +517,411 @@ function NovoProcedimentoContent() {
     return formatCurrency(numericValue)
   }
   const [previewFiles, setPreviewFiles] = useState<string[]>([])
+  const [uploadProgress, setUploadProgress] = useState<{
+    isUploading: boolean
+    currentFile: number
+    totalFiles: number
+    currentFileName: string
+    progress: number
+  }>({
+    isUploading: false,
+    currentFile: 0,
+    totalFiles: 0,
+    currentFileName: '',
+    progress: 0
+  })
+  
+  // Estado para rastrear progresso individual de cada arquivo
+  const [fileUploadProgress, setFileUploadProgress] = useState<Record<number, {
+    fileName: string
+    progress: number
+    status: 'pending' | 'uploading' | 'success' | 'error'
+    error?: string
+  }>>({})
+  
+  // Armazenar dados dos uploads concluídos para associar ao procedimento depois
+  const [uploadedAttachments, setUploadedAttachments] = useState<Array<{
+    file_name: string
+    file_size: number
+    file_type: string
+    file_url: string
+    filePath: string
+  }>>([])
+  
+  
+
+  // Função helper para converter URI (file://) em Blob no mobile
+  const convertUriToBlob = async (uri: string): Promise<Blob> => {
+    try {
+      const response = await fetch(uri)
+      
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar arquivo: ${response.status} ${response.statusText}`)
+      }
+      
+      const blob = await response.blob()
+      
+      if (blob.size === 0) {
+        throw new Error('Blob está vazio (0 bytes) - arquivo pode não existir mais ou estar protegido')
+      }
+      
+      return blob
+    } catch (error: any) {
+      console.error(`[UPLOAD] ❌ Erro ao converter URI para Blob:`, error)
+      throw error
+    }
+  }
+
+  // Função para fazer upload de um único arquivo - USA procedureId REAL (não temporário)
+  // Retorna { success: boolean, attachment?: { file_name, file_size, file_type, file_url } }
+  const uploadSingleFile = async (file: File | string, index: number, procedureId: string): Promise<{ success: boolean; attachment?: any }> => {
+    if (!user?.id) {
+      showFeedback('error', '❌ Erro: Usuário não autenticado')
+      return { success: false }
+    }
+    
+    if (!procedureId) {
+      console.error('[UPLOAD] ❌ procedureId não fornecido')
+      return { success: false }
+    }
+    
+    // MOBILE FIX: Verificar se é URI (file://) e converter para Blob
+    let fileToUpload: File | Blob
+    let fileName: string
+    let fileSize: number
+    let fileType: string
+    
+    if (typeof file === 'string' && file.startsWith('file://')) {
+      // É um URI do mobile - converter para Blob
+      
+      try {
+        const blob = await convertUriToBlob(file)
+        fileToUpload = blob
+        
+        // Extrair nome do arquivo do URI
+        fileName = file.split('/').pop() || `image-${Date.now()}.jpg`
+        fileSize = blob.size
+        fileType = blob.type || 'image/jpeg'
+        
+      } catch (error: any) {
+        console.error(`[UPLOAD] ❌ Falha ao converter URI:`, error)
+        setFileUploadProgress(prev => ({
+          ...prev,
+          [index]: {
+            ...prev[index],
+            status: 'error',
+            error: error.message
+          }
+        }))
+        return { success: false }
+      }
+    } else if (file instanceof File) {
+      // É um File - validar se é válido
+      
+      // MOBILE FIX: Verificar se o File é inválido (size: 0 ou type: undefined)
+      if (file.size === 0 || !file.type || file.type === '') {
+        
+        try {
+          // Ler como ArrayBuffer e recriar
+          const arrayBuffer = await file.arrayBuffer()
+          
+          if (arrayBuffer.byteLength === 0) {
+            throw new Error('Arquivo está vazio (0 bytes)')
+          }
+          
+          // Inferir tipo MIME
+          let inferredType = file.type
+          if (!inferredType || inferredType === '') {
+            const fileName = file.name.toLowerCase()
+            if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+              inferredType = 'image/jpeg'
+            } else if (fileName.endsWith('.png')) {
+              inferredType = 'image/png'
+            } else if (fileName.endsWith('.pdf')) {
+              inferredType = 'application/pdf'
+            } else {
+              inferredType = 'application/octet-stream'
+            }
+          }
+          
+          // Criar novo File válido
+          const fixedFile = new File([arrayBuffer], file.name, {
+            type: inferredType,
+            lastModified: file.lastModified || Date.now()
+          })
+          
+          
+          fileToUpload = fixedFile
+          fileName = fixedFile.name
+          fileSize = fixedFile.size
+          fileType = fixedFile.type
+        } catch (error: any) {
+          console.error(`[UPLOAD] ❌ Erro ao corrigir File:`, error)
+          setFileUploadProgress(prev => ({
+            ...prev,
+            [index]: {
+              ...prev[index],
+              status: 'error',
+              error: `Arquivo inválido: ${error.message}`
+            }
+          }))
+          return { success: false }
+        }
+      } else {
+        // File já é válido
+        fileToUpload = file
+        fileName = file.name
+        fileSize = file.size
+        fileType = file.type
+      }
+    } else {
+      console.error(`[UPLOAD] ❌ Tipo de arquivo inválido:`, typeof file)
+      return { success: false }
+    }
+    
+    
+    // Atualizar status do arquivo para "uploading" com progresso inicial de 1%
+    setFileUploadProgress(prev => {
+      const newProgress: Record<number, {
+        fileName: string
+        progress: number
+        status: 'pending' | 'uploading' | 'success' | 'error'
+        error?: string
+      }> = {
+        ...prev,
+        [index]: {
+          fileName: file.name,
+          status: 'uploading' as const,
+          progress: 1 // Progresso inicial para mostrar que iniciou
+        }
+      }
+      
+      // Atualizar progresso geral
+      const totalFiles = Object.keys(newProgress).length
+      const completedFiles = Object.values(newProgress).filter(p => p?.status === 'success').length
+      const inProgressFiles = Object.values(newProgress).filter(p => p?.status === 'uploading').length
+      const progressPercent = totalFiles > 0 ? Math.round((completedFiles / totalFiles) * 100) : 0
+      
+      setUploadProgress({
+        isUploading: true,
+        currentFile: completedFiles,
+        totalFiles: totalFiles,
+        currentFileName: file.name,
+        progress: progressPercent
+      })
+      
+      return newProgress
+    })
+    
+    try {
+      // Encurtar nome do arquivo se for muito longo (problema comum no mobile)
+      const originalFileName = fileName
+      const maxFileNameLength = 100 // Limite de caracteres para nome do arquivo
+      let safeFileName = originalFileName
+      
+      if (originalFileName.length > maxFileNameLength) {
+        const fileExt = originalFileName.split('.').pop() || 'bin'
+        const nameWithoutExt = originalFileName.substring(0, originalFileName.lastIndexOf('.'))
+        const truncatedName = nameWithoutExt.substring(0, maxFileNameLength - fileExt.length - 10) // -10 para margem
+        safeFileName = `${truncatedName}...${Date.now().toString().slice(-6)}.${fileExt}`
+      }
+      
+      
+      // Gerar nome único para o arquivo (sempre curto)
+      const fileExtension = safeFileName.split('.').pop() || 'bin'
+      const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExtension}` // Encurtado para 8 chars
+      // Usar ID REAL do procedimento (não temporário)
+      const filePath = `${user.id}/${procedureId}/${uniqueFileName}`
+      
+      // Obter tipo MIME - usar o tipo do blob se disponível, senão inferir do nome
+      let correctMimeType = fileType
+      if (!correctMimeType || correctMimeType === 'application/octet-stream') {
+        correctMimeType = getCorrectMimeType(safeFileName)
+      }
+      
+      
+      // Timeout maior para arquivos grandes
+      const fileSizeMB = fileSize / (1024 * 1024)
+      const baseTimeout = Math.max(120000, fileSizeMB * 15000) // Mínimo 2min, +15s por MB
+      const uploadTimeout = Math.min(baseTimeout, 300000) // Máximo 5 minutos
+      
+      
+      // Fazer upload usando API route (usa service key automaticamente - mais confiável)
+      
+      // Progresso já foi atualizado para 1% acima, agora atualizar para 5% quando iniciar o upload
+      setFileUploadProgress(prev => ({
+        ...prev,
+        [index]: {
+          ...prev[index],
+          progress: 5,
+          status: 'uploading'
+        }
+      }))
+      
+      // MOBILE FIX: Converter Blob para File se necessário (para compatibilidade com FormData)
+      let fileForUpload: File
+      if (fileToUpload instanceof Blob && !(fileToUpload instanceof File)) {
+        // Criar File a partir do Blob
+        fileForUpload = new File([fileToUpload], safeFileName, { type: correctMimeType })
+      } else {
+        fileForUpload = fileToUpload as File
+      }
+      
+      const result = await uploadToSupabaseStorage({
+        bucket: 'procedure-attachments',
+        path: filePath,
+        file: fileForUpload,
+        contentType: correctMimeType,
+        // Não precisa de accessToken - API route usa service key
+        timeout: uploadTimeout,
+        onProgress: (progress) => {
+          // Atualizar progresso real (5% a 90%)
+          const progressPercent = Math.max(5, Math.min(90, progress.percent))
+          
+          setFileUploadProgress(prev => ({
+            ...prev,
+            [index]: {
+              ...prev[index],
+              progress: progressPercent
+            }
+          }))
+          
+          // Log apenas a cada 10% para não poluir
+          if (progress.percent % 10 < 1 || progress.percent >= 90) {
+            // Progress logging removed
+          }
+        }
+      })
+      
+      
+      if (!result.success || !result.data) {
+        const errorMessage = result.error?.message || 'Erro desconhecido ao fazer upload'
+        console.error(`[UPLOAD] ❌ Falha no upload:`, errorMessage)
+        
+        setFileUploadProgress(prev => ({
+          ...prev,
+          [index]: {
+            ...prev[index],
+            status: 'error',
+            progress: 0,
+            error: errorMessage
+          }
+        }))
+        
+        let userMessage = errorMessage
+        if (errorMessage.includes('timeout') || errorMessage.includes('demorou mais')) {
+          userMessage = `O arquivo "${safeFileName}" é muito grande ou sua conexão está lenta. Tente novamente ou use um arquivo menor.`
+        } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+          userMessage = 'Sessão expirada. Por favor, faça login novamente.'
+        } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+          userMessage = 'Sem permissão para fazer upload. Entre em contato com o suporte.'
+        }
+        
+        showFeedback('error', `❌ Erro ao enviar ${safeFileName}: ${userMessage}`)
+        return { success: false }
+      }
+      
+      // Upload concluído com sucesso!
+      
+      setFileUploadProgress(prev => ({
+        ...prev,
+        [index]: {
+          ...prev[index],
+          progress: 95
+        }
+      }))
+      
+      // Obter URL pública (a API route já retorna, mas vamos garantir)
+      
+      const publicUrl = getPublicUrl('procedure-attachments', filePath)
+      
+      
+      // Atualizar progresso para 100% e status para success
+      setFileUploadProgress(prev => {
+        const newProgress: Record<number, {
+          fileName: string
+          progress: number
+          status: 'pending' | 'uploading' | 'success' | 'error'
+          error?: string
+        }> = {
+          ...prev,
+          [index]: {
+            ...prev[index],
+            status: 'success' as const,
+            progress: 100
+          }
+        }
+        
+        // Atualizar progresso geral
+        const totalFiles = Object.keys(newProgress).length
+        const completedFiles = Object.values(newProgress).filter(p => p?.status === 'success').length
+        const progressPercent = totalFiles > 0 ? Math.round((completedFiles / totalFiles) * 100) : 0
+        
+        setUploadProgress({
+          isUploading: completedFiles < totalFiles,
+          currentFile: completedFiles,
+          totalFiles: totalFiles,
+          currentFileName: safeFileName,
+          progress: progressPercent
+        })
+        
+        // Se todos os uploads terminarem, desativar o estado de upload IMEDIATAMENTE
+        if (completedFiles >= totalFiles) {
+          console.log('[UPLOAD] ✅ Todos os uploads concluídos! Desativando estado de upload...')
+          setUploadProgress({
+            isUploading: false,
+            currentFile: 0,
+            totalFiles: 0,
+            currentFileName: '',
+            progress: 0
+          })
+        }
+        
+        return newProgress
+      })
+      
+      // Armazenar dados do upload
+      setUploadedAttachments(prev => {
+        const newAttachments = [...prev, {
+          file_name: safeFileName, // Usar nome seguro
+          file_size: fileSize,
+          file_type: correctMimeType,
+          file_url: publicUrl,
+          filePath: filePath
+        }]
+        return newAttachments
+      })
+      
+      // Retornar sucesso com dados do attachment
+      return {
+        success: true,
+        attachment: {
+          file_name: safeFileName,
+          file_size: file.size,
+          file_type: correctMimeType,
+          file_url: publicUrl,
+          filePath: filePath
+        }
+      }
+    } catch (error: any) {
+      console.error(`[UPLOAD] ❌ Erro inesperado ao fazer upload de ${file.name}:`, error)
+      
+      setFileUploadProgress(prev => ({
+        ...prev,
+        [index]: {
+          ...prev[index],
+          status: 'error',
+          progress: 0,
+          error: error?.message || 'Erro desconhecido'
+        }
+      }))
+      
+        const errorMessage = error?.message || 'Erro desconhecido ao fazer upload'
+        const safeFileName = file.name.length > 100 ? file.name.substring(0, 100) + '...' : file.name
+        showFeedback('error', `❌ Erro ao enviar ${safeFileName}: ${errorMessage}`)
+      return { success: false }
+    }
+  }
   const router = useRouter()
 
   // Função para preencher todos os campos com dados de teste
@@ -442,6 +934,7 @@ function NovoProcedimentoContent() {
       // 1. Identificação do Procedimento
       nomePaciente: 'Maria da Silva Teste',
       dataNascimento: dataNascimento.toISOString().split('T')[0],
+      dataProcedimento: hoje,
       convenio: 'Unimed',
       carteirinha: '123456789',
       tipoProcedimento: 'Cesariana',
@@ -544,296 +1037,1153 @@ function NovoProcedimentoContent() {
 
   // Calcular idade
   const calculateAge = (birthDate: string) => {
-    if (!birthDate) return ''
-    const today = new Date()
-    const birth = new Date(birthDate)
-    let age = today.getFullYear() - birth.getFullYear()
-    const monthDiff = today.getMonth() - birth.getMonth()
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--
+    if (!birthDate) return '0'
+    
+    // Converter data brasileira (DD/MM/YYYY) para ISO se necessário
+    let isoDate = birthDate
+    if (birthDate.includes('/')) {
+      const [day, month, year] = birthDate.split('/')
+      isoDate = `${year}-${month}-${day}`
     }
-    return age.toString()
+    
+    try {
+      const today = new Date()
+      const birth = new Date(isoDate)
+      
+      // Validar se a data é válida
+      if (isNaN(birth.getTime())) {
+        return '0'
+      }
+      
+      let age = today.getFullYear() - birth.getFullYear()
+      const monthDiff = today.getMonth() - birth.getMonth()
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+        age--
+      }
+      
+      // Garantir que idade não seja negativa
+      return age < 0 ? '0' : age.toString()
+    } catch (error) {
+      return '0'
+    }
+  }
+
+  // Função helper para corrigir arquivo inválido do mobile
+  const fixInvalidMobileFile = async (file: File): Promise<File | null> => {
+    
+    // Se o arquivo já é válido, retornar como está
+    if (file.size > 0 && file.type && file.type !== '') {
+      return file
+    }
+    
+    try {
+      // Ler o arquivo como ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer()
+      
+      if (arrayBuffer.byteLength === 0) {
+        console.error(`[FILE-FIX] ❌ ArrayBuffer está vazio (0 bytes)`)
+        return null
+      }
+      
+      // Inferir tipo MIME do nome do arquivo se não tiver
+      let mimeType = file.type
+      if (!mimeType || mimeType === '') {
+        const fileName = file.name.toLowerCase()
+        if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+          mimeType = 'image/jpeg'
+        } else if (fileName.endsWith('.png')) {
+          mimeType = 'image/png'
+        } else if (fileName.endsWith('.pdf')) {
+          mimeType = 'application/pdf'
+        } else {
+          mimeType = 'application/octet-stream'
+        }
+      }
+      
+      // Criar novo File válido a partir do ArrayBuffer
+      const fixedFile = new File([arrayBuffer], file.name, {
+        type: mimeType,
+        lastModified: file.lastModified || Date.now()
+      })
+      
+      
+      return fixedFile
+    } catch (error: any) {
+      console.error(`[FILE-FIX] ❌ Erro ao corrigir arquivo:`, error)
+      return null
+    }
   }
 
   // Handle file upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    const validFiles = files.filter(file => 
-      file.type === 'application/pdf' || 
-      file.type === 'image/jpeg' || 
-      file.type === 'image/png'
-    )
     
-    if (formData.fichas.length + validFiles.length > 10) {
-      showFeedback('error', '⚠️ Limite de arquivos excedido: Máximo de 10 arquivos permitidos.')
+    if (files.length === 0) {
       return
     }
     
+    
+    // MOBILE FIX: Validar e corrigir arquivos inválidos
+    const validFiles: File[] = []
+    
+    for (const file of files) {
+      
+      // Validar tipos de arquivo permitidos
+      const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']
+      const isValidType = validTypes.includes(file.type) || 
+                         file.name.toLowerCase().endsWith('.pdf') ||
+                         file.name.toLowerCase().endsWith('.jpg') ||
+                         file.name.toLowerCase().endsWith('.jpeg') ||
+                         file.name.toLowerCase().endsWith('.png')
+      
+      if (!isValidType) {
+        showFeedback('error', `⚠️ Arquivo "${file.name}" tem tipo não permitido. Use PDF, JPEG ou PNG.`)
+        continue
+      }
+      
+      // Verificar se o arquivo é inválido (problema comum no mobile)
+      if (file.size === 0 || !file.type || file.type === '') {
+        // Tentar corrigir o arquivo
+        const fixedFile = await fixInvalidMobileFile(file)
+        
+        if (fixedFile && fixedFile.size > 0) {
+          validFiles.push(fixedFile)
+        } else {
+          console.error(`[FILE-UPLOAD] ❌ Não foi possível corrigir o arquivo: ${file.name}`)
+          showFeedback('error', `❌ Erro ao processar ${file.name}. Tente selecionar novamente.`)
+          continue
+        }
+      } else {
+        // Arquivo já é válido
+        validFiles.push(file)
+      }
+    }
+    
+    if (validFiles.length === 0) {
+      showFeedback('error', '❌ Nenhum arquivo válido foi selecionado.')
+      return
+    }
+    
+    
+    // Validar quantidade total
+    if (formData.fichas.length + validFiles.length > LIMITES_UPLOAD.quantidadeMaxima) {
+      showFeedback('error', `⚠️ Limite de arquivos excedido: Máximo de ${LIMITES_UPLOAD.quantidadeMaxima} arquivos permitidos.`)
+      return
+    }
+    
+    // Validar usando função utilitária (apenas tipo de arquivo)
+    const todosArquivos = [...formData.fichas, ...validFiles]
+    const validacao = validarArquivos(todosArquivos)
+    
+    if (!validacao.valido) {
+      showFeedback('error', `⚠️ ${validacao.erro}`)
+      return
+    }
+    
+    // Adicionar arquivos ao estado
+    const currentIndex = formData.fichas.length
     setFormData(prev => ({
       ...prev,
       fichas: [...prev.fichas, ...validFiles]
     }))
     
-    // Criar previews
-    validFiles.forEach(file => {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setPreviewFiles(prev => [...prev, e.target?.result as string])
-      }
-      reader.readAsDataURL(file)
+    // Inicializar progresso para cada arquivo
+    validFiles.forEach((file, fileIndex) => {
+      const index = currentIndex + fileIndex
+      setFileUploadProgress(prev => ({
+        ...prev,
+        [index]: {
+          fileName: file.name,
+          progress: 0,
+          status: 'pending'
+        }
+      }))
     })
+    
+    // Criar previews apenas para imagens (não para PDFs - pode travar o navegador)
+    validFiles.forEach(file => {
+      const isImage = file.type.startsWith('image/') || 
+                     file.name.toLowerCase().endsWith('.jpg') ||
+                     file.name.toLowerCase().endsWith('.jpeg') ||
+                     file.name.toLowerCase().endsWith('.png')
+      
+      const isPDF = file.type === 'application/pdf' || 
+                   file.name.toLowerCase().endsWith('.pdf')
+      
+      if (isImage) {
+        // Apenas criar preview para imagens
+        const reader = new FileReader()
+        
+        // Timeout para evitar travamento
+        const timeoutId = setTimeout(() => {
+          reader.abort()
+          console.warn(`[FILE-UPLOAD] ⏱️ Timeout ao criar preview de ${file.name}`)
+          // Adicionar placeholder para imagens que falharam
+          setPreviewFiles(prev => [...prev, ''])
+        }, 10000) // 10 segundos timeout
+        
+        reader.onload = (e) => {
+          clearTimeout(timeoutId)
+          if (e.target?.result) {
+            setPreviewFiles(prev => [...prev, e.target.result as string])
+          } else {
+            setPreviewFiles(prev => [...prev, ''])
+          }
+        }
+        
+        reader.onerror = () => {
+          clearTimeout(timeoutId)
+          console.error(`[FILE-UPLOAD] ❌ Erro ao criar preview de ${file.name}`)
+          setPreviewFiles(prev => [...prev, ''])
+        }
+        
+        try {
+          reader.readAsDataURL(file)
+        } catch (error) {
+          clearTimeout(timeoutId)
+          console.error(`[FILE-UPLOAD] ❌ Erro ao ler arquivo ${file.name}:`, error)
+          setPreviewFiles(prev => [...prev, ''])
+        }
+      } else if (isPDF) {
+        // Para PDFs, não criar preview (apenas adicionar placeholder vazio)
+        // PDFs grandes podem travar o navegador ao tentar converter para base64
+        setPreviewFiles(prev => [...prev, ''])
+      } else {
+        // Outros tipos de arquivo
+        setPreviewFiles(prev => [...prev, ''])
+      }
+    })
+    
+    // NÃO iniciar upload ainda - será feito após criar o procedimento
+    // Estado será atualizado no handleSubmit
+    
+    // Feedback removido - não exibir mensagem ao adicionar arquivos
+    
+    // NÃO fazer upload automático - aguardar criação do procedimento
+    // Upload será feito no handleSubmit após criar o procedimento
+    
+    // Limpar input para permitir selecionar o mesmo arquivo novamente se necessário
+    e.target.value = ''
   }
 
   // Remove file
   const removeFile = (index: number) => {
+    // Remover arquivo da lista
     setFormData(prev => ({
       ...prev,
       fichas: prev.fichas.filter((_, i) => i !== index)
     }))
     setPreviewFiles(prev => prev.filter((_, i) => i !== index))
+    
+    // Remover progresso do arquivo
+    setFileUploadProgress(prev => {
+      const newProgress: typeof prev = {}
+      Object.keys(prev).forEach(key => {
+        const keyNum = parseInt(key)
+        if (keyNum < index) {
+          newProgress[keyNum] = prev[keyNum]
+        } else if (keyNum > index) {
+          newProgress[keyNum - 1] = prev[keyNum]
+        }
+        // keyNum === index é removido
+      })
+      return newProgress
+    })
+    
+    // Remover dados de upload se existirem
+    setUploadedAttachments(prev => prev.filter((_, i) => i !== index))
   }
 
+  // Função auxiliar para converter data para formato ISO (YYYY-MM-DD)
+  const convertDateToISO = (data: string): string => {
+    if (!data || !data.trim()) return ''
+    
+    // Se já estiver no formato ISO (YYYY-MM-DD)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(data.trim())) {
+      return data.trim()
+    }
+    
+    // Se estiver no formato DD/MM/YYYY ou DD-MM-YYYY
+    const parts = data.trim().split(/[\/\-]/)
+    if (parts.length === 3) {
+      const [dia, mes, ano] = parts
+      // Se o ano tem 2 dígitos, assumir 20XX
+      const anoCompleto = ano.length === 2 ? `20${ano}` : ano
+      // Validar se é uma data válida
+      const date = new Date(`${anoCompleto}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`)
+      if (!isNaN(date.getTime())) {
+        return `${anoCompleto}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`
+      }
+    }
+    
+    // Tentar parsear como data genérica
+    const date = new Date(data)
+    if (!isNaN(date.getTime())) {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    
+    return ''
+  }
 
+  // Função auxiliar para fazer match inteligente de tipo de procedimento
+  const matchTipoProcedimento = (texto: string): string => {
+    if (!texto) return ''
+    const textoLower = texto.toLowerCase()
+    
+    // Mapeamento de palavras-chave para tipos de procedimento
+    const mapeamento: Record<string, string> = {
+      'cesariana': 'Cesariana',
+      'cesárea': 'Cesariana',
+      'cesarea': 'Cesariana',
+      'parto normal': 'Parto Normal',
+      'parto vaginal': 'Parto Normal',
+      'parto': 'Parto Normal',
+      'cirurgia geral': 'Cirurgia Geral',
+      'cirurgia ortopédica': 'Cirurgia Ortopédica',
+      'ortopedia': 'Cirurgia Ortopédica',
+      'cirurgia plástica': 'Cirurgia Plástica',
+      'plastica': 'Cirurgia Plástica',
+      'cirurgia vascular': 'Cirurgia Vascular',
+      'vascular': 'Cirurgia Vascular',
+      'cirurgia neurológica': 'Cirurgia Neurológica',
+      'neurologia': 'Cirurgia Neurológica',
+      'cirurgia cardíaca': 'Cirurgia Cardíaca',
+      'cardiologia': 'Cirurgia Cardíaca',
+      'cirurgia digestiva': 'Cirurgia Digestiva',
+      'digestiva': 'Cirurgia Digestiva',
+    }
+    
+    // Buscar match exato primeiro
+    for (const [key, value] of Object.entries(mapeamento)) {
+      if (textoLower.includes(key)) {
+        return value
+      }
+    }
+    
+    // Se não encontrou match, verificar se algum tipo de procedimento está contido no texto
+    for (const tipo of TIPOS_PROCEDIMENTO) {
+      if (textoLower.includes(tipo.toLowerCase()) || tipo.toLowerCase().includes(textoLower)) {
+        return tipo
+      }
+    }
+    
+    return ''
+  }
+
+  // Função auxiliar para fazer match inteligente de técnica anestésica
+  const matchTecnicaAnestesica = (texto: string): string => {
+    if (!texto) return ''
+    const textoLower = texto.toLowerCase()
+    
+    // Mapeamento de palavras-chave para técnicas anestésicas
+    const mapeamento: Record<string, string> = {
+      'raquianestesia': 'Raquianestesia',
+      'raqui': 'Raquianestesia',
+      'anestesia geral': 'Anestesia geral',
+      'geral': 'Anestesia geral',
+      'bloqueio periférico': 'Bloqueio Periférico',
+      'bloqueio': 'Bloqueio Periférico',
+      'sedação consciente': 'Sedação Consciente',
+      'sedação': 'Sedação Consciente',
+      'anestesia regional': 'Anestesia Regional',
+      'regional': 'Anestesia Regional',
+      'bloqueio de plexo': 'Bloqueio de Plexo',
+      'plexo': 'Bloqueio de Plexo',
+      'anestesia subaracnoidea': 'Anestesia Subaracnoidea',
+      'subaracnoidea': 'Anestesia Subaracnoidea',
+      'anestesia peridural': 'Anestesia Peridural',
+      'peridural': 'Anestesia Peridural',
+      'bloqueio axilar': 'Bloqueio Axilar',
+      'axilar': 'Bloqueio Axilar',
+      'bloqueio femoral': 'Bloqueio Femoral',
+      'femoral': 'Bloqueio Femoral',
+      'duplo bloqueio': 'Raquianestesia', // Assumir raqui como padrão para duplo bloqueio
+      'bloqueio duplo': 'Raquianestesia',
+      'acompanhamento': 'Acompanhamento anestésico',
+    }
+    
+    // Buscar match nas opções disponíveis
+    for (const [key, value] of Object.entries(mapeamento)) {
+      if (textoLower.includes(key)) {
+        // Verificar se o valor existe na lista
+        const existe = TIPOS_ANESTESIA.find(a => a.nome === value)
+        if (existe) {
+          return value
+        }
+      }
+    }
+    
+    return ''
+  }
+
+  // Função para processar OCR e preencher campos automaticamente
+  const handleOCRExtract = async (rawText: string, confidence?: number) => {
+    try {
+      if (!rawText || rawText.trim().length === 0) {
+        showFeedback('error', '⚠️ Nenhum texto foi extraído da imagem. Verifique se a imagem está clara e legível.')
+        return
+      }
+
+      // Armazenar texto bruto e confiança para exibição
+      setOcrRawText(rawText)
+      setOcrConfidence(confidence)
+
+      // Tentar parsear com IA primeiro
+      let parsed: ReturnType<typeof parseFicha> | null = null
+      let usandoIA = false
+      
+      try {
+        console.log('🤖 [CADASTRO DETALHADO] Tentando parse com IA...')
+        const response = await fetch('/api/ocr/parse-ai', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: rawText }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.parsed && data.camposPreenchidos >= 4) {
+            // IA retornou dados suficientes (>= 4 campos obrigatórios)
+            parsed = data.parsed as ReturnType<typeof parseFicha>
+            usandoIA = true
+            console.log('✅ [CADASTRO DETALHADO] Parse com IA bem-sucedido:', data.camposPreenchidos, 'campos')
+          }
+        }
+      } catch (aiError: any) {
+        console.warn('⚠️ [CADASTRO DETALHADO] Erro ao processar com IA, usando parse tradicional:', aiError.message)
+      }
+
+      // Se IA não retornou dados suficientes, usar parse tradicional
+      if (!parsed || !usandoIA) {
+        console.log('📄 [CADASTRO DETALHADO] Usando parse tradicional (regex)')
+        parsed = parseFicha(rawText)
+      }
+
+      console.log('📄 [CADASTRO DETALHADO] Dados parseados:', parsed, usandoIA ? '(IA)' : '(Regex)')
+
+      // Preencher APENAS campos obrigatórios marcados com *
+      const updates: Partial<FormData> = {}
+      const camposPreenchidos: string[] = []
+
+      // 1. Nome do paciente * (obrigatório)
+      if (parsed.nome && parsed.nome.trim()) {
+        updates.nomePaciente = parsed.nome.trim()
+        camposPreenchidos.push('Nome do Paciente')
+      }
+
+      // 2. Data de nascimento * (obrigatório) - converter para formato ISO
+      if (parsed.nascimento && parsed.nascimento.trim()) {
+        const dataISO = convertDateToISO(parsed.nascimento.trim())
+        if (dataISO) {
+          updates.dataNascimento = dataISO
+          camposPreenchidos.push('Data de Nascimento')
+        }
+      }
+
+      // 3. Data do procedimento / entrada * (obrigatório) - converter para formato ISO
+      if (parsed.dataProcedimento || parsed.entrada) {
+        const dataProc = parsed.dataProcedimento || parsed.entrada
+        if (dataProc && dataProc.trim()) {
+          const dataISO = convertDateToISO(dataProc.trim())
+          if (dataISO) {
+            updates.dataProcedimento = dataISO
+            camposPreenchidos.push('Data do Procedimento')
+          }
+        }
+      }
+
+      // 4. Tipo de procedimento / procedimento realizado * (obrigatório) - fazer match inteligente
+      if (parsed.tipoProcedimento || parsed.procedimento) {
+        const proced = parsed.tipoProcedimento || parsed.procedimento
+        if (proced && proced.trim()) {
+          const tipoMatch = matchTipoProcedimento(proced.trim())
+          if (tipoMatch) {
+            updates.tipoProcedimento = tipoMatch
+            camposPreenchidos.push('Tipo de Procedimento')
+          } else {
+            // Se não encontrou match, usar o valor direto se estiver na lista
+            const valorDireto = TIPOS_PROCEDIMENTO.find(t => t.toLowerCase() === proced.trim().toLowerCase())
+            if (valorDireto) {
+              updates.tipoProcedimento = valorDireto
+              camposPreenchidos.push('Tipo de Procedimento')
+            } else {
+              // Fallback: usar o valor direto mesmo sem match
+              updates.tipoProcedimento = proced.trim()
+              camposPreenchidos.push('Tipo de Procedimento')
+            }
+          }
+        }
+      }
+
+      // 5. Técnica anestésica * (obrigatório) - fazer match inteligente
+      if (parsed.tecnica && parsed.tecnica.trim()) {
+        const tecnicaMatch = matchTecnicaAnestesica(parsed.tecnica.trim())
+        if (tecnicaMatch) {
+          updates.tecnicaAnestesica = tecnicaMatch
+          // Encontrar código TSSU correspondente
+          const anestesiaEncontrada = TIPOS_ANESTESIA.find(a => a.nome === tecnicaMatch)
+          if (anestesiaEncontrada) {
+            updates.codigoTSSU = anestesiaEncontrada.codigo
+          }
+          camposPreenchidos.push('Técnica Anestésica')
+        } else {
+          // Se não encontrou match, tentar usar o valor direto se estiver na lista
+          const valorDireto = TIPOS_ANESTESIA.find(a => a.nome.toLowerCase() === parsed.tecnica.trim().toLowerCase())
+          if (valorDireto) {
+            updates.tecnicaAnestesica = valorDireto.nome
+            updates.codigoTSSU = valorDireto.codigo
+            camposPreenchidos.push('Técnica Anestésica')
+          } else {
+            // Fallback: tentar encontrar por substring
+            const tecnicaLower = parsed.tecnica.toLowerCase()
+            const anestesiaEncontrada = TIPOS_ANESTESIA.find(a => 
+              a.nome.toLowerCase().includes(tecnicaLower) || 
+              tecnicaLower.includes(a.nome.toLowerCase())
+            )
+            if (anestesiaEncontrada) {
+              updates.tecnicaAnestesica = anestesiaEncontrada.nome
+              updates.codigoTSSU = anestesiaEncontrada.codigo
+              camposPreenchidos.push('Técnica Anestésica')
+            }
+          }
+        }
+      }
+
+      // 6. Sexo * (obrigatório)
+      if (parsed.sexo && (parsed.sexo === 'M' || parsed.sexo === 'F')) {
+        updates.patientGender = parsed.sexo as 'M' | 'F'
+        camposPreenchidos.push('Sexo')
+      }
+
+      // 7. Convênio * (obrigatório)
+      if (parsed.convenio && parsed.convenio.trim()) {
+        updates.convenio = parsed.convenio.trim()
+        camposPreenchidos.push('Convênio')
+      }
+
+      // 8. Cirurgião * (obrigatório)
+      if (parsed.nomeCirurgiao || parsed.cirurgiao) {
+        const cirurg = parsed.nomeCirurgiao || parsed.cirurgiao
+        if (cirurg && cirurg.trim()) {
+          updates.nomeCirurgiao = cirurg.trim()
+          camposPreenchidos.push('Cirurgião')
+        }
+      }
+
+      console.log('✅ [CADASTRO DETALHADO] Updates a serem aplicados:', updates)
+
+      // Atualizar formulário
+      setFormData(prev => ({
+        ...prev,
+        ...updates
+      }))
+
+      // Log no Supabase (opcional)
+      if (user?.id && supabase) {
+        try {
+          const { error: logError } = await supabase.from('ocr_logs').insert({
+            user_id: user.id,
+            raw_text: rawText,
+            parsed: parsed,
+            confidence: confidence ? parseFloat(confidence.toFixed(2)) : null,
+            created_at: new Date().toISOString()
+          })
+          
+          if (logError) {
+            // Ignorar erro se a tabela não existir ou se houver problema de permissão
+            console.warn('Erro ao salvar log OCR (tabela pode não existir ou sem permissão):', logError)
+          }
+        } catch (logError) {
+          // Ignorar erros de log
+          console.warn('Erro ao salvar log OCR:', logError)
+        }
+      }
+
+      // Calcular campos faltando para exibição
+      const camposFaltando = [
+        !updates.nomePaciente && 'Nome do Paciente',
+        !updates.dataNascimento && 'Data de Nascimento',
+        !updates.dataProcedimento && 'Data do Procedimento',
+        !updates.tipoProcedimento && 'Tipo de Procedimento',
+        !updates.tecnicaAnestesica && 'Técnica Anestésica',
+        !updates.patientGender && 'Sexo',
+        !updates.convenio && 'Convênio',
+        !updates.nomeCirurgiao && 'Cirurgião'
+      ].filter(Boolean) as string[]
+
+      // Armazenar informações para exibição
+      setOcrCamposPreenchidos(camposPreenchidos)
+      setOcrCamposFaltando(camposFaltando)
+
+      // Feedback de sucesso
+      const totalPreenchidos = camposPreenchidos.length
+      if (totalPreenchidos > 0) {
+        let mensagem = `✅ OCR processado com sucesso! ${totalPreenchidos} campo(s) preenchido(s) automaticamente.`
+        
+        if (camposFaltando.length > 0) {
+          mensagem += ` Revise os campos abaixo e preencha os faltantes manualmente.`
+        } else {
+          mensagem += ` Todos os campos obrigatórios foram preenchidos! Revise e ajuste se necessário.`
+        }
+        
+        showFeedback('success', mensagem)
+      } else {
+        showFeedback('error', '⚠️ Nenhum campo obrigatório foi encontrado no OCR. Verifique se a imagem está clara e legível, ou preencha os campos manualmente.')
+      }
+
+    } catch (error: any) {
+      console.error('Erro ao processar OCR:', error)
+      showFeedback('error', `❌ Erro ao processar dados extraídos: ${error.message || 'Erro desconhecido'}`)
+    }
+  }
+
+  // Handler para dados extraídos por comando de voz
+  const handleVoiceData = (extractedData: any, transcription?: string) => {
+    try {
+      console.log('🎤 [VOICE] Dados recebidos do comando de voz:', extractedData)
+      console.log('📝 [VOICE] Transcrição:', transcription)
+      
+      // Validar se há dados
+      if (!extractedData || Object.keys(extractedData).length === 0) {
+        showFeedback('error', '⚠️ Nenhum dado foi extraído do comando de voz. Tente falar novamente com mais detalhes.')
+        return
+      }
+      
+      // Armazenar transcrição e campos extraídos para exibição
+      setVoiceTranscription(transcription)
+      setVoiceExtractedFields(extractedData)
+
+      // Mapear os dados extraídos para o formato do formulário
+      const mappedData: Partial<FormData> = {}
+
+      // Campos básicos
+      if (extractedData.patient_name) mappedData.nomePaciente = extractedData.patient_name
+      if (extractedData.data_nascimento) mappedData.dataNascimento = extractedData.data_nascimento
+      if (extractedData.procedure_date) mappedData.dataProcedimento = extractedData.procedure_date
+      if (extractedData.convenio) mappedData.convenio = extractedData.convenio
+      if (extractedData.carteirinha) mappedData.carteirinha = extractedData.carteirinha
+      
+      // Tipo do procedimento - usar o NOME do procedimento (ex: "Cesariana")
+      // Prioridade: procedure_name > procedure_type
+      if (extractedData.procedure_name) {
+        mappedData.tipoProcedimento = extractedData.procedure_name
+      } else if (extractedData.procedure_type) {
+        // Se não tiver nome mas tiver tipo, usar o tipo
+        mappedData.tipoProcedimento = extractedData.procedure_type
+      }
+      
+      if (extractedData.tecnica_anestesica) mappedData.tecnicaAnestesica = extractedData.tecnica_anestesica
+      if (extractedData.codigo_tssu) mappedData.codigoTSSU = extractedData.codigo_tssu
+      if (extractedData.grupo_anestesico) mappedData.grupoAnestesico = extractedData.grupo_anestesico
+      if (extractedData.especialidade_cirurgiao) mappedData.especialidadeCirurgiao = extractedData.especialidade_cirurgiao
+      if (extractedData.nome_cirurgiao) mappedData.nomeCirurgiao = extractedData.nome_cirurgiao
+      if (extractedData.nome_equipe) mappedData.nomeEquipe = extractedData.nome_equipe
+      if (extractedData.hospital_clinic) mappedData.hospital = extractedData.hospital_clinic
+      if (extractedData.patient_gender) {
+        if (extractedData.patient_gender === 'Masculino') mappedData.patientGender = 'M'
+        else if (extractedData.patient_gender === 'Feminino') mappedData.patientGender = 'F'
+        else mappedData.patientGender = 'Other'
+      }
+      if (extractedData.horario) mappedData.horario = extractedData.horario
+      if (extractedData.duracao_minutos) mappedData.duracaoMinutos = String(extractedData.duracao_minutos)
+
+      // Campos do procedimento
+      if (extractedData.sangramento) mappedData.sangramento = extractedData.sangramento
+      if (extractedData.nausea_vomito) mappedData.nauseaVomito = extractedData.nausea_vomito
+      if (extractedData.dor) mappedData.dor = extractedData.dor
+      if (extractedData.observacoes_procedimento) mappedData.observacoesProcedimento = extractedData.observacoes_procedimento
+
+      // Campos obstétricos
+      if (extractedData.acompanhamento_antes) mappedData.acompanhamentoAntes = extractedData.acompanhamento_antes
+      if (extractedData.tipo_parto) mappedData.tipoParto = extractedData.tipo_parto
+      if (extractedData.tipo_cesariana) mappedData.tipoCesariana = extractedData.tipo_cesariana
+      if (extractedData.indicacao_cesariana) mappedData.indicacaoCesariana = extractedData.indicacao_cesariana
+      if (extractedData.descricao_indicacao_cesariana) mappedData.descricaoIndicacaoCesariana = extractedData.descricao_indicacao_cesariana
+      if (extractedData.retencao_placenta) mappedData.retencaoPlacenta = extractedData.retencao_placenta
+      if (extractedData.laceracao_presente) mappedData.laceracaoPresente = extractedData.laceracao_presente
+      if (extractedData.grau_laceracao) mappedData.grauLaceracao = extractedData.grau_laceracao
+      if (extractedData.hemorragia_puerperal) mappedData.hemorragiaPuerperal = extractedData.hemorragia_puerperal
+      if (extractedData.transfusao_realizada) mappedData.transfusaoRealizada = extractedData.transfusao_realizada
+
+      // Campos financeiros
+      if (extractedData.procedure_value) mappedData.valor = String(extractedData.procedure_value)
+      if (extractedData.forma_pagamento) mappedData.formaPagamento = extractedData.forma_pagamento
+      if (extractedData.numero_parcelas) mappedData.numero_parcelas = String(extractedData.numero_parcelas)
+      if (extractedData.payment_status) {
+        if (extractedData.payment_status === 'paid') mappedData.statusPagamento = 'Pago'
+        else if (extractedData.payment_status === 'pending') mappedData.statusPagamento = 'Pendente'
+        else if (extractedData.payment_status === 'cancelled') mappedData.statusPagamento = 'Cancelado'
+      }
+      if (extractedData.payment_date) mappedData.dataPagamento = extractedData.payment_date
+      if (extractedData.observacoes_financeiras) mappedData.observacoes = extractedData.observacoes_financeiras
+
+      // Feedback
+      if (extractedData.email_cirurgiao) mappedData.emailCirurgiao = extractedData.email_cirurgiao
+      if (extractedData.telefone_cirurgiao) mappedData.telefoneCirurgiao = extractedData.telefone_cirurgiao
+      if (extractedData.feedback_solicitado) mappedData.enviarRelatorioCirurgiao = 'Sim'
+
+      // Atualizar o formData com os dados extraídos
+      setFormData(prev => ({
+        ...prev,
+        ...mappedData
+      }))
+
+      showFeedback('success', '✅ Dados extraídos do comando de voz com sucesso! Verifique os campos preenchidos.')
+      
+      console.log('✅ [VOICE] FormData atualizado:', mappedData)
+    } catch (error: any) {
+      console.error('❌ [VOICE] Erro ao processar dados de voz:', error)
+      showFeedback('error', `❌ Erro ao processar comando de voz: ${error.message || 'Erro desconhecido'}`)
+    }
+  }
+
+  // ===== SOLUÇÃO: handleSubmit otimizado para salvar no mobile =====
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     clearFeedback()
     
-    console.log('🚀 Iniciando salvamento do procedimento...')
-    console.log('📋 Dados do usuário:', { userId: user?.id, userName: user?.name })
+    console.log('[SUBMIT] 🚀 Iniciando salvamento (Mobile)')
     
     if (!user?.id) {
-      console.error('❌ Erro: Usuário não está logado')
-      showFeedback('error', '❌ Erro de autenticação: Usuário não está logado. Faça login novamente.')
+      showFeedback('error', '❌ Não autenticado.')
       return
     }
 
-    // Só salvar o procedimento se estivermos na etapa final (Upload)
-    console.log('📍 Seção atual:', currentSection)
     if (currentSection !== 3) {
-      console.warn('⚠️ Tentativa de salvar fora da seção final')
-      showFeedback('error', '⚠️ Complete todas as etapas antes de finalizar.')
+      showFeedback('error', '⚠️ Complete todas as etapas.')
       return
     }
 
-    // Timeout de segurança para garantir que o loading nunca fique travado por mais de 120 segundos
-    // Aumentado para permitir upload de múltiplos arquivos grandes
-    const safetyTimeout = setTimeout(() => {
-      console.error('⏱️ Timeout de segurança atingido - resetando loading state')
-      setLoading(false)
-      showFeedback('error', '❌ Operação demorou muito tempo. Por favor, verifique sua conexão e tente novamente.')
-    }, 120000) // 120 segundos (2 minutos)
+    // Limpar attachments anteriores (serão recriados após upload com ID real)
+    setUploadedAttachments([])
 
-    // Validações básicas com mensagens específicas
+    // Validações básicas
     const camposObrigatorios = {
-      'Nome do Paciente': formData.nomePaciente,
-      'Data de Nascimento': formData.dataNascimento,
-      'Tipo do Procedimento': formData.tipoProcedimento,
-      'Técnica Anestésica': formData.tecnicaAnestesica
+      'Nome': formData.nomePaciente,
+      'Data': formData.dataProcedimento,
+      'Procedimento': formData.tipoProcedimento,
+      'Anestesia': formData.tecnicaAnestesica
     }
-
-    const camposFaltando = Object.entries(camposObrigatorios)
+    
+    const faltando = Object.entries(camposObrigatorios)
       .filter(([_, value]) => !value)
       .map(([key]) => key)
-
-    if (camposFaltando.length > 0) {
-      showFeedback('error', `⚠️ Campos obrigatórios não preenchidos: ${camposFaltando.join(', ')}`)
-      return
-    }
-
-    if (!validateBirthDate(formData.dataNascimento)) {
-      showFeedback('error', '⚠️ Data de nascimento inválida: A data não pode ser futura.')
-      return
-    }
-
-    // Validar campos específicos do tipo de procedimento
-    if (isObstetricProcedure(formData.tipoProcedimento)) {
-      // Validação para parto normal
-      if (isPartoNormal(formData.tipoProcedimento)) {
-        const camposObstetricia = {
-          'Tipo de Parto': formData.tipoParto
-        }
-
-        const camposObstetriciaPendentes = Object.entries(camposObstetricia)
-          .filter(([_, value]) => !value)
-          .map(([key]) => key)
-
-        if (camposObstetriciaPendentes.length > 0) {
-          showFeedback('error', `⚠️ Campos obrigatórios para procedimento obstétrico não preenchidos: ${camposObstetriciaPendentes.join(', ')}`)
+    
+    if (faltando.length > 0) {
+      showFeedback('error', `⚠️ Campos obrigatórios: ${faltando.join(', ')}`)
           return
         }
-
-        // Validações específicas para cesariana quando selecionada em parto normal
-        if (formData.tipoParto === 'Cesariana') {
-          if (!formData.tipoCesariana) {
-            showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo de anestesia (Nova Ráqui, Raquianestesia, Geral ou Complementação pelo Cateter)')
-            return
-          }
-          if (!formData.indicacaoCesariana) {
-            showFeedback('error', '⚠️ Para cesariana, é necessário informar se há indicação')
-            return
-          }
-          if (formData.indicacaoCesariana === 'Sim' && !formData.descricaoIndicacaoCesariana) {
-            showFeedback('error', '⚠️ É necessário descrever a indicação da cesariana')
-            return
-          }
-        }
-      }
-
-      // Validação para cesariana direta
-      if (isCesarianaDireta(formData.tipoProcedimento)) {
-        if (!formData.tipoCesariana) {
-          showFeedback('error', '⚠️ Para cesariana, é necessário informar o tipo de anestesia (Raquianestesia, Geral ou Complementação pelo Cateter)')
-          return
-        }
-        if (!formData.indicacaoCesariana) {
-          showFeedback('error', '⚠️ Para cesariana, é necessário informar se há indicação')
-          return
-        }
-        if (formData.indicacaoCesariana === 'Sim' && !formData.descricaoIndicacaoCesariana) {
-          showFeedback('error', '⚠️ É necessário descrever a indicação da cesariana')
-          return
-        }
-      }
-    }
-
-    // Validar campos financeiros
-    if (formData.statusPagamento === 'Pago') {
-      if (!formData.dataPagamento) {
-        showFeedback('error', '⚠️ Para status "Pago", é necessário informar a data do pagamento')
-      return
-    }
-      if (!formData.valor || parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) <= 0) {
-        showFeedback('error', '⚠️ Para status "Pago", é necessário informar um valor válido')
-      return
-    }
-    }
-
-    // Validar campos de feedback
-    if (formData.enviarRelatorioCirurgiao === 'Sim') {
-      if (!formData.emailCirurgiao) {
-        showFeedback('error', '⚠️ Para enviar relatório ao cirurgião, é necessário informar o email')
-      return
-    }
-      if (!formData.telefoneCirurgiao) {
-        showFeedback('error', '⚠️ Para enviar relatório ao cirurgião, é necessário informar o telefone')
-      return
-    }
-      if (!formData.emailCirurgiao.match(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/)) {
-        showFeedback('error', '⚠️ Email do cirurgião inválido')
-      return
-    }
-    }
-
+        
+      // Timeout de segurança - 90s no mobile (createProcedure tem timeout de 45s x 3 tentativas = até 135s, mas vamos usar 90s como segurança)
+      const safetyTimeout = setTimeout(() => {
+          setLoading(false)
+        showFeedback('error', '❌ Operação demorou muito. Verifique sua conexão.')
+      }, 90000)
 
     setLoading(true)
     showFeedback('info', '⏳ Salvando procedimento...')
     
-    console.log('📝 Preparando dados do procedimento...')
-    console.log('📊 FormData:', {
-      nomePaciente: formData.nomePaciente,
-      tipoProcedimento: formData.tipoProcedimento,
-      valor: formData.valor,
-      statusPagamento: formData.statusPagamento,
-      numeroArquivos: formData.fichas?.length || 0
-    })
-    
     try {
-      const procedureData = {
+      // CRÍTICO: Limpar dados para mobile - remover campos undefined/null
+      const procedureData: any = {
         // Campos obrigatórios
         procedure_name: formData.tipoProcedimento,
         procedure_value: parseFloat(formData.valor.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
-        procedure_date: new Date().toISOString().split('T')[0],
+        procedure_date: formData.dataProcedimento,
         procedure_type: formData.tipoProcedimento,
         
         // Campos do paciente
         patient_name: formData.nomePaciente,
-        patient_age: parseInt(calculateAge(formData.dataNascimento)),
-        data_nascimento: formData.dataNascimento,
-        convenio: formData.convenio,
-        carteirinha: formData.carteirinha,
-        patient_gender: formData.patientGender,
-        
-        // Campos da equipe
-        anesthesiologist_name: user.name,
-        nome_cirurgiao: formData.nomeCirurgiao,
-        surgeon_name: formData.nomeCirurgiao, // Sincronizar com nome_cirurgiao
-        especialidade_cirurgiao: formData.especialidadeCirurgiao,
-        nome_equipe: formData.nomeEquipe,
-        hospital_clinic: formData.hospital,
-        
-        // Campos de horário e duração
-        horario: formData.horario || undefined,
-        procedure_time: formData.horario || undefined, // Sincronizar com horario
-        // Converter duracaoMinutos (já está em minutos, não precisa multiplicar)
-        duracao_minutos: formData.duracaoMinutos ? parseInt(formData.duracaoMinutos) : undefined,
-        duration_minutes: formData.duracaoMinutos ? parseInt(formData.duracaoMinutos) : undefined, // Sincronizar com duracao_minutos
-        
-        // Campos de anestesia
         tecnica_anestesica: formData.tecnicaAnestesica,
-        codigo_tssu: formData.codigoTSSU,
+        user_id: user.id,
+        anesthesiologist_name: user.name || 'Anônimo',
+      }
+      
+      // Adicionar campos opcionais apenas se tiverem valor
+      if (formData.dataNascimento) {
+        procedureData.data_nascimento = formData.dataNascimento
+        procedureData.patient_age = parseInt(calculateAge(formData.dataNascimento))
+      }
+      
+      if (formData.convenio) procedureData.convenio = formData.convenio
+      if (formData.carteirinha) procedureData.carteirinha = formData.carteirinha
+      if (formData.patientGender) procedureData.patient_gender = formData.patientGender
+      
+      if (formData.nomeCirurgiao) {
+        procedureData.nome_cirurgiao = formData.nomeCirurgiao
+        procedureData.surgeon_name = formData.nomeCirurgiao
+      }
+      
+      if (formData.especialidadeCirurgiao) procedureData.especialidade_cirurgiao = formData.especialidadeCirurgiao
+      if (formData.nomeEquipe) procedureData.nome_equipe = formData.nomeEquipe
+      if (formData.hospital) procedureData.hospital_clinic = formData.hospital
+      
+      if (formData.horario) {
+        procedureData.horario = formData.horario
+        procedureData.procedure_time = formData.horario
+      }
+      
+      if (formData.duracaoMinutos) {
+        const duracao = parseInt(formData.duracaoMinutos)
+        procedureData.duracao_minutos = duracao
+        procedureData.duration_minutes = duracao
+      }
+      
+      if (formData.codigoTSSU) procedureData.codigo_tssu = formData.codigoTSSU
+      if (formData.grupoAnestesico) procedureData.grupo_anestesico = formData.grupoAnestesico
         
-        // Campos do procedimento (não-obstétrico)
-        sangramento: formData.sangramento || undefined,
-        nausea_vomito: formData.nauseaVomito || undefined,
-        dor: formData.dor || undefined,
-        observacoes_procedimento: formData.observacoesProcedimento,
+      // Campos do procedimento
+      if (formData.sangramento) procedureData.sangramento = formData.sangramento
+      if (formData.nauseaVomito) procedureData.nausea_vomito = formData.nauseaVomito
+      if (formData.dor) procedureData.dor = formData.dor
+      if (formData.observacoesProcedimento) procedureData.observacoes_procedimento = formData.observacoesProcedimento
 
-        // Campos do procedimento (obstétrico)
-        acompanhamento_antes: formData.acompanhamentoAntes || undefined,
-        tipo_parto: formData.tipoParto || undefined,
-        tipo_cesariana: formData.tipoCesariana || undefined,
-        indicacao_cesariana: formData.indicacaoCesariana || undefined,
-        descricao_indicacao_cesariana: formData.descricaoIndicacaoCesariana || undefined,
-        retencao_placenta: formData.retencaoPlacenta || undefined,
-        laceracao_presente: formData.laceracaoPresente || undefined,
-        grau_laceracao: formData.grauLaceracao || undefined,
-        hemorragia_puerperal: formData.hemorragiaPuerperal || undefined,
-        transfusao_realizada: formData.transfusaoRealizada || undefined,
+      // Campos obstétricos
+      if (formData.acompanhamentoAntes) procedureData.acompanhamento_antes = formData.acompanhamentoAntes
+      if (formData.tipoParto) procedureData.tipo_parto = formData.tipoParto
+      if (formData.tipoCesariana) procedureData.tipo_cesariana = formData.tipoCesariana
+      if (formData.indicacaoCesariana) procedureData.indicacao_cesariana = formData.indicacaoCesariana
+      if (formData.descricaoIndicacaoCesariana) procedureData.descricao_indicacao_cesariana = formData.descricaoIndicacaoCesariana
+      if (formData.retencaoPlacenta) procedureData.retencao_placenta = formData.retencaoPlacenta
+      if (formData.laceracaoPresente) procedureData.laceracao_presente = formData.laceracaoPresente
+      if (formData.grauLaceracao) procedureData.grau_laceracao = formData.grauLaceracao
+      if (formData.hemorragiaPuerperal) procedureData.hemorragia_puerperal = formData.hemorragiaPuerperal
+      if (formData.transfusaoRealizada) procedureData.transfusao_realizada = formData.transfusaoRealizada
         
         // Campos financeiros
-        payment_status: (STATUS_PAGAMENTO_MAP[formData.statusPagamento] || 'pending') as 'pending' | 'paid' | 'cancelled',
-        payment_date: formData.statusPagamento === 'Pago' && formData.dataPagamento ? formData.dataPagamento : undefined,
-        forma_pagamento: formData.formaPagamento,
-        numero_parcelas: formData.numero_parcelas ? parseInt(formData.numero_parcelas) : undefined,
-        parcelas_recebidas: formData.parcelas ? formData.parcelas.filter(p => p.recebida).length : 0,
-        observacoes_financeiras: formData.observacoes,
-        secretaria_id: formData.secretariaId && formData.secretariaId.trim() !== '' ? formData.secretariaId : null,
-        user_id: user.id,
-
-        // Campos de feedback
-        feedback_solicitado: formData.enviarRelatorioCirurgiao === 'Sim',
-        email_cirurgiao: formData.enviarRelatorioCirurgiao === 'Sim' ? formData.emailCirurgiao : undefined,
-        telefone_cirurgiao: formData.enviarRelatorioCirurgiao === 'Sim' ? formData.telefoneCirurgiao : undefined
+      procedureData.payment_status = STATUS_PAGAMENTO_MAP[formData.statusPagamento] || 'pending'
+      
+      if (formData.statusPagamento === 'Pago' && formData.dataPagamento) {
+        procedureData.payment_date = formData.dataPagamento
       }
+      
+      if (formData.formaPagamento) procedureData.forma_pagamento = formData.formaPagamento
+      if (formData.numero_parcelas) procedureData.numero_parcelas = parseInt(formData.numero_parcelas)
+      
+      if (formData.parcelas && formData.parcelas.length > 0) {
+        procedureData.parcelas_recebidas = formData.parcelas.filter(p => p.recebida).length
+      }
+      
+      if (formData.observacoes) procedureData.observacoes_financeiras = formData.observacoes
+      if (formData.secretariaId && formData.secretariaId.trim()) procedureData.secretaria_id = formData.secretariaId
 
-      console.log('💾 Chamando procedureService.createProcedure...')
-      console.log('📦 Dados enviados:', procedureData)
+      // Feedback
+      if (formData.enviarRelatorioCirurgiao === 'Sim') {
+        procedureData.feedback_solicitado = true
+        if (formData.emailCirurgiao) procedureData.email_cirurgiao = formData.emailCirurgiao
+        if (formData.telefoneCirurgiao) procedureData.telefone_cirurgiao = formData.telefoneCirurgiao
+      }
       
-      // Adicionar timeout individual para a criação do procedimento (60 segundos)
-      // Aumentado porque a inserção no banco pode demorar com arquivos grandes
-      const createProcedurePromise = procedureService.createProcedure(procedureData)
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => {
-          console.error('⏱️ [TIMEOUT] createProcedure demorou mais de 60 segundos')
-          resolve(null)
-        }, 60000) // 60 segundos para criar o procedimento
-      })
+      console.log('[SUBMIT] 📦 Dados preparados:', Object.keys(procedureData).length, 'campos')
+      console.log('[SUBMIT] 📦 Payload size:', JSON.stringify(procedureData).length, 'bytes')
       
-      const result = await Promise.race([createProcedurePromise, timeoutPromise])
+      // MOBILE FIX: Usar API route para criar procedimento (mais confiável no mobile)
+      // API route usa service role key e não depende de sessão do cliente
+      console.log('[SUBMIT] 🚀 Criando procedimento via API route (bypass de sessão)')
+      console.log('[SUBMIT] 📊 Tem imagens anexadas?', formData.fichas?.length > 0 ? `Sim (${formData.fichas.length})` : 'Não')
       
-      console.log('✅ Resultado do createProcedure:', result)
+      // Log específico para debug quando há imagens
+      if (formData.fichas && formData.fichas.length > 0) {
+        console.log('[SUBMIT] ⚠️ ATENÇÃO: Há imagens anexadas. Procedimento será criado PRIMEIRO, depois upload das imagens.')
+      }
       
-      if (!result) {
-        console.error('❌ Erro: procedureService.createProcedure retornou null ou undefined')
-        showFeedback('error', '❌ Falha ao salvar: Não foi possível criar o procedimento. Verifique sua conexão e tente novamente.')
-        setLoading(false)
+      const startTime = Date.now()
+      
+      let result: any = null
+      let createProcedureError: any = null
+      
+      try {
+        // Usar API route para criar procedimento (mais confiável no mobile)
+        console.log('[SUBMIT] Chamando /api/create-procedure...')
+        
+        const response = await fetch('/api/create-procedure', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            procedureData,
+            userId: user.id
+          })
+        })
+        
+        const responseData = await response.json()
+        
+        if (!response.ok || !responseData.success) {
+          throw new Error(responseData.error || 'Erro ao criar procedimento via API')
+        }
+        
+        // API route retorna apenas os dados básicos, precisamos montar o objeto result
+        result = {
+          id: responseData.data.id,
+          procedure_name: responseData.data.procedure_name,
+          patient_name: responseData.data.patient_name,
+          created_at: responseData.data.created_at
+        }
+        
+        console.log('[SUBMIT] ✅ Procedimento criado via API! ID:', result.id)
+        
+      } catch (error: any) {
+        createProcedureError = error
+        console.error('[SUBMIT] ❌ Erro ao criar procedimento via API:', error)
+        
+        // Fallback: tentar via procedureService (método antigo)
+        console.log('[SUBMIT] 🔄 Tentando fallback via procedureService...')
+        
+        try {
+          result = await procedureService.createProcedure(procedureData)
+          if (result) {
+            createProcedureError = null
+            console.log('[SUBMIT] ✅ Fallback funcionou! ID:', result.id)
+          }
+        } catch (fallbackError: any) {
+          console.error('[SUBMIT] ❌ Fallback também falhou:', fallbackError)
+        }
+      }
+      
+      const elapsedTime = Date.now() - startTime
+      
+      
+      if (!result || createProcedureError) {
         clearTimeout(safetyTimeout)
-        return
+        setLoading(false)
+        
+        console.error('[SUBMIT] ❌ Falha ao criar procedimento')
+        console.error('[SUBMIT] ❌ Tempo decorrido:', elapsedTime, 'ms')
+        console.error('[SUBMIT] ❌ Há imagens anexadas?', formData.fichas?.length > 0 ? `Sim (${formData.fichas.length})` : 'Não')
+        
+        // Verificar se foi timeout
+        if (elapsedTime >= 45000) {
+          console.error('[SUBMIT] ⏱️ TIMEOUT detectado (45s ou mais)')
+          showFeedback('error', '⏱️ Operação demorou muito. Verifique sua conexão.')
+        } else if (createProcedureError) {
+          // Exceção capturada
+          showFeedback('error', `❌ Erro: ${createProcedureError?.message || 'Erro desconhecido'}`)
+        } else {
+          // Mensagem específica para mobile
+          showFeedback('error', '❌ Não foi possível salvar. Verifique sua conexão e tente novamente.')
+        }
+        
+        addToast({
+          title: 'Erro ao salvar',
+          description: 'A operação demorou muito ou houve um erro de conexão. Tente conectar ao WiFi ou aguarde alguns minutos.',
+          variant: 'error',
+          duration: 8000
+        })
+          return
+        }
+        
+      console.log('[SUBMIT] ✅ Procedimento ID:', result.id)
+      
+      // AGORA fazer upload das imagens com o ID REAL do procedimento
+      if (formData.fichas && formData.fichas.length > 0) {
+        console.log('[SUBMIT] 📤 Iniciando upload de', formData.fichas.length, 'arquivo(s) com ID real do procedimento...')
+        console.log('[SUBMIT] 📤 Arquivos a enviar:', formData.fichas.map(f => ({
+          name: f.name,
+          size: f.size,
+          type: f.type
+        })))
+        
+        // MOBILE FIX: Verificar e corrigir arquivos inválidos ANTES do upload
+        const validFilesForUpload: File[] = []
+        for (let i = 0; i < formData.fichas.length; i++) {
+          const file = formData.fichas[i]
+          
+          if (file.size === 0 || !file.type || file.type === '') {
+            
+            try {
+              const arrayBuffer = await file.arrayBuffer()
+              if (arrayBuffer.byteLength === 0) {
+                console.error(`[SUBMIT] ❌ Arquivo ${i + 1} está vazio (0 bytes)`)
+                continue
+              }
+              
+              // Inferir tipo MIME
+              let inferredType = 'application/octet-stream'
+              const fileName = file.name.toLowerCase()
+              if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+                inferredType = 'image/jpeg'
+              } else if (fileName.endsWith('.png')) {
+                inferredType = 'image/png'
+              } else if (fileName.endsWith('.pdf')) {
+                inferredType = 'application/pdf'
+              }
+              
+              const fixedFile = new File([arrayBuffer], file.name, {
+                type: inferredType,
+                lastModified: file.lastModified || Date.now()
+              })
+              
+              
+              validFilesForUpload.push(fixedFile)
+            } catch (error: any) {
+              console.error(`[SUBMIT] ❌ Erro ao corrigir arquivo ${i + 1}:`, error)
+            }
+          } else {
+            validFilesForUpload.push(file)
+          }
+        }
+        
+        
+        if (validFilesForUpload.length === 0) {
+          console.warn('[SUBMIT] ⚠️ Nenhum arquivo válido para upload')
+        } else {
+          // Inicializar estado de upload
+          setUploadProgress({
+            isUploading: true,
+            currentFile: 0,
+            totalFiles: validFilesForUpload.length,
+            currentFileName: '',
+            progress: 0
+          })
+          
+          // Inicializar progresso para cada arquivo
+          validFilesForUpload.forEach((file, index) => {
+            setFileUploadProgress(prev => ({
+              ...prev,
+              [index]: {
+                fileName: file.name,
+                progress: 0,
+                status: 'pending'
+              }
+            }))
+          })
+          
+          showFeedback('info', `📤 Enviando ${validFilesForUpload.length} arquivo(s)...`)
+          
+          // Fazer upload paralelo de todos os arquivos e coletar attachments diretamente
+          const procedureId = result.id // Salvar o ID do procedimento antes do map
+          const uploadPromises = validFilesForUpload.map(async (file, index) => {
+            // Atualizar status para "uploading" imediatamente quando iniciar
+            setFileUploadProgress(prev => ({
+              ...prev,
+              [index]: {
+                ...prev[index],
+                status: 'uploading',
+                progress: 1 // Progresso inicial mínimo para mostrar que iniciou
+              }
+            }))
+            
+            try {
+              const uploadResult = await uploadSingleFile(file, index, procedureId)
+              
+              if (uploadResult.success && uploadResult.attachment) {
+                return { success: true, attachment: uploadResult.attachment, index }
+              } else {
+                console.error(`[SUBMIT] ❌ Upload ${index + 1} falhou - sem attachment`)
+                return { success: false, index }
+              }
+            } catch (error: any) {
+              console.error(`[SUBMIT] ❌ Erro no upload ${index + 1}:`, error)
+              return { success: false, index }
+            }
+          })
+        
+        // Aguardar todos os uploads e coletar resultados
+        const uploadResultsWithAttachments = await Promise.all(uploadPromises)
+        
+        const successCount = uploadResultsWithAttachments.filter(r => r.success === true).length
+        const failCount = uploadResultsWithAttachments.filter(r => r.success === false).length
+        
+        // Desativar estado de upload
+        setUploadProgress({
+          isUploading: false,
+          currentFile: 0,
+          totalFiles: 0,
+          currentFileName: '',
+          progress: 0
+        })
+        
+        if (failCount === 0) {
+          showFeedback('success', `✅ ${successCount} arquivo(s) enviado(s) com sucesso!`)
+        } else {
+          showFeedback('info', `⚠️ ${successCount} arquivo(s) enviado(s), ${failCount} falhou(ram)`)
+            }
+            
+        // Vincular attachments que foram enviados com sucesso
+        // Usar os attachments coletados diretamente dos resultados dos uploads
+        const successfulAttachments = uploadResultsWithAttachments
+          .filter(r => r.success === true && r.attachment)
+          .map(r => r.attachment)
+        
+        console.log('[SUBMIT] 📎 Verificando attachments para vincular...')
+        console.log('[SUBMIT] 📎 Total de uploads bem-sucedidos:', successCount)
+        console.log('[SUBMIT] 📎 Attachments coletados para vincular:', successfulAttachments.length)
+        
+        if (successfulAttachments.length > 0) {
+          console.log('[SUBMIT] 📎 Vinculando', successfulAttachments.length, 'attachment(s)...')
+          
+          // Buscar URLs dos attachments do estado atualizado (caso não tenham sido coletadas)
+          const currentStateAttachments = uploadedAttachments
+          
+          for (let i = 0; i < successfulAttachments.length; i++) {
+            let attachment = successfulAttachments[i]
+            
+            // Se o attachment não tiver URL, tentar buscar do estado
+            if (!attachment.file_url || attachment.file_url === '') {
+              const stateAttachment = currentStateAttachments.find(a => 
+                a.file_name === attachment.file_name ||
+                a.file_name.includes(attachment.file_name.substring(0, 20))
+              )
+              if (stateAttachment) {
+                attachment = { ...attachment, ...stateAttachment }
+              }
+            }
+            
+            
+            if (!attachment.file_url || attachment.file_url === '') {
+                continue
+              }
+              
+            try {
+              // MOBILE FIX: Usar API route para criar attachment (bypass RLS)
+              const attachmentResponse = await fetch('/api/create-attachment', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  procedure_id: procedureId,
+                  file_name: attachment.file_name,
+                  file_size: attachment.file_size,
+                  file_type: attachment.file_type,
+                  file_url: attachment.file_url
+                })
+              })
+              
+              const attachmentResult = await attachmentResponse.json()
+              
+              if (attachmentResponse.ok && attachmentResult.success) {
+              } else {
+              }
+            } catch (e: any) {
+              console.error(`[SUBMIT] ❌ Erro ao vincular attachment ${i + 1}:`, e)
+              console.error(`[SUBMIT] ❌ Erro detalhado:`, {
+                message: e?.message,
+                code: e?.code,
+                details: e?.details
+              })
+            }
+            
+            // Pausa entre attachments no mobile
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+          
+          console.log('[SUBMIT] ✅ Processo de vinculação de attachments concluído')
+        } else {
+          console.warn('[SUBMIT] ⚠️ Nenhum attachment para vincular')
+          console.warn('[SUBMIT] ⚠️ uploadedAttachments do estado:', uploadedAttachments.length)
+          console.warn('[SUBMIT] ⚠️ uploadResults:', uploadResultsWithAttachments.length)
+        }
+        } // Fim do if (validFilesForUpload.length > 0)
       }
       
-      console.log('✅ Procedimento criado com sucesso! ID:', result.id)
-      
-      // Se foi solicitado envio de relatório para o cirurgião, criar link de feedback
+      // Criar link de feedback (não bloquear se falhar)
       let feedbackUrl = ''
       if (formData.enviarRelatorioCirurgiao === 'Sim' && formData.emailCirurgiao) {
         try {
@@ -842,189 +2192,75 @@ function NovoProcedimentoContent() {
             emailCirurgiao: formData.emailCirurgiao,
             telefoneCirurgiao: formData.telefoneCirurgiao
           })
-          if (feedbackLink) {
-            feedbackUrl = feedbackLink
-          } else {
-            console.error('Erro ao criar link de feedback')
+          if (feedbackLink) feedbackUrl = feedbackLink
+        } catch (e) {
+          console.warn('[SUBMIT] ⚠️ Erro ao criar link de feedback:', e)
           }
-        } catch (feedbackError) {
-          console.error('Erro ao criar link de feedback:', feedbackError)
-          // Não bloquear o salvamento do procedimento se o link de feedback falhar
         }
-      }
-        // Salvar parcelas individuais se existirem
-        if (formData.parcelas && formData.parcelas.length > 0) {
-          
-          const parcelasData = formData.parcelas.map(parcela => ({
+        
+      // Salvar parcelas (não bloquear se falhar)
+      if (formData.parcelas && formData.parcelas.length > 0) {
+        try {
+          const parcelasData = formData.parcelas.map(p => ({
             procedure_id: result.id,
-            numero_parcela: parcela.numero,
-            valor_parcela: parcela.valor,
-            recebida: parcela.recebida,
-            data_recebimento: parcela.data_recebimento || null
+            numero_parcela: p.numero,
+            valor_parcela: p.valor,
+            recebida: p.recebida,
+            data_recebimento: p.data_recebimento || null
           }))
           
-          
-          // Salvar parcelas no banco de dados
-          const parcelasResult = await procedureService.createParcelas(parcelasData)
-          
-        } else {
-          
-        }
-
-      // Salvar anexos se existirem
-      console.log('📎 Verificando anexos...', { totalArquivos: formData.fichas?.length || 0 })
-      if (formData.fichas && formData.fichas.length > 0) {
-        console.log('📤 Iniciando upload de', formData.fichas.length, 'arquivo(s)...')
-        
-        // Para cada arquivo, fazer upload para o Supabase Storage
-        for (const file of formData.fichas) {
-          console.log('📄 Processando arquivo:', file.name, 'Tamanho:', file.size, 'bytes')
-          try {
-            // Gerar nome único para o arquivo
-            const fileExt = file.name.split('.').pop()
-            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-            const filePath = `${user.id}/${result.id}/${fileName}`
-            
-            // Importar função utilitária para tipo MIME
-            const { getCorrectMimeType, createFileWithCorrectMimeType } = await import('@/lib/mime-utils')
-            
-            // Obter tipo MIME correto
-            const correctMimeType = getCorrectMimeType(file.name)
-            
-            // Validar que o arquivo original não está vazio
-            if (file.size === 0) {
-              console.error(`❌ Erro: Arquivo ${file.name} está vazio`)
-              showFeedback('error', `Erro: O arquivo ${file.name} está vazio e não pode ser enviado`)
-              continue
-            }
-            
-            // CRÍTICO: Converter o arquivo para ArrayBuffer para evitar corrupção
-            // O Supabase Storage precisa receber apenas o conteúdo binário puro,
-            // não o File object que pode incluir headers multipart/form-data
-            console.log(`📤 Convertendo arquivo para ArrayBuffer antes do upload:`, {
-              nome: file.name,
-              tamanho: file.size,
-              tipoOriginal: file.type,
-              tipoMIMECorreto: correctMimeType,
-              caminho: filePath
-            })
-            
-            // Converter o arquivo para ArrayBuffer para preservar o conteúdo binário puro
-            const arrayBuffer = await file.arrayBuffer()
-            
-            // Validar que o ArrayBuffer não está vazio
-            if (arrayBuffer.byteLength === 0) {
-              console.error(`❌ Erro: ArrayBuffer do arquivo ${file.name} está vazio`)
-              showFeedback('error', `Erro: O arquivo ${file.name} está vazio após conversão`)
-              continue
-            }
-            
-            // Validar que o tamanho foi preservado
-            if (arrayBuffer.byteLength !== file.size) {
-              console.error(`❌ Erro: Tamanho do ArrayBuffer (${arrayBuffer.byteLength}) não corresponde ao tamanho do arquivo (${file.size})`)
-              showFeedback('error', `Erro: O arquivo ${file.name} foi corrompido durante a conversão`)
-              continue
-            }
-            
-            console.log(`✅ ArrayBuffer criado com sucesso: ${arrayBuffer.byteLength} bytes`)
-            
-            // Fazer upload do ArrayBuffer diretamente para o Supabase Storage
-            // Isso garante que apenas o conteúdo binário puro seja enviado, sem headers multipart
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from('procedure-attachments')
-              .upload(filePath, arrayBuffer, {
-                contentType: correctMimeType,
-                upsert: false // Não sobrescrever arquivos existentes
-              })
-            
-            if (uploadError) {
-              console.error(`Erro ao fazer upload do arquivo ${file.name}:`, uploadError)
-              
-              // Verificar se o erro é relacionado a autenticação
-              if (uploadError.message?.includes('Refresh Token') || 
-                  uploadError.message?.includes('refresh_token') ||
-                  uploadError.message?.includes('Invalid Refresh Token') ||
-                  uploadError.message?.includes('401') ||
-                  uploadError.message?.includes('Unauthorized')) {
-                showFeedback('error', 'Sessão expirada. Por favor, faça login novamente.')
-                // Redirecionar para login após 2 segundos
-                setTimeout(() => {
-                  window.location.href = '/login?error=session_expired'
-                }, 2000)
-                return // Sair do loop de uploads
-              }
-              
-              showFeedback('error', `Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`)
-              continue
-            }
-            
-            // Obter URL pública do arquivo
-            const { data: urlData } = supabase.storage
-              .from('procedure-attachments')
-              .getPublicUrl(filePath)
-            
-            // Criar registro no banco de dados
-            const attachmentData = {
-              procedure_id: result.id,
-              file_name: file.name,
-              file_size: file.size,
-              file_type: correctMimeType, // Usar o tipo MIME correto
-              file_url: urlData.publicUrl
-            }
-            
-            console.log('💾 Criando registro do anexo no banco de dados...')
-            const attachmentResult = await procedureService.createAttachment(attachmentData)
-            console.log('✅ Anexo registrado:', attachmentResult ? 'Sucesso' : 'Falhou')
-            
-          } catch (error) {
-            console.error(`❌ Erro ao processar anexo ${file.name}:`, error)
-            // Continuar com os outros arquivos mesmo se um falhar
-          }
+          await procedureService.createParcelas(parcelasData)
+        } catch (e) {
+          console.warn('[SUBMIT] ⚠️ Erro ao salvar parcelas:', e)
         }
       }
       
-      console.log('🎉 Preparando modal de sucesso...')
-      // Preparar dados para o modal de sucesso
+      // Preparar modal de sucesso
       setSuccessData({
         paciente: formData.nomePaciente,
         procedimento: formData.tipoProcedimento,
         valor: formData.valor,
-        parcelas: formData.parcelas && formData.parcelas.length > 0 ? `${formData.parcelas.filter(p => p.recebida).length}/${formData.parcelas.length} recebidas` : 'Não parcelado',
+        parcelas: formData.parcelas?.length > 0 
+          ? `${formData.parcelas.filter(p => p.recebida).length}/${formData.parcelas.length} recebidas`
+          : 'Não parcelado',
         feedbackUrl: feedbackUrl || undefined,
         emailCirurgiao: formData.emailCirurgiao || undefined,
         telefoneCirurgiao: formData.telefoneCirurgiao || undefined
       })
       
-      // Mostrar modal de sucesso
-      console.log('✅ Procedimento salvo com sucesso! Mostrando modal...')
-      clearTimeout(safetyTimeout) // Cancelar timeout de segurança
-      setShowSuccessModal(true)
-      setLoading(false) // CRÍTICO: Desativar loading após sucesso
-      showFeedback('success', '✅ Procedimento salvo com sucesso!')
-    } catch (error: any) {
-      clearTimeout(safetyTimeout) // Cancelar timeout de segurança
-      console.error('❌ ERRO AO SALVAR PROCEDIMENTO:', error)
-      console.error('📋 Detalhes do erro:', {
-        message: error?.message,
-        stack: error?.stack,
-        name: error?.name,
-        error: error
-      })
-      
-      // Mensagens de erro mais específicas baseadas no tipo de erro
-      if (error instanceof Error) {
-        if (error.message.includes('network') || error.message.includes('fetch')) {
-          showFeedback('error', '🌐 Erro de conexão: Verifique sua internet e tente novamente.')
-        } else if (error.message.includes('auth') || error.message.includes('permission')) {
-          showFeedback('error', '🔐 Erro de permissão: Sua sessão expirou. Faça login novamente.')
-        } else {
-          showFeedback('error', '❌ Erro inesperado: Tente novamente ou entre em contato com o suporte.')
-        }
-      } else {
-        showFeedback('error', '❌ Erro inesperado: Tente novamente ou entre em contato com o suporte.')
-      }
-    } finally {
+      // Finalizar
+      clearTimeout(safetyTimeout)
       setLoading(false)
+      setShowSuccessModal(true)
+      showFeedback('success', '✅ Procedimento salvo!')
+      
+    } catch (error: any) {
+      clearTimeout(safetyTimeout)
+      setLoading(false)
+      
+      console.error('[SUBMIT] ❌ Erro fatal:', error)
+      console.error('[SUBMIT] Stack:', error?.stack)
+      
+      // Mensagem de erro específica
+      let errorMessage = 'Erro ao salvar procedimento.'
+      
+      if (error?.message?.includes('network') || error?.message?.includes('fetch')) {
+        errorMessage = '🌐 Erro de conexão. Verifique sua internet.'
+      } else if (error?.message?.includes('timeout')) {
+        errorMessage = '⏱️ Operação demorou muito. Tente novamente.'
+      } else if (error?.message?.includes('401') || error?.message?.includes('403')) {
+        errorMessage = '🔐 Sessão expirada. Faça login novamente.'
+      } else if (error?.message) {
+        errorMessage = error.message
+      }
+      
+      showFeedback('error', `❌ ${errorMessage}`)
+        addToast({
+          title: 'Erro ao salvar',
+        description: errorMessage + ' Se o problema persistir, tente conectar ao WiFi.',
+        variant: 'error',
+        duration: 8000
+        })
     }
   }
 
@@ -1050,18 +2286,6 @@ function NovoProcedimentoContent() {
                   </Button>
                 </Link>
               </div>
-              
-              {/* Botão de Teste - Só visível em desenvolvimento */}
-              {process.env.NODE_ENV === 'development' && (
-                <Button 
-                  onClick={preencherDadosTeste}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border-yellow-300"
-                >
-                  🧪 Preencher Teste
-                </Button>
-              )}
             </div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
               Novo Procedimento Anestésico
@@ -1072,33 +2296,146 @@ function NovoProcedimentoContent() {
           </div>
         </div>
 
+        {/* Opções de Preenchimento Automático */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="h-px flex-1 bg-gray-200"></div>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Preenchimento Automático (Opcional)</span>
+            <div className="h-px flex-1 bg-gray-200"></div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <VoiceRecorder 
+              compact
+              onTranscriptionComplete={handleVoiceData}
+              onError={(error) => showFeedback('error', error)}
+            />
+            <div className="space-y-2">
+              <div className="relative ocr-info-container">
+                <UploadFicha 
+                  onExtract={handleOCRExtract}
+                  onError={(error) => showFeedback('error', `Erro no OCR: ${error}`)}
+                />
+                {/* Ícone de informação - clicável - Mobile Responsive */}
+                <button
+                  type="button"
+                  onClick={() => setShowOcrInfo(!showOcrInfo)}
+                  className="absolute top-2 right-2 sm:top-3 sm:right-3 p-2 sm:p-1.5 rounded-full text-blue-600 hover:text-blue-700 active:text-blue-800 transition-colors z-10 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex items-center justify-center touch-manipulation"
+                  aria-label="Informação sobre upload de ficha"
+                >
+                  <Info className="h-5 w-5 sm:h-4 sm:w-4" />
+                </button>
+                
+                {/* Tooltip com informação - Mobile Responsive */}
+                {showOcrInfo && (
+                  <div className="absolute top-14 right-0 sm:top-12 z-20 w-[calc(100%-1rem)] sm:w-64 md:w-80 max-w-sm bg-white border border-blue-200 rounded-lg shadow-lg p-3 sm:p-3 text-xs sm:text-xs text-gray-700">
+                    <div className="flex items-start gap-2">
+                      <Info className="h-4 w-4 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <strong className="text-blue-800 block mb-1 text-xs sm:text-xs">Importante:</strong>
+                        <p className="text-gray-700 leading-relaxed text-xs sm:text-xs">
+                          Esta foto é usada apenas para extrair os dados automaticamente e <strong>não será salva</strong>. Para salvar imagens do procedimento, use o <strong>Passo 4 - Upload de Fichas</strong>.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowOcrInfo(false)}
+                        className="ml-auto flex-shrink-0 text-gray-400 hover:text-gray-600 active:text-gray-700 transition-colors min-w-[32px] min-h-[32px] flex items-center justify-center touch-manipulation"
+                        aria-label="Fechar"
+                      >
+                        <X className="h-4 w-4 sm:h-3 sm:w-3" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Exibição dos dados extraídos (Voz e OCR) */}
+        {(voiceTranscription || voiceExtractedFields || ocrRawText) && (
+          <div className="mb-6 space-y-4">
+            {voiceTranscription || voiceExtractedFields ? (
+              <VoiceExtractionDisplay
+                transcription={voiceTranscription}
+                extractedFields={voiceExtractedFields}
+                onClose={() => {
+                  setVoiceTranscription(undefined)
+                  setVoiceExtractedFields(undefined)
+                }}
+              />
+            ) : null}
+            {ocrRawText && (
+              <OCRResultDisplay
+                ocrRawText={ocrRawText}
+                camposPreenchidos={ocrCamposPreenchidos}
+                camposFaltando={ocrCamposFaltando}
+                confidence={ocrConfidence}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Progress Indicator - Mobile Optimized */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm sm:text-base font-semibold text-gray-700">
+                Passo {currentSection + 1} de {sections.length}
+              </span>
+            </div>
+            <div className="text-xs sm:text-sm text-gray-500 truncate">
+              {sections[currentSection].title}
+            </div>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2 sm:h-2.5">
+            <div 
+              className="bg-teal-500 h-2 sm:h-2.5 rounded-full transition-all duration-300 ease-out"
+              style={{ width: `${((currentSection + 1) / sections.length) * 100}%` }}
+            />
+          </div>
+        </div>
+
         {/* Progress Steps - Mobile Optimized */}
         <div className="mb-6">
           {/* Mobile: Horizontal scrollable steps */}
           <div className="block md:hidden">
-            <div className="flex space-x-3 overflow-x-auto pb-2 px-4">
+            <div 
+              className="flex space-x-2 overflow-x-auto pb-2 px-4 scrollbar-hide"
+              style={{
+                WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none'
+              }}
+            >
               {sections.map((section, index) => {
                 const Icon = section.icon
                 const isActive = currentSection === section.id
                 const isCompleted = currentSection > section.id
+                const isClickable = isCompleted || isActive
                 
                 return (
                   <button
                     key={section.id}
-                    onClick={() => setCurrentSection(section.id)}
-                    className={`flex-shrink-0 flex flex-col items-center p-3 rounded-lg min-w-[80px] transition-all duration-200 ${
+                    onClick={() => isClickable && setCurrentSection(section.id)}
+                    disabled={!isClickable}
+                    className={`flex-shrink-0 flex flex-col items-center p-3 rounded-lg min-w-[90px] transition-all duration-200 ${
                       isActive 
-                        ? 'bg-teal-500 text-white' 
+                        ? 'bg-teal-500 text-white shadow-md scale-105' 
                         : isCompleted
                         ? 'bg-teal-600 text-white'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}
+                        : 'bg-gray-100 text-gray-600 opacity-60'
+                    } ${!isClickable ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                   >
-                    <div className="w-8 h-8 flex items-center justify-center mb-1">
+                    <div className="w-8 h-8 flex items-center justify-center mb-1.5">
                       {isCompleted ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
                     </div>
-                    <span className="text-xs text-center leading-tight">
+                    <span className="text-xs font-medium text-center leading-tight px-1">
                       {section.title.split(' ')[0]}
+                    </span>
+                    <span className="text-[10px] text-center opacity-80 mt-0.5">
+                      {index + 1}/{sections.length}
                     </span>
                   </button>
                 )
@@ -1107,28 +2444,39 @@ function NovoProcedimentoContent() {
           </div>
           
           {/* Desktop: Original horizontal layout */}
-          <div className="hidden md:flex items-center justify-center space-x-4">
+          <div className="hidden md:flex items-center justify-center space-x-2">
             {sections.map((section, index) => {
               const Icon = section.icon
               const isActive = currentSection === section.id
               const isCompleted = currentSection > section.id
+              const isClickable = isCompleted || isActive
               
               return (
                 <div key={section.id} className="flex items-center">
                   <button
-                    onClick={() => setCurrentSection(section.id)}
-                    className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all duration-200 ${
-                      isActive 
-                        ? 'bg-teal-500 border-teal-500 text-white' 
-                        : isCompleted
-                        ? 'bg-teal-600 border-teal-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-400 hover:border-teal-300'
+                    onClick={() => isClickable && setCurrentSection(section.id)}
+                    disabled={!isClickable}
+                    className={`flex flex-col items-center gap-1 transition-all duration-200 ${
+                      !isClickable ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
                     }`}
                   >
-                    {isCompleted ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                    <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-200 ${
+                      isActive 
+                        ? 'bg-teal-500 border-teal-500 text-white shadow-lg scale-110' 
+                        : isCompleted
+                        ? 'bg-teal-600 border-teal-600 text-white hover:bg-teal-500'
+                        : 'bg-white border-gray-300 text-gray-400'
+                    }`}>
+                      {isCompleted ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                    </div>
+                    <span className={`text-xs font-medium text-center max-w-[80px] ${
+                      isActive ? 'text-teal-600' : isCompleted ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
+                      {section.title}
+                    </span>
                   </button>
                   {index < sections.length - 1 && (
-                    <div className={`w-16 h-0.5 mx-2 ${
+                    <div className={`w-12 h-0.5 mx-2 transition-all duration-200 ${
                       currentSection > section.id ? 'bg-teal-500' : 'bg-gray-300'
                     }`} />
                   )}
@@ -1155,7 +2503,7 @@ function NovoProcedimentoContent() {
                 feedbackType === 'success' ? 'text-green-600' :
                 'text-blue-600'
               }`}>
-                {feedbackType === 'error' ? error : feedbackType === 'success' ? success : '⏳ Salvando procedimento...'}
+                {feedbackType === 'error' ? error : feedbackType === 'success' ? success : info || '⏳ Processando...'}
               </div>
             </div>
           )}
@@ -1170,35 +2518,59 @@ function NovoProcedimentoContent() {
                 </CardTitle>
           </CardHeader>
               <div className="p-6 space-y-6">
+            {/* Exibição dos resultados do OCR (se houver) */}
+            {ocrRawText && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="h-px flex-1 bg-gray-200"></div>
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Resultado do OCR</span>
+                  <div className="h-px flex-1 bg-gray-200"></div>
+                </div>
+                <OCRResultDisplay
+                  ocrRawText={ocrRawText}
+                  camposPreenchidos={ocrCamposPreenchidos}
+                  camposFaltando={ocrCamposFaltando}
+                  confidence={ocrConfidence}
+                />
+              </div>
+            )}
+
             {/* Dados da Paciente */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
                 label="Nome da Paciente *"
-                placeholder="Nome completo da paciente"
+                placeholder="Ex: Maria da Silva Santos"
                 icon={<User className="w-5 h-5" />}
                     value={formData.nomePaciente}
                     onChange={(e) => updateFormData('nomePaciente', e.target.value)}
                 required
               />
               <Input
-                    label="Data de Nascimento *"
+                    label="Data de Nascimento"
                     type="date"
                     icon={<Calendar className="w-5 h-5" />}
                     value={formData.dataNascimento}
                     onChange={(e) => updateFormData('dataNascimento', e.target.value)}
-                required
               />
               <Input
                     label="Idade"
                     type="text"
                     icon={<User className="w-5 h-5" />}
-                    value={formData.dataNascimento ? `${calculateAge(formData.dataNascimento)} anos` : ''}
+                    value={formData.dataNascimento ? `${calculateAge(formData.dataNascimento)} anos` : '0 anos'}
                     disabled
                     placeholder="Calculada automaticamente"
               />
               <Input
+                    label="Data do Procedimento *"
+                    type="date"
+                    icon={<Calendar className="w-5 h-5" />}
+                    value={formData.dataProcedimento}
+                    onChange={(e) => updateFormData('dataProcedimento', e.target.value)}
+                required
+              />
+              <Input
                     label="Convênio / Particular"
-                    placeholder="Ex: Unimed, Particular"
+                    placeholder="Ex: Unimed, SulAmérica, Particular, etc."
                     icon={<CreditCard className="w-5 h-5" />}
                     value={formData.convenio}
                     onChange={(e) => updateFormData('convenio', e.target.value)}
@@ -1235,7 +2607,7 @@ function NovoProcedimentoContent() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
                 label="Tipo do Procedimento *"
-                placeholder="Descreva o tipo de procedimento"
+                placeholder="Ex: Cirurgia cardíaca, Cesárea, Artroscopia..."
                     icon={<FileText className="w-5 h-5" />}
                     value={formData.tipoProcedimento}
                     onChange={(e) => updateFormData('tipoProcedimento', e.target.value)}
@@ -1306,6 +2678,12 @@ function NovoProcedimentoContent() {
                 value={formData.nomeEquipe}
                 onChange={(e) => updateFormData('nomeEquipe', e.target.value)}
               />
+              <Input
+                label="Grupo Anestésico"
+                placeholder="Nenhum (ou digite o nome do grupo)"
+                value={formData.grupoAnestesico}
+                onChange={(e) => updateFormData('grupoAnestesico', e.target.value ?? '')}
+              />
                   <Input
                     label="Nome do Cirurgião"
                     placeholder="Nome do cirurgião responsável"
@@ -1326,7 +2704,7 @@ function NovoProcedimentoContent() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
                 label="Horário"
-                placeholder="Ex: 14:30"
+                placeholder="Ex: 14:30 (formato 24h)"
                 type="time"
                 icon={<Clock className="w-5 h-5" />}
                 value={formData.horario}
@@ -1334,7 +2712,7 @@ function NovoProcedimentoContent() {
               />
               <Input
                 label="Duração (horas)"
-                placeholder="Ex: 2 ou 2.5"
+                placeholder="Ex: 2 ou 2.5 (em horas)"
                 type="number"
                 icon={<Clock className="w-5 h-5" />}
                 value={formData.duracaoMinutos}
@@ -2089,10 +3467,10 @@ function NovoProcedimentoContent() {
                   </select>
                 </div>
 
-                {/* Campos condicionais baseados no status */}
-                {formData.statusPagamento === 'Pendente' && (
+                {/* Campos financeiros unificados */}
+                {(formData.statusPagamento === 'Pendente' || formData.statusPagamento === 'Pago') && (
                   <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className={`grid grid-cols-1 ${formData.statusPagamento === 'Pago' ? 'md:grid-cols-2' : ''} gap-6`}>
                       <Input
                         label="Valor do Procedimento Anestésico"
                         placeholder="0,00"
@@ -2100,6 +3478,23 @@ function NovoProcedimentoContent() {
                         value={formData.valor}
                         onChange={(e) => updateFormData('valor', e.target.value)}
                       />
+                      {/* Data do Pagamento - apenas para status "Pago" */}
+                      {formData.statusPagamento === 'Pago' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Data do Pagamento
+                          </label>
+                          <input
+                            type="date"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            value={formData.dataPagamento}
+                            onChange={(e) => updateFormData('dataPagamento', e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Forma de Pagamento
@@ -2110,7 +3505,7 @@ function NovoProcedimentoContent() {
                           onChange={(e) => updateFormData('formaPagamento', e.target.value)}
                         >
                           <option value="">Selecione a forma de pagamento</option>
-                          {FORMAS_PAGAMENTO_PENDENTE.map(forma => (
+                          {(formData.statusPagamento === 'Pago' ? FORMAS_PAGAMENTO_PAGO : FORMAS_PAGAMENTO_PENDENTE).map(forma => (
                             <option key={forma} value={forma}>{forma}</option>
                           ))}
                         </select>
@@ -2134,7 +3529,9 @@ function NovoProcedimentoContent() {
                             onChange={(e) => updateFormData('numero_parcelas', e.target.value)}
                           />
                           <p className="text-xs text-gray-500 mt-1">
-                            Informe em quantas vezes será dividido o pagamento
+                            {formData.statusPagamento === 'Pago' 
+                              ? 'Informe em quantas vezes foi dividido o pagamento'
+                              : 'Informe em quantas vezes será dividido o pagamento'}
                           </p>
                         </div>
                         
@@ -2187,117 +3584,6 @@ function NovoProcedimentoContent() {
                   </div>
                 )}
 
-                {formData.statusPagamento === 'Pago' && (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <Input
-                        label="Valor do Procedimento Anestésico"
-                        placeholder="0,00"
-                        icon={<span className="text-gray-500 font-medium">R$</span>}
-                        value={formData.valor}
-                        onChange={(e) => updateFormData('valor', e.target.value)}
-                      />
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Data do Pagamento
-                        </label>
-                        <input
-                          type="date"
-                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                          value={formData.dataPagamento}
-                          onChange={(e) => updateFormData('dataPagamento', e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Forma de Pagamento
-                        </label>
-                        <select
-                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                          value={formData.formaPagamento}
-                          onChange={(e) => updateFormData('formaPagamento', e.target.value)}
-                        >
-                          <option value="">Selecione a forma de pagamento</option>
-                          {FORMAS_PAGAMENTO_PAGO.map(forma => (
-                            <option key={forma} value={forma}>{forma}</option>
-                          ))}
-                        </select>
-                      </div>
-                      
-                      {/* Campos condicionais para parcelas */}
-                      {formData.formaPagamento === 'Parcelado' && (
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Total de Parcelas
-                            </label>
-                            <input
-                              type="number"
-                              min="2"
-                              max="24"
-                              placeholder="Ex: 3"
-                              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                              value={formData.numero_parcelas}
-                              onChange={(e) => updateFormData('numero_parcelas', e.target.value)}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              Informe em quantas vezes foi dividido o pagamento
-                            </p>
-                          </div>
-                          
-                          {/* Parcelas individuais */}
-                          {formData.parcelas.length > 0 && (
-                            <div className="space-y-3">
-                              <h4 className="text-sm font-medium text-gray-700">Controle de Parcelas</h4>
-                              {formData.parcelas.map((parcela, index) => (
-                                <div key={index} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-medium text-gray-700">
-                                      Parcela {parcela.numero}
-                                    </span>
-                                    <span className="text-sm font-bold text-teal-600">
-                                      R$ {parcela.valor.toFixed(2).replace('.', ',')}
-                                    </span>
-                                  </div>
-                                  
-                                  <div className="space-y-2">
-                                    <label className="flex items-center space-x-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={parcela.recebida}
-                                        onChange={(e) => updateParcela(index, 'recebida', e.target.checked)}
-                                        className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
-                                      />
-                                      <span className="text-sm text-gray-600">Recebida</span>
-                                    </label>
-                                    
-                                    {parcela.recebida && (
-                                      <div className="ml-6">
-                                        <label className="block text-xs text-gray-500 mb-1">
-                                          Data de recebimento
-                                        </label>
-                                        <input
-                                          type="date"
-                                          value={parcela.data_recebimento}
-                                          onChange={(e) => updateParcela(index, 'data_recebimento', e.target.value)}
-                                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                                        />
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {formData.statusPagamento === 'Aguardando' && (
                   <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-sm text-gray-600">
@@ -2340,7 +3626,7 @@ function NovoProcedimentoContent() {
                     Upload de Fichas Anestésicas (Opcional)
                   </h3>
                   <p className="text-gray-600 mb-4">
-                    Faça upload de até 10 arquivos (PDF, JPG, PNG) - Campo opcional
+                    Faça upload de até {LIMITES_UPLOAD.quantidadeMaxima} arquivos (PDF, JPG, PNG) - Campo opcional
                   </p>
                   <input
                     type="file"
@@ -2362,28 +3648,132 @@ function NovoProcedimentoContent() {
                 {formData.fichas.length > 0 && (
                   <div className="space-y-4">
                     <h4 className="text-lg font-medium text-gray-900">
-                      Arquivos Selecionados ({formData.fichas.length}/10)
+                      Arquivos Selecionados ({formData.fichas.length})
                     </h4>
+                    
+                    {/* Mensagem informativa sobre upload */}
+                    {!uploadProgress.isUploading && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex items-start space-x-2">
+                          <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                          <p className="text-sm text-blue-800">
+                            <strong>Importante:</strong> Para iniciar o upload dos arquivos, clique no botão <strong>"Finalizar e Salvar"</strong> ao final do formulário.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Barra de progresso geral */}
+                    {uploadProgress.isUploading && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-blue-900">
+                            Enviando arquivos...
+                          </span>
+                          <span className="text-sm font-semibold text-blue-700">
+                            {uploadProgress.currentFile}/{uploadProgress.totalFiles}
+                          </span>
+                        </div>
+                        <Progress value={uploadProgress.progress} className="h-2" />
+                        {uploadProgress.currentFileName && (
+                          <p className="text-xs text-blue-600 mt-1 truncate">
+                            {uploadProgress.currentFileName}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {formData.fichas.map((file, index) => (
-                        <div key={index} className="border border-gray-200 rounded-lg p-4">
+                      {formData.fichas.map((file, index) => {
+                        const fileProgress = fileUploadProgress[index]
+                        const isUploading = fileProgress?.status === 'uploading'
+                        const isSuccess = fileProgress?.status === 'success'
+                        const isError = fileProgress?.status === 'error'
+                        const isPending = !fileProgress || fileProgress.status === 'pending'
+                        
+                        return (
+                          <div key={index} className={`border rounded-lg p-4 ${
+                            isUploading ? 'border-blue-300 bg-blue-50' :
+                            isSuccess ? 'border-green-300 bg-green-50' :
+                            isError ? 'border-red-300 bg-red-50' :
+                            'border-gray-200'
+                          }`}>
                           <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center space-x-2">
-                              <FileImage className="w-5 h-5 text-gray-400" />
-                              <span className="text-sm font-medium text-gray-900 truncate">
+                              <div className="flex items-center space-x-2 flex-1 min-w-0">
+                                {isSuccess ? (
+                                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                ) : isError ? (
+                                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                                ) : isUploading ? (
+                                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 flex-shrink-0"></div>
+                                ) : (
+                                  <FileImage className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                                )}
+                                <span className={`text-sm font-medium truncate ${
+                                  isSuccess ? 'text-green-900' :
+                                  isError ? 'text-red-900' :
+                                  isUploading ? 'text-blue-900' :
+                                  'text-gray-900'
+                                }`}>
                                 {file.name}
                               </span>
                             </div>
+                              {!isUploading && (
                             <button
                               type="button"
                               onClick={() => removeFile(index)}
-                              className="text-red-500 hover:text-red-700"
+                                  className="text-red-500 hover:text-red-700 flex-shrink-0 ml-2"
                             >
                               <X className="w-4 h-4" />
                             </button>
+                              )}
                           </div>
+                            
+                            {/* Barra de progresso individual */}
+                            {fileProgress && (
+                              <div className="space-y-1 mb-2">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className={
+                                    isSuccess ? 'text-green-700' :
+                                    isError ? 'text-red-700' :
+                                    isUploading ? 'text-blue-700' :
+                                    'text-gray-600'
+                                  }>
+                                    {isSuccess ? '✅ Enviado' :
+                                     isError ? '❌ Erro' :
+                                     isUploading ? 'Enviando...' :
+                                     'Aguardando...'}
+                                  </span>
+                                  <span className={
+                                    isSuccess ? 'text-green-700 font-semibold' :
+                                    isError ? 'text-red-700' :
+                                    isUploading ? 'text-blue-700 font-semibold' :
+                                    'text-gray-600'
+                                  }>
+                                    {fileProgress.progress}%
+                                  </span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className={`h-2 rounded-full transition-all duration-300 ${
+                                      isSuccess ? 'bg-green-500' :
+                                      isError ? 'bg-red-500' :
+                                      isUploading ? 'bg-blue-500' :
+                                      'bg-gray-300'
+                                    }`}
+                                    style={{ width: `${fileProgress.progress}%` }}
+                                  />
+                                </div>
+                                {isError && fileProgress.error && (
+                                  <p className="text-xs text-red-600 mt-1 truncate" title={fileProgress.error}>
+                                    {fileProgress.error}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                            
                           <div className="text-xs text-gray-500">
-                            {(file.size / 1024 / 1024).toFixed(2)} MB
+                              {formatarTamanhoArquivo(file.size)}
                           </div>
                           {previewFiles[index] && file.type.startsWith('image/') && (
                             <div className="mt-2">
@@ -2394,13 +3784,15 @@ function NovoProcedimentoContent() {
               />
             </div>
                           )}
-                          {previewFiles[index] && file.type === 'application/pdf' && (
+                          {(file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) && (
                             <div className="mt-2 flex items-center justify-center h-20 bg-gray-100 rounded">
                               <FileText className="w-8 h-8 text-gray-400" />
+                              <span className="ml-2 text-xs text-gray-500">PDF</span>
                   </div>
                 )}
               </div>
-                      ))}
+                        )
+                      })}
                   </div>
                         </div>
                       )}
@@ -2413,62 +3805,76 @@ function NovoProcedimentoContent() {
           <div className="mt-8">
             {/* Mobile: Stacked buttons */}
             <div className="block md:hidden space-y-3">
-              {currentSection < 3 ? (
-                <Button
-                  type="button"
-                  onClick={() => setCurrentSection(Math.min(3, currentSection + 1))}
-                  className="w-full py-4 text-lg font-medium"
-                >
-                  Próximo
-                  <ArrowLeft className="w-5 h-5 ml-2 rotate-180" />
-                </Button>
-              ) : (
-                <Button 
-                  type="button" 
-                  onClick={handleSubmit}
-                  disabled={loading}
-                  className="w-full py-4 text-lg font-medium bg-green-600 hover:bg-green-700"
-                >
-                  <Save className="w-5 h-5 mr-2" />
-                  {loading ? 'Salvando...' : 'Finalizar e Salvar'}
-                </Button>
-              )}
-              
-              {currentSection > 0 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setCurrentSection(Math.max(0, currentSection - 1))}
-                  className="w-full py-3"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Anterior
-                </Button>
-              )}
+              <div className="flex gap-3">
+                {currentSection > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCurrentSection(Math.max(0, currentSection - 1))}
+                    className="flex-1 py-4 text-base font-medium"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Voltar (Passo {currentSection})
+                  </Button>
+                )}
+                {currentSection < 3 ? (
+                  <Button
+                    type="button"
+                    onClick={() => setCurrentSection(Math.min(3, currentSection + 1))}
+                    className={`py-4 text-base font-medium ${currentSection > 0 ? 'flex-1' : 'w-full'}`}
+                  >
+                    Próximo (Passo {currentSection + 2})
+                    <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
+                  </Button>
+                ) : (
+                  <Button 
+                    type="button" 
+                    onClick={handleSubmit}
+                    disabled={loading}
+                    className={`py-4 text-base font-medium bg-green-600 hover:bg-green-700 ${currentSection > 0 ? 'flex-1' : 'w-full'}`}
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {loading ? 'Salvando...' : 'Finalizar e Salvar'}
+                  </Button>
+                )}
+              </div>
             </div>
             
             {/* Desktop: Side by side buttons */}
-            <div className="hidden md:flex justify-between">
+            <div className="hidden md:flex justify-between items-center gap-4">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setCurrentSection(Math.max(0, currentSection - 1))}
                 disabled={currentSection === 0}
+                className="min-w-[140px]"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Anterior
+                {currentSection === 0 ? 'Início' : `Voltar (Passo ${currentSection})`}
               </Button>
+
+              <div className="text-xs sm:text-sm text-gray-500 font-medium text-center px-2">
+                <span className="block sm:inline">Passo {currentSection + 1} de {sections.length}</span>
+                <span className="hidden sm:inline"> • </span>
+                <span className="block sm:inline truncate">{sections[currentSection].title}</span>
+              </div>
 
               {currentSection < 3 ? (
                 <Button
                   type="button"
                   onClick={() => setCurrentSection(Math.min(3, currentSection + 1))}
+                  className="min-w-[140px]"
                 >
-                  Próximo
+                  Próximo (Passo {currentSection + 2})
                   <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
                 </Button>
               ) : (
-                <Button type="button" onClick={handleSubmit} disabled={loading}>
+                <Button 
+                  type="button" 
+                  onClick={handleSubmit} 
+                  disabled={loading}
+                  className="min-w-[180px] bg-green-600 hover:bg-green-700"
+                >
                   <Save className="w-4 h-4 mr-2" />
                   {loading ? 'Salvando...' : 'Finalizar e Salvar'}
                 </Button>
@@ -2480,8 +3886,32 @@ function NovoProcedimentoContent() {
 
       {/* Modal de Sucesso */}
       {showSuccessModal && successData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          style={{ 
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflow: 'hidden',
+            touchAction: 'none'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleSuccessModalClose()
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            style={{
+              maxHeight: '90vh',
+              maxHeight: 'calc(100vh - 2rem)',
+              WebkitOverflowScrolling: 'touch'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-8">
               {/* Header do Modal */}
               <div className="text-center mb-6">
@@ -2489,7 +3919,7 @@ function NovoProcedimentoContent() {
                   <CheckCircle className="w-8 h-8 text-green-600" />
                 </div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                  ✅ Procedimento Criado com Sucesso!
+                  Procedimento Criado com Sucesso!
                 </h3>
                 <p className="text-gray-600">
                   Seu procedimento foi salvo e está disponível na lista.
@@ -2498,7 +3928,23 @@ function NovoProcedimentoContent() {
 
               {/* Detalhes do Procedimento */}
               <div className="bg-gray-50 rounded-lg p-6 mb-6">
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">📋 Detalhes do Procedimento</h4>
+                <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <svg 
+                    className="w-5 h-5 text-gray-700" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2} 
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" 
+                    />
+                  </svg>
+                  Detalhes do Procedimento
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <span className="text-sm font-medium text-gray-500">Paciente:</span>
@@ -2563,7 +4009,23 @@ function NovoProcedimentoContent() {
                     </div>
                     <div className="bg-teal-100 border border-teal-300 rounded-md p-3">
                       <p className="text-sm text-teal-800">
-                        <strong>📋 Instruções:</strong> Copie o link acima e envie para o cirurgião via WhatsApp, email ou SMS. 
+                        <strong className="flex items-center gap-1">
+                          <svg 
+                            className="w-4 h-4 text-gray-700" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path 
+                              strokeLinecap="round" 
+                              strokeLinejoin="round" 
+                              strokeWidth={2} 
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" 
+                            />
+                          </svg>
+                          Instruções:
+                        </strong> Copie o link acima e envie para o cirurgião via WhatsApp, email ou SMS. 
                         O cirurgião poderá acessar o formulário de feedback através deste link.
                       </p>
                       <p className="text-sm text-teal-700 mt-2">
@@ -2590,8 +4052,31 @@ function NovoProcedimentoContent() {
 
       {/* Modal de Cadastro de Secretária */}
       {showSecretariaModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          style={{ 
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflow: 'hidden',
+            touchAction: 'none'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowSecretariaModal(false)
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+            style={{
+              maxHeight: 'calc(100vh - 2rem)',
+              WebkitOverflowScrolling: 'touch'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between p-6 border-b border-teal-200 bg-teal-50">
               <h3 className="text-lg font-semibold text-teal-800">Vincular Nova Secretária</h3>
               <Button 
@@ -2655,7 +4140,11 @@ function NovoProcedimentoContent() {
                   const telefone = (document.getElementById('secretariaTelefone') as HTMLInputElement)?.value
                   
                   if (!nome || !email) {
-                    alert('Nome e email são obrigatórios')
+                    addToast({
+                      title: 'Campos obrigatórios',
+                      description: 'Nome e email são obrigatórios para vincular secretária.',
+                      variant: 'warning'
+                    })
                     return
                   }
                   
@@ -2666,10 +4155,19 @@ function NovoProcedimentoContent() {
                     setShowSecretariaModal(false)
                     // Se for nova secretaria, informar sobre senha temporária
                     if (result.isNew) {
-                      alert('Secretaria vinculada com sucesso! Uma senha temporária foi gerada. Verifique o console (F12) para ver a senha temporária.')
+                      addToast({
+                        title: 'Secretária vinculada',
+                        description: 'Uma senha temporária foi gerada. Verifique o console (F12) para ver a senha temporária.',
+                        variant: 'success',
+                        duration: 7000
+                      })
                     }
                   } else {
-                    alert('Erro ao vincular secretária. Verifique se o email está correto e tente novamente.')
+                    addToast({
+                      title: 'Erro ao vincular',
+                      description: 'Não foi possível vincular a secretária. Verifique se o email está correto e tente novamente.',
+                      variant: 'error'
+                    })
                   }
                 }}
                 className="bg-teal-600 hover:bg-teal-700 text-white"
@@ -2680,6 +4178,7 @@ function NovoProcedimentoContent() {
           </div>
         </div>
       )}
+      
     </Layout>
   )
 }

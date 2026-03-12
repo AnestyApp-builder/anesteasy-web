@@ -11,7 +11,9 @@ import {
   Zap,
   ArrowLeft,
   Loader2,
-  CheckCircle
+  CheckCircle,
+  Gift,
+  X
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -94,6 +96,13 @@ interface ActiveSubscription {
   amount: number
 }
 
+interface TrialInfo {
+  trial_ends_at: string | null
+  free_months: number | null
+  isInTrial: boolean
+  daysRemaining: number
+}
+
 function PlanosContent() {
   const { user, isAuthenticated } = useAuth()
   const router = useRouter()
@@ -102,6 +111,7 @@ function PlanosContent() {
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
   const [activeSubscription, setActiveSubscription] = useState<ActiveSubscription | null>(null)
   const [loadingSubscription, setLoadingSubscription] = useState(true)
+  const [trialInfo, setTrialInfo] = useState<TrialInfo | null>(null)
 
   const fetchActiveSubscription = useCallback(async () => {
     if (!user) {
@@ -115,39 +125,55 @@ function PlanosContent() {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
       if (sessionError) {
-        console.error('❌ Erro ao obter sessão:', sessionError)
+        // Erro ao obter sessão
         setLoadingSubscription(false)
         return
       }
 
       if (!session?.access_token) {
-        console.warn('⚠️ Sessão não encontrada ou sem token')
+        // Sessão não encontrada
         setLoadingSubscription(false)
         return
       }
 
-      const response = await fetch('/api/stripe/subscription', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
-      })
+      // Buscar assinatura e trial em paralelo
+      const [subscriptionResponse, trialResponse] = await Promise.all([
+        fetch('/api/stripe/subscription', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        }),
+        fetch('/api/subscription/check', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+      ])
 
-      // Verificar se a resposta é JSON
-      const contentType = response.headers.get('content-type')
+      // Processar assinatura
+      const contentType = subscriptionResponse.headers.get('content-type')
       if (contentType && contentType.includes('application/json')) {
-        const data = await response.json()
-        if (response.ok && data.subscription) {
+        const data = await subscriptionResponse.json()
+        if (subscriptionResponse.ok && data.subscription) {
           setActiveSubscription(data.subscription)
         }
-      } else if (response.status === 404) {
-        // Não tem assinatura, isso é normal
+      } else if (subscriptionResponse.status === 404) {
         setActiveSubscription(null)
       }
+
+      // Processar trial
+      if (trialResponse.ok) {
+        const trialData = await trialResponse.json()
+        if (trialData.trialInfo) {
+          setTrialInfo(trialData.trialInfo)
+        }
+      }
     } catch (error) {
-      console.error('❌ Erro ao buscar assinatura:', error)
-      // Não travar a página, apenas não mostrar assinatura
+      // Erro ao buscar assinatura
       setActiveSubscription(null)
     } finally {
       setLoadingSubscription(false)
@@ -180,7 +206,7 @@ function PlanosContent() {
         } catch (error) {
           // Se der timeout ou erro, continuar como anestesista
           if (!mounted) return
-          console.warn('⚠️ Erro ao verificar secretária, continuando:', error)
+          // Erro ao verificar secretária
           fetchActiveSubscription()
         }
       }
@@ -214,7 +240,7 @@ function PlanosContent() {
 
         try {
           attempts++
-          console.log(`🔄 Sincronizando com session_id... (tentativa ${attempts}/${maxAttempts})`)
+          // Sincronizando com session_id
           
           const response = await fetch('/api/stripe/test-webhook', {
             method: 'POST',
@@ -229,7 +255,7 @@ function PlanosContent() {
           if (response.ok) {
             const data = await response.json()
             if (data.success) {
-              console.log('✅ Assinatura sincronizada automaticamente!')
+              // Assinatura sincronizada
               // Recarregar assinatura
               await fetchActiveSubscription()
               // Remover session_id da URL
@@ -248,7 +274,7 @@ function PlanosContent() {
             }, 2000)
           }
         } catch (error) {
-          console.warn(`⚠️ Erro na tentativa ${attempts}:`, error)
+          // Erro na tentativa
           // Tentar novamente após 2 segundos
           if (attempts < maxAttempts) {
             setTimeout(() => {
@@ -264,7 +290,7 @@ function PlanosContent() {
         if (!mounted || !user.email) return
         
         try {
-          console.log('🔄 Tentando sincronizar assinatura por email...')
+          // Tentando sincronizar assinatura por email
           
           const response = await fetch('/api/stripe/sync-subscription', {
             method: 'POST',
@@ -279,18 +305,18 @@ function PlanosContent() {
           if (response.ok) {
             const data = await response.json()
             if (data.subscription) {
-              console.log('✅ Assinatura encontrada e sincronizada!')
+              // Assinatura encontrada e sincronizada
               setActiveSubscription(data.subscription)
             }
           }
         } catch (error) {
-          console.warn('⚠️ Erro ao sincronizar por email:', error)
+          // Erro ao sincronizar por email
         }
       }
       
       // Se tem session_id, tentar sincronizar com ele primeiro
       if (sessionId) {
-        console.log('🔄 Session ID encontrado na URL, sincronizando automaticamente...')
+        // Session ID encontrado na URL, sincronizando automaticamente
         const autoSyncTimer = setTimeout(() => {
           if (mounted) {
             syncWithSessionId()
@@ -331,10 +357,10 @@ function PlanosContent() {
   }
 
   const handleSelectPlan = async (plan: Plan) => {
-    console.log('🔘 handleSelectPlan chamado para plano:', plan.id)
+    // handleSelectPlan chamado
     
     if (!isAuthenticated || !user) {
-      console.log('⚠️ Usuário não autenticado, redirecionando para login...')
+      // Usuário não autenticado
       router.push('/login')
       return
     }
@@ -353,8 +379,7 @@ function PlanosContent() {
         return
       }
 
-      console.log('📤 Criando Checkout Session na Stripe para plano:', plan.name)
-      console.log('📋 Dados enviados:', { plan_id: plan.id, user_id: user.id })
+      // Criando Checkout Session na Stripe
 
       // Criar Checkout Session na Stripe (checkout hospedado)
       const response = await fetch('/api/stripe/checkout', {
@@ -368,20 +393,20 @@ function PlanosContent() {
         })
       })
 
-      console.log('📥 Resposta recebida, status:', response.status, response.statusText)
+      // Resposta recebida
 
       // Verificar se a resposta é JSON
       const contentType = response.headers.get('content-type')
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text()
-        console.error('❌ Resposta não é JSON:', text.substring(0, 500))
+        // Resposta não é JSON
         throw new Error('Resposta inválida do servidor. Verifique os logs do servidor.')
       }
 
       const data = await response.json()
 
       if (!response.ok) {
-        console.error('❌ Erro na resposta:', JSON.stringify(data, null, 2))
+        // Erro na resposta
         
         // Tratar diferentes formatos de erro
         let errorMessage = 'Erro ao criar checkout'
@@ -397,7 +422,7 @@ function PlanosContent() {
       }
 
       // Checkout Session criada com sucesso
-      console.log('✅ Checkout Session criada:', data.session_id)
+      // Checkout Session criada
       console.log('🔗 URL do checkout:', data.checkout_url)
 
       // Redirecionar para o checkout hospedado da Stripe
@@ -435,29 +460,8 @@ function PlanosContent() {
     }).format(value)
   }
 
-  if (!isAuthenticated) {
-    return (
-      <Layout>
-        <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-12 px-4">
-          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">
-                Escolha seu Plano
-              </h1>
-              <p className="text-gray-600">
-                Faça login para continuar com a assinatura
-              </p>
-              <Link href="/login">
-                <Button className="mt-4">
-                  Fazer Login
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </Layout>
-    )
-  }
+  // Removido: não bloquear visualização dos planos para usuários não autenticados
+  // O login será solicitado apenas quando tentar assinar um plano
 
   return (
     <Layout>
@@ -465,10 +469,12 @@ function PlanosContent() {
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="text-center mb-12">
-            <Link href="/dashboard" className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-6 transition-colors">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Voltar ao Dashboard
-            </Link>
+            {isAuthenticated && (
+              <Link href="/dashboard" className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-6 transition-colors">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Voltar ao Dashboard
+              </Link>
+            )}
             <h1 className="text-4xl font-bold text-gray-900 mb-4">
               Escolha seu Plano
             </h1>
@@ -477,7 +483,7 @@ function PlanosContent() {
             </p>
           </div>
 
-          {/* Assinatura Ativa */}
+          {/* Assinatura Ativa ou Free Trial */}
           {loadingSubscription ? (
             <div className="mb-8 flex justify-center">
               <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
@@ -508,35 +514,106 @@ function PlanosContent() {
                     </p>
                   </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-primary-200">
-                  <Link href="/assinatura">
-                    <Button variant="outline" className="w-full sm:w-auto">
-                      <Calendar className="w-4 h-4 mr-2" />
-                      Gerenciar Assinatura
-                    </Button>
-                  </Link>
+                <div className="mt-4 pt-4 border-t border-primary-200 flex gap-3 flex-wrap">
+                  <Button 
+                    variant="outline" 
+                    onClick={async () => {
+                      if (!confirm('Tem certeza que deseja cancelar sua assinatura? Você perderá o acesso ao final do período atual.')) {
+                        return
+                      }
+                      
+                      try {
+                        const { supabase } = await import('@/lib/supabase')
+                        const { data: { session } } = await supabase.auth.getSession()
+                        
+                        if (!session?.access_token) {
+                          alert('Sessão expirada. Por favor, faça login novamente.')
+                          return
+                        }
+                        
+                        const response = await fetch('/api/stripe/cancel-subscription', {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${session.access_token}`,
+                            'Content-Type': 'application/json'
+                          }
+                        })
+                        
+                        const data = await response.json()
+                        
+                        if (response.ok) {
+                          alert('Assinatura cancelada com sucesso!')
+                          // Recarregar assinatura
+                          await fetchActiveSubscription()
+                        } else {
+                          alert(data.error || 'Erro ao cancelar assinatura')
+                        }
+                      } catch (error: any) {
+                        alert('Erro ao cancelar assinatura: ' + error.message)
+                      }
+                    }}
+                    className="bg-red-50 hover:bg-red-100 text-red-700 border-red-300"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancelar Assinatura
+                  </Button>
                 </div>
               </CardContent>
             </Card>
-                 ) : isAuthenticated ? (
-                   <Card className="mb-8 bg-yellow-50 border-yellow-200">
-                     <CardContent className="p-6">
-                       <div className="flex items-center gap-4">
-                         <div className="p-2 bg-yellow-100 rounded-lg">
-                           <Calendar className="w-6 h-6 text-yellow-600" />
-                         </div>
-                         <div className="flex-1">
-                           <h3 className="text-lg font-bold text-yellow-900 mb-1">
-                             Nenhuma assinatura ativa encontrada
-                           </h3>
-                           <p className="text-sm text-yellow-800">
-                             Se você acabou de fazer um pagamento, estamos sincronizando automaticamente. A assinatura aparecerá em alguns instantes.
-                           </p>
-                         </div>
-                       </div>
-                     </CardContent>
-                   </Card>
-                 ) : null}
+          ) : trialInfo && trialInfo.isInTrial ? (
+            <Card className="mb-8 bg-gradient-to-r from-teal-50 to-teal-100 border-teal-300">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-teal-500 rounded-lg">
+                      <Gift className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-teal-900 mb-1">
+                        Free Trial Ativo
+                      </h3>
+                      <p className="text-sm text-teal-700">
+                        {trialInfo.free_months && trialInfo.free_months > 0 
+                          ? `Período gratuito com ${trialInfo.free_months} ${trialInfo.free_months === 1 ? 'mês grátis' : 'meses grátis'} incluído${trialInfo.free_months > 1 ? 's' : ''}`
+                          : 'Período de teste gratuito de 7 dias'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-teal-600 mb-1">
+                      {trialInfo.daysRemaining} {trialInfo.daysRemaining === 1 ? 'dia' : 'dias'}
+                    </div>
+                    <p className="text-sm text-teal-700">
+                      restantes no trial
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-teal-200">
+                  <p className="text-sm text-teal-800 mb-3">
+                    💡 Assine um plano antes do término do trial para continuar usando sem interrupções.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : isAuthenticated ? (
+            <Card className="mb-8 bg-yellow-50 border-yellow-200">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <Calendar className="w-6 h-6 text-yellow-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-yellow-900 mb-1">
+                      Nenhuma assinatura ativa encontrada
+                    </h3>
+                    <p className="text-sm text-yellow-800">
+                      Se você acabou de fazer um pagamento, estamos sincronizando automaticamente. A assinatura aparecerá em alguns instantes.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* Planos */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
