@@ -1,3 +1,4 @@
+import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -7,19 +8,12 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 export async function GET(request: NextRequest) {
   try {
     if (!supabaseServiceKey) {
-      return NextResponse.json(
-        { error: 'Configuração do servidor inválida' },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Configuração do servidor inválida' }, { status: 500 })
     }
 
-    // Verificar se o usuário é admin
     const authHeader = request.headers.get('authorization')
     if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Não autorizado' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
     }
 
     const token = authHeader.replace('Bearer ', '').trim()
@@ -27,13 +21,9 @@ export async function GET(request: NextRequest) {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token)
 
     if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Não autorizado' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
     }
 
-    // Verificar se é admin usando Service Role
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
     const { data: userData } = await supabaseAdmin
       .from('users')
@@ -42,20 +32,15 @@ export async function GET(request: NextRequest) {
       .maybeSingle()
 
     if (!userData || userData.role !== 'admin' || !userData.is_system_admin) {
-      return NextResponse.json(
-        { error: 'Acesso negado' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
     }
 
-    // Buscar estatísticas usando Service Role (bypass RLS)
     const now = new Date()
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
 
     const [
       usersResult,
-      secretariasResult,
       proceduresResult,
       recentLoginsResult,
       anestesistasResult
@@ -64,10 +49,6 @@ export async function GET(request: NextRequest) {
         .from('users')
         .select('id, last_login_at, created_at', { count: 'exact' })
         .eq('role', 'anestesista'),
-      
-      supabaseAdmin
-        .from('secretarias')
-        .select('id, data_cadastro', { count: 'exact' }),
       
       supabaseAdmin
         .from('procedures')
@@ -79,14 +60,12 @@ export async function GET(request: NextRequest) {
         .neq('role', 'admin')
         .limit(100),
       
-      // Buscar todos os anestesistas com dados de subscription
       supabaseAdmin
         .from('users')
         .select('id, email, subscription_plan, subscription_status, trial_ends_at')
         .eq('role', 'anestesista')
     ])
 
-    // Calcular estatísticas
     const activeUsers = usersResult.data?.filter(
       user => user.last_login_at && new Date(user.last_login_at) >= thirtyDaysAgo
     ).length || 0
@@ -98,77 +77,34 @@ export async function GET(request: NextRequest) {
       }
     ).length || 0
 
-    // Ordenar últimos logins
     const sortedLogins = (recentLoginsResult.data || [])
       .sort((a, b) => {
-        const dateA = a.last_login_at 
-          ? new Date(a.last_login_at).getTime()
-          : a.created_at 
-            ? new Date(a.created_at).getTime()
-            : 0
-        const dateB = b.last_login_at 
-          ? new Date(b.last_login_at).getTime()
-          : b.created_at 
-            ? new Date(b.created_at).getTime()
-            : 0
+        const dateA = a.last_login_at ? new Date(a.last_login_at).getTime() : (a.created_at ? new Date(a.created_at).getTime() : 0)
+        const dateB = b.last_login_at ? new Date(b.last_login_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : 0)
         return dateB - dateA
       })
       .slice(0, 10)
 
-    // Calcular estatísticas de subscription (apenas anestesistas)
-    const nowForSubscription = new Date()
     let freeTrialUsers = 0
     let paidUsers = 0
     let unpaidUsers = 0
-
-    console.log('📊 [ADMIN STATS] Total anestesistas encontrados:', anestesistasResult.data?.length || 0)
-    console.log('📊 [ADMIN STATS] Erro na query de anestesistas:', anestesistasResult.error)
-    console.log('📊 [ADMIN STATS] Dados brutos:', anestesistasResult.data)
-
-    if (anestesistasResult.error) {
-      console.error('❌ [ADMIN STATS] Erro ao buscar anestesistas:', anestesistasResult.error)
-    }
 
     anestesistasResult.data?.forEach((user) => {
       const trialEndsAt = user.trial_ends_at ? new Date(user.trial_ends_at) : null
       const subscriptionStatus = user.subscription_status || 'inactive'
 
-      console.log('📊 [ADMIN STATS] Processando usuário:', {
-        email: user.email || user.id,
-        trial_ends_at: user.trial_ends_at,
-        subscription_status: subscriptionStatus,
-        trialEndsAt: trialEndsAt?.toISOString(),
-        now: nowForSubscription.toISOString()
-      })
-
-      // Verificar se está em trial ativo (trial_ends_at no futuro)
-      if (trialEndsAt && trialEndsAt > nowForSubscription) {
+      if (trialEndsAt && trialEndsAt > now) {
         freeTrialUsers++
-        console.log('  ✅ Free Trial')
-      }
-      // Verificar se está pagando (subscription_status = 'active' e não está em trial)
-      else if (subscriptionStatus === 'active' && (!trialEndsAt || trialEndsAt <= nowForSubscription)) {
+      } else if (subscriptionStatus === 'active') {
         paidUsers++
-        console.log('  ✅ Paid')
-      }
-      // Caso contrário, está sem pagamento
-      else {
+      } else {
         unpaidUsers++
-        console.log('  ✅ Unpaid')
       }
-    })
-
-    console.log('📊 [ADMIN STATS] Resultado final:', {
-      freeTrialUsers,
-      paidUsers,
-      unpaidUsers
     })
 
     return NextResponse.json({
       totalUsers: usersResult.count || 0,
       activeUsers,
-      totalSecretarias: secretariasResult.count || 0,
-      activeSecretarias: secretariasResult.count || 0,
       totalAnestesistas: usersResult.count || 0,
       totalProcedures: proceduresResult.count || 0,
       proceduresThisMonth,
@@ -181,10 +117,6 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ [ADMIN STATS] Erro:', error)
-    return NextResponse.json(
-      { error: 'Erro interno do servidor' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 }
-

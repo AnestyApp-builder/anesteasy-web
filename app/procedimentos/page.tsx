@@ -3,35 +3,12 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
+import dynamic from 'next/dynamic'
 import { 
-  Plus, 
-  Search, 
-  Filter, 
-  FileText, 
-  Calendar,
-  DollarSign,
-  User,
-  Trash2,
-  X,
-  AlertCircle,
-  Users,
-  Activity,
-  Edit3,
-  Save,
-  Check,
-  MoreVertical,
-  Eye,
-  Edit,
-  Paperclip,
-  MessageSquare,
-  Image as ImageIcon,
-  Download,
-  Banknote,
-  Stethoscope,
-  Building,
-  CheckCircle,
-  ArrowLeft
+  Plus, Search, Filter, FileText, Calendar, DollarSign, User, Trash2, X, 
+  AlertCircle, Users, Activity, Edit3, Save, Check, MoreVertical, Eye, 
+  Edit, Paperclip, MessageSquare, Image as ImageIcon, Download, Banknote, 
+  Stethoscope, Building, CheckCircle, ArrowLeft, Send, EyeOff, Star, Copy 
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
@@ -48,6 +25,11 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useToast } from '@/contexts/ToastContext'
 import { useDebounce } from '@/hooks/useDebounce'
 import { isImageFile } from '@/lib/mime-utils'
+
+const MotionDiv = dynamic(
+  () => import('framer-motion').then((mod) => ({ default: mod.motion.div })),
+  { ssr: false }
+)
 import { supabase } from '@/lib/supabase'
 
 /**
@@ -200,16 +182,16 @@ const EditField = memo(({
     }
 
     return (
-      <div className="space-y-2 h-[90px]">
-        <label className="text-sm font-medium text-gray-700 block h-5 truncate" title={label}>{label}</label>
+      <div className="space-y-1.5 sm:space-y-2 min-h-[75px] sm:h-[90px]">
+        <label className="text-xs sm:text-sm font-medium text-gray-700 block h-4 sm:h-5 truncate" title={label}>{label}</label>
         {field === 'procedure_value' ? (
-          <div className="relative h-[52px]">
-            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">R$</span>
+          <div className="relative h-[48px] sm:h-[52px]">
+            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium text-sm sm:text-base">R$</span>
             <input
               type={type}
               value={currentValue}
               onChange={(e) => updateFormField(field, e.target.value)}
-              className="w-full h-full pl-10 pr-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+              className="w-full h-full pl-10 pr-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-sm sm:text-base"
             />
           </div>
         ) : (
@@ -222,7 +204,7 @@ const EditField = memo(({
             onBlur={isDateType ? handleDateBlur : undefined}
             onFocus={isDateType ? handleDateFocus : undefined}
             placeholder={isDateType ? 'DD/MM/AAAA' : undefined}
-            className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+            className="w-full h-[48px] sm:h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-sm sm:text-base"
           />
         )}
       </div>
@@ -241,6 +223,7 @@ const EditField = memo(({
         case 'pending': return 'Pendente'
         case 'cancelled': return 'Aguardando'
         case 'refunded': return 'Não Lançado'
+        case 'sent': return 'Enviado'
         default: return val ?? 'Não informado'
       }
     }
@@ -327,10 +310,10 @@ const EditField = memo(({
   }
 
   return (
-    <div className="space-y-2 h-[90px]">
-      <label className="text-sm font-medium text-gray-700 block h-5 truncate" title={label}>{label}</label>
-      <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[52px] flex items-center">
-        <p className="text-gray-900 font-medium truncate">{formatValue(finalDisplayValue)}</p>
+    <div className="space-y-1.5 sm:space-y-2 min-h-[75px] sm:h-[90px]">
+      <label className="text-xs sm:text-sm font-medium text-gray-700 block h-4 sm:h-5 truncate" title={label}>{label}</label>
+      <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[48px] sm:h-[52px] flex items-center">
+        <p className="text-gray-900 font-medium truncate text-sm sm:text-base">{formatValue(finalDisplayValue)}</p>
       </div>
     </div>
   )
@@ -356,6 +339,7 @@ function ProcedimentosContent() {
   const [procedureAttachments, setProcedureAttachments] = useState<Record<string, ProcedureAttachment[]>>({})
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [specialFilter, setSpecialFilter] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [procedureToDelete, setProcedureToDelete] = useState<Procedure | null>(null)
@@ -372,7 +356,6 @@ function ProcedimentosContent() {
   const [frequentSearches, setFrequentSearches] = useState<string[]>([])
   const [feedbackStatuses, setFeedbackStatuses] = useState<Record<string, {linkCriado: boolean, respondido: boolean}>>({})
   const [selectedProcedureFeedback, setSelectedProcedureFeedback] = useState<any>(null)
-  const [secretariasVinculadas, setSecretariasVinculadas] = useState<Array<{ id: string; nome: string; email: string }>>([])
   const [loadingAttachments, setLoadingAttachments] = useState<Set<string>>(new Set())
   const [hasAttachments, setHasAttachments] = useState<Record<string, boolean>>({})
   const [showPaymentRegistrationBanner, setShowPaymentRegistrationBanner] = useState(false)
@@ -452,6 +435,7 @@ function ProcedimentosContent() {
   const clearAllFilters = () => {
     setSearchTerm('')
     setStatusFilter('all')
+    setSpecialFilter(null)
     setDateFilter(null)
     setValueFilter(null)
     setShowAdvancedFilters(false)
@@ -469,19 +453,22 @@ function ProcedimentosContent() {
       const urlParams = new URLSearchParams(window.location.search)
       const procedureId = urlParams.get('procedureId')
       const statusParam = urlParams.get('status')
+      const filterParam = urlParams.get('filter')
       
       // Configurar filtro de status se presente na URL
       if (statusParam) {
-        // Converter 'pending,not_launched' para 'pending' (agora inclui cancelled)
         if (statusParam === 'pending,not_launched') {
           setStatusFilter('pending')
-          // Mostrar banner informativo quando vier do botão "Registrar Pagamento"
           setShowPaymentRegistrationBanner(true)
-          // Remover banner após 5 segundos
           setTimeout(() => setShowPaymentRegistrationBanner(false), 5000)
         } else {
           setStatusFilter(statusParam)
         }
+      }
+
+      // Configurar filtro especial se presente na URL
+      if (filterParam) {
+        setSpecialFilter(filterParam)
       }
       
       if (procedureId && procedures.length > 0) {
@@ -489,13 +476,13 @@ function ProcedimentosContent() {
         if (procedure) {
           setSelectedProcedure(procedure)
           setShowDetailsModal(true)
-          // Limpar o parâmetro da URL
+          // Limpar os parâmetros da URL para evitar re-abertura ao recarregar
           const newUrl = window.location.pathname
           window.history.replaceState({}, '', newUrl)
         }
       }
     }
-  }, [procedures.length]) // Mudança: usar procedures.length em vez de procedures
+  }, [procedures.length])
 
   useEffect(() => {
     let filtered = procedures
@@ -554,6 +541,47 @@ function ProcedimentosContent() {
         if (valueFilter.max && value > Number(valueFilter.max)) return false
         return true
       })
+    }
+
+    // Filtro Especial (Dashboard Alerts)
+    if (specialFilter) {
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      const fiveDaysFromNow = new Date();
+      fiveDaysFromNow.setDate(today.getDate() + 5);
+      const fiveDaysStr = fiveDaysFromNow.toISOString().split('T')[0];
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      if (specialFilter === 'pending_send') {
+        filtered = filtered.filter(p => 
+          p.payment_status === 'pending' && 
+          p.created_at && new Date(p.created_at) < sevenDaysAgo
+        )
+      } else if (specialFilter === 'near_payment') {
+        filtered = filtered.filter(p => 
+          p.payment_status !== 'paid' && 
+          p.expected_payment_date && 
+          p.expected_payment_date >= todayStr && 
+          p.expected_payment_date <= fiveDaysStr
+        )
+      } else if (specialFilter === 'late_payment') {
+        filtered = filtered.filter(p => 
+          p.payment_status !== 'paid' && 
+          p.expected_payment_date && 
+          p.expected_payment_date < todayStr
+        )
+      }
+    }
+
+    // Filtro Visível Secretária
+    if (specialFilter === 'secure_link') {
+      filtered = filtered.filter(p => p.show_to_secretary !== false)
+    }
+
+    // Filtro Sem Secretaria
+    if (specialFilter === 'no_secretary') {
+      filtered = filtered.filter(p => p.show_to_secretary === false)
     }
 
     setFilteredProcedures(filtered)
@@ -831,11 +859,10 @@ function ProcedimentosContent() {
   }
 
   const handleProcedureClick = async (procedure: Procedure) => {
-    // Buscar o procedimento completo com secretaria_id do banco
+
     const fullProcedure = await procedureService.getProcedureById(procedure.id)
-    const procedureWithSecretaria = fullProcedure || procedure
     
-    setSelectedProcedure(procedureWithSecretaria as Procedure)
+    setSelectedProcedure(procedure as Procedure)
     setShowDetailsModal(true)
     
     // Carregar parcelas se o procedimento for parcelado
@@ -859,38 +886,12 @@ function ProcedimentosContent() {
     // Carregar dados do feedback se o procedimento tiver feedback solicitado
     // Sempre tentar carregar, mesmo que feedback_solicitado seja false, para verificar se há resposta
     try {
-      const feedbackData = await feedbackService.getFeedbackByProcedureId(procedureWithSecretaria.id)
+      const feedbackData = await feedbackService.getFeedbackByProcedureId(procedure.id)
       setSelectedProcedureFeedback(feedbackData)
     } catch (error) {
       setSelectedProcedureFeedback(null)
     }
 
-    // Carregar secretárias vinculadas ao anestesista
-    if (user?.id) {
-      try {
-        const { data, error } = await supabase
-          .from('anestesista_secretaria')
-          .select(`
-            secretarias (
-              id,
-              nome,
-              email
-            )
-          `)
-          .eq('anestesista_id', user.id)
-
-        if (error) {
-          setSecretariasVinculadas([])
-        } else {
-          const secretarias = (data || [])
-            .map(item => item.secretarias)
-            .filter(Boolean) as Array<{ id: string; nome: string; email: string }>
-          setSecretariasVinculadas(secretarias)
-        }
-      } catch (error) {
-        setSecretariasVinculadas([])
-      }
-    }
   }
 
   const closeDetailsModal = () => {
@@ -908,11 +909,9 @@ function ProcedimentosContent() {
   // Funções de edição
   const startEdit = async () => {
     setIsEditingMode(true)
-    const secretariaId = (selectedProcedure as any).secretaria_id || null
     
     setEditFormData({
       ...selectedProcedure,
-      secretaria_id: secretariaId || ''
     })
     
     // Carregar parcelas se o procedimento for parcelado
@@ -928,12 +927,10 @@ function ProcedimentosContent() {
   // Inicializar editFormData quando entrar no modo de edição
   useEffect(() => {
     if (isEditingMode && selectedProcedure) {
-      const secretariaId = (selectedProcedure as any).secretaria_id || null
-      
+        
       setEditFormData({
         ...selectedProcedure,
-        secretaria_id: secretariaId || ''
-      }) // clona os dados originais
+        }) // clona os dados originais
       
       // Carregar parcelas se o procedimento for parcelado
       if (selectedProcedure.payment_method === 'Parcelado' || selectedProcedure.forma_pagamento === 'Parcelado') {
@@ -957,6 +954,27 @@ function ProcedimentosContent() {
       const newData = {
       ...prev,
         [field]: newValue,
+      }
+      
+      // Se o status do pagamento mudou, atualizar as datas de modificação
+      if (field === 'payment_status') {
+        if (newValue === 'paid') {
+          newData.paid_at = new Date().toISOString()
+          // Garantir que a data de pagamento seja preenchida se estiver vazia
+          if (!newData.payment_date) {
+            newData.payment_date = new Date().toISOString().split('T')[0]
+          }
+          // Se o método de pagamento for "Aguardando", mudar para "À Vista" ao marcar como pago
+          if (!newData.payment_method || newData.payment_method === 'Aguardando' || newData.forma_pagamento === 'Aguardando') {
+            newData.payment_method = 'À Vista'
+            newData.forma_pagamento = 'À Vista'
+          }
+        } else if (newValue === 'sent') {
+          newData.sent_at = new Date().toISOString()
+        } else {
+          newData.paid_at = null
+          newData.sent_at = null
+        }
       }
       
       // Se o número de parcelas ou valor foi alterado, regenerar parcelas
@@ -1066,12 +1084,6 @@ function ProcedimentosContent() {
     try {
       const { id, user_id, created_at, updated_at, parcelas, ...updateData } = editFormData
       
-      // Garantir que secretaria_id seja null se estiver vazio
-      if (updateData.secretaria_id !== undefined) {
-        updateData.secretaria_id = updateData.secretaria_id && updateData.secretaria_id.trim() !== '' 
-          ? updateData.secretaria_id 
-          : null
-      }
       
       const updatedProcedure = await procedureService.updateProcedure(selectedProcedure.id, updateData)
       
@@ -1163,6 +1175,8 @@ function ProcedimentosContent() {
         return 'bg-blue-500 text-white shadow-sm'
       case 'recebido':
         return 'bg-green-500 text-white shadow-sm'
+      case 'sent':
+        return 'bg-blue-600 text-white shadow-sm'
       default:
         return 'bg-gray-500 text-white shadow-sm'
     }
@@ -1178,12 +1192,24 @@ function ProcedimentosContent() {
         return 'Aguardando'
       case 'refunded':
         return 'Não Lançado'
+      case 'sent':
+        return 'Enviado'
       default:
         return status
     }
   }
 
   // Calcular métricas dos procedimentos
+  const getStatusDate = (procedure: any) => {
+    if (procedure.payment_status === 'paid' && procedure.paid_at) {
+      return procedure.paid_at
+    }
+    if (procedure.payment_status === 'sent' && procedure.sent_at) {
+      return procedure.sent_at
+    }
+    return procedure.procedure_date
+  }
+
   const metrics = useMemo(() => {
     const now = new Date()
     const currentMonth = now.getMonth()
@@ -1207,7 +1233,8 @@ function ProcedimentosContent() {
       total,
       monthly: monthlyCount,
       paid: paidCount,
-      pending: pendingCount
+      pending: pendingCount,
+      sent: procedures.filter(proc => proc.payment_status === 'sent').length
     }
   }, [procedures])
 
@@ -1277,6 +1304,16 @@ function ProcedimentosContent() {
                 <span className="text-base font-bold text-amber-600">{metrics.pending}</span>
               </div>
             </div>
+
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center">
+                <Send className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Enviados</span>
+                <span className="text-base font-bold text-blue-600">{metrics.sent}</span>
+              </div>
+            </div>
           </div>
 
           {/* Desktop: Flex Horizontal */}
@@ -1326,8 +1363,51 @@ function ProcedimentosContent() {
                 <span className="text-base font-bold text-amber-600">{metrics.pending}</span>
               </div>
             </div>
+
+            <div className="w-px h-6 bg-gray-300"></div>
+
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center">
+                <Send className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Enviados</span>
+                <span className="text-base font-bold text-blue-600">{metrics.sent}</span>
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Banner de Filtro Especial Ativo */}
+        {specialFilter && (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-4 flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-orange-900">
+                  {specialFilter === 'pending_send' && 'Filtrando: Pendentes de Envio (> 7 dias)'}
+                  {specialFilter === 'near_payment' && 'Filtrando: Próximos do Vencimento (5 dias)'}
+                  {specialFilter === 'late_payment' && 'Filtrando: Pagamentos em Atraso'}
+                  {specialFilter === 'secure_link' && 'Filtrando: Visível para Secretária'}
+                  {specialFilter === 'no_secretary' && 'Filtrando: Oculto para Secretária (Sem Secretária)'}
+                </p>
+                <p className="text-xs text-orange-700 mt-0.5">
+                  Mostrando apenas itens que requerem sua atenção imediata.
+                </p>
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setSpecialFilter(null)}
+              className="bg-white border-orange-200 text-orange-700 hover:bg-orange-100 hover:text-orange-800 font-semibold"
+            >
+              Limpar Filtro
+            </Button>
+          </div>
+        )}
 
         {/* Banner informativo para registro de pagamento */}
         {showPaymentRegistrationBanner && (
@@ -1507,39 +1587,14 @@ function ProcedimentosContent() {
 
         {/* Filters */}
         <div className="lg:hidden">
-          <p className="text-sm font-medium text-gray-700 mb-3">Filtrar por status:</p>
-          <style dangerouslySetInnerHTML={{
-            __html: `
-              .filter-scroll-container::-webkit-scrollbar {
-                display: none !important;
-              }
-              .filter-scroll-container {
-                -ms-overflow-style: none !important;
-                scrollbar-width: none !important;
-              }
-            `
-          }} />
-          <div 
-            className="flex gap-2 pb-2 filter-scroll-container"
-            style={{
-              overflowX: 'auto',
-              overflowY: 'hidden',
-              scrollBehavior: 'smooth',
-              WebkitOverflowScrolling: 'touch',
-              touchAction: 'pan-x',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              scrollSnapType: 'x mandatory',
-              overscrollBehaviorX: 'contain'
-            }}
-            onScroll={(e) => {
-              // Adiciona suporte adicional para scroll suave
-              e.currentTarget.style.scrollBehavior = 'smooth';
-            }}
-          >
+          <div className="flex flex-col items-center mb-4">
+            <p className="text-sm font-medium text-gray-700">Filtrar por status:</p>
+            <p className="text-[10px] text-gray-500 font-medium italic mt-1">Pode selecionar mais de um</p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-2 pb-2">
             <button
               onClick={() => handleButtonPress(() => setStatusFilter('all'), 'light')}
-              className={`filter-chip flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+              className={`filter-chip px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
                 statusFilter === 'all'
                   ? 'bg-teal-600 text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1549,7 +1604,7 @@ function ProcedimentosContent() {
             </button>
             <button
               onClick={() => handleButtonPress(() => setStatusFilter('pending'), 'light')}
-              className={`filter-chip flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+              className={`filter-chip px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
                 statusFilter === 'pending'
                   ? 'bg-amber-500 text-white shadow-md'
                   : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
@@ -1559,13 +1614,45 @@ function ProcedimentosContent() {
             </button>
             <button
               onClick={() => handleButtonPress(() => setStatusFilter('paid'), 'light')}
-              className={`filter-chip flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+              className={`filter-chip px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
                 statusFilter === 'paid'
                   ? 'bg-green-500 text-white shadow-md'
                   : 'bg-green-100 text-green-700 hover:bg-green-200'
               }`}
             >
               Pago
+            </button>
+            <button
+              onClick={() => handleButtonPress(() => setStatusFilter('sent'), 'light')}
+              className={`filter-chip px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                statusFilter === 'sent'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+              }`}
+            >
+              Enviado
+            </button>
+            <button
+              onClick={() => handleButtonPress(() => setSpecialFilter(specialFilter === 'secure_link' ? null : 'secure_link'), 'light')}
+              className={`filter-chip px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap border-2 ${
+                specialFilter === 'secure_link'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100'
+              }`}
+            >
+              <Eye className="w-4 h-4 inline mr-1" />
+              Visível Secretária
+            </button>
+            <button
+              onClick={() => handleButtonPress(() => setSpecialFilter(specialFilter === 'no_secretary' ? null : 'no_secretary'), 'light')}
+              className={`filter-chip px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap border-2 ${
+                specialFilter === 'no_secretary'
+                  ? 'bg-gray-700 text-white border-gray-700 shadow-md'
+                  : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+              }`}
+            >
+              <EyeOff className="w-4 h-4 inline mr-1" />
+              Sem Secretária
             </button>
           </div>
         </div>
@@ -1599,8 +1686,32 @@ function ProcedimentosContent() {
                     >
                       <option value="all">Todos os status</option>
                       <option value="pending">Pendente</option>
+                      <option value="sent">Enviado</option>
                       <option value="paid">Pago</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Filtros Especiais
+                    </label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={specialFilter === 'secure_link' ? 'primary' : 'outline'}
+                        onClick={() => setSpecialFilter(specialFilter === 'secure_link' ? null : 'secure_link')}
+                        className={`flex-1 ${specialFilter === 'secure_link' ? 'bg-emerald-600 hover:bg-emerald-700' : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'}`}
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        Visível Secretária
+                      </Button>
+                      <Button
+                        variant={specialFilter === 'no_secretary' ? 'primary' : 'outline'}
+                        onClick={() => setSpecialFilter(specialFilter === 'no_secretary' ? null : 'no_secretary')}
+                        className={`flex-1 ${specialFilter === 'no_secretary' ? 'bg-gray-700 hover:bg-gray-800' : 'text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                      >
+                        <EyeOff className="w-4 h-4 mr-2" />
+                        Sem Secretária
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex gap-3">
                     <Button 
@@ -1646,7 +1757,7 @@ function ProcedimentosContent() {
                 ) : (
             <div className="space-y-3">
                 {filteredProcedures.slice(0, visibleProceduresCount).map((procedure, index) => (
-                  <motion.div
+                  <MotionDiv
                     key={procedure.id}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1673,6 +1784,11 @@ function ProcedimentosContent() {
                               <p className="font-semibold text-gray-900 text-base truncate">{procedure.patient_name}</p>
                               {(hasAttachments[procedure.id] || (procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0)) && (
                                 <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                              )}
+                              {procedure.show_to_secretary !== false ? (
+                                <Eye className="w-4 h-4 text-emerald-500 flex-shrink-0" title="Visível para Secretária" />
+                              ) : (
+                                <EyeOff className="w-4 h-4 text-gray-400 flex-shrink-0" title="Oculto para Secretária" />
                               )}
                               {getFeedbackIndicator(procedure.id) && (
                                 <div 
@@ -1703,7 +1819,7 @@ function ProcedimentosContent() {
                           <span className="font-bold text-gray-900 text-lg">{formatCurrency(procedure.procedure_value)}</span>
                         </div>
                         <div className="text-sm text-gray-500 font-medium">
-                          {procedure.procedure_date ? formatDate(procedure.procedure_date) : 'Data não informada'}
+                          {getStatusDate(procedure) ? formatDate(getStatusDate(procedure)) : 'Data não informada'}
                         </div>
                       </div>
                       
@@ -1723,6 +1839,11 @@ function ProcedimentosContent() {
                             <p className="font-semibold text-gray-900 text-lg">{procedure.patient_name}</p>
                             {(hasAttachments[procedure.id] || (procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0)) && (
                               <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                            )}
+                            {procedure.show_to_secretary !== false ? (
+                              <Eye className="w-4 h-4 text-emerald-500 flex-shrink-0" title="Visível para Secretária" />
+                            ) : (
+                              <EyeOff className="w-4 h-4 text-gray-400 flex-shrink-0" title="Oculto para Secretária" />
                             )}
                             {getFeedbackIndicator(procedure.id) && (
                               <div 
@@ -1751,8 +1872,8 @@ function ProcedimentosContent() {
                       <div className="flex items-center space-x-6 text-sm text-gray-500">
                         <div className="flex items-center">
                           <Calendar className="w-4 h-4 mr-1" />
-                          {procedure.procedure_date 
-                            ? `${formatDate(procedure.procedure_date)}${procedure.procedure_time ? ` às ${procedure.procedure_time}` : ''}`
+                          {getStatusDate(procedure) 
+                            ? `${formatDate(getStatusDate(procedure))}${getStatusDate(procedure) === procedure.procedure_date && procedure.procedure_time ? ` às ${procedure.procedure_time}` : ''}`
                             : 'Data não informada'}
                         </div>
                         <div className="flex items-center">
@@ -1771,7 +1892,7 @@ function ProcedimentosContent() {
                     </div>
                   </div>
                 </div>
-                  </motion.div>
+                  </MotionDiv>
                 ))}
                 {filteredProcedures.length > visibleProceduresCount && (
                   <div className="flex justify-center pt-4 pb-2">
@@ -1791,17 +1912,17 @@ function ProcedimentosContent() {
 
       {/* Modal de Detalhes do Procedimento */}
       {showDetailsModal && selectedProcedure && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center sm:p-4 z-[9999] backdrop-blur-sm">
+          <div className="bg-white rounded-t-2xl sm:rounded-xl max-w-3xl w-full max-h-[92dvh] sm:max-h-[90vh] overflow-hidden shadow-2xl flex flex-col animate-in slide-in-from-bottom sm:zoom-in duration-300">
             {/* Header do Modal */}
-            <div className="modal-header bg-gradient-to-r from-teal-500 to-teal-600 text-white p-4 sm:p-6 rounded-t-xl">
+            <div className="modal-header bg-gradient-to-r from-teal-500 to-teal-600 text-white p-4 sm:p-6 flex-shrink-0 sticky top-0 z-20">
               <div className="flex items-center justify-between gap-2 sm:gap-3">
                 <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center flex-shrink-0">
                     <FileText className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <h2 className="text-base sm:text-lg md:text-xl font-bold text-white break-words truncate">Detalhes do Procedimento</h2>
+                    <h2 className="text-base sm:text-lg md:text-xl font-bold text-white truncate">Detalhes</h2>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -1904,16 +2025,17 @@ function ProcedimentosContent() {
               </div>
             )}
             
-            <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-200px)]" style={{ scrollbarWidth: 'thin', scrollbarColor: '#14b8a6 #f1f5f9' }}>
+            
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 sm:space-y-6 bg-gray-50/50" style={{ scrollbarWidth: 'thin', scrollbarColor: '#14b8a6 #f1f5f9' }}>
               {/* Informações do Paciente */}
-              <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-6 shadow-sm">
-                <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
-                  <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center mr-3">
-                    <Users className="w-5 h-5 text-teal-600" />
+              <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-6 shadow-sm">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-5 flex items-center">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 bg-teal-100 rounded-lg flex items-center justify-center mr-2 sm:mr-3">
+                    <Users className="w-4 h-4 sm:w-5 sm:h-5 text-teal-600" />
                   </div>
-                  Informações do Paciente
+                  Paciente
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <EditField
                     field="patient_name"
                     label="Nome"
@@ -2037,7 +2159,7 @@ function ProcedimentosContent() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
-                  <EditField
+                   <EditField
                     field="hospital_clinic"
                     label="Hospital/Clínica"
                     value={selectedProcedure.hospital_clinic || ''}
@@ -2046,9 +2168,9 @@ function ProcedimentosContent() {
                     updateFormField={updateFormField}
                   />
                   <EditField
-                    field="codigo_tssu"
-                    label="Código TSSU"
-                    value={selectedProcedure.codigo_tssu || ''}
+                    field="grupo_anestesico"
+                    label="Grupo Anestésico"
+                    value={selectedProcedure.grupo_anestesico || 'Nenhum'}
                     isEditingMode={isEditingMode}
                     editFormData={editFormData}
                     updateFormField={updateFormField}
@@ -2142,40 +2264,70 @@ function ProcedimentosContent() {
                         updateFormField={updateFormField}
                       />
                       <div className="col-span-2">
-                        <Button
-                          onClick={async () => {
-                            try {
-                              const link = await feedbackService.createFeedbackLinkOnly({
-                                procedureId: selectedProcedure.id,
-                                emailCirurgiao: selectedProcedure.email_cirurgiao,
-                                telefoneCirurgiao: selectedProcedure.telefone_cirurgiao
-                              });
-                              
-                              // Copiar o link para a área de transferência
-                              await navigator.clipboard.writeText(link);
-                              
-                              // Mostrar mensagem de sucesso
-                              setFeedbackMessage({
-                                type: 'success',
-                                message: 'Novo link gerado e copiado para a área de transferência!'
-                              });
-                              
-                              setTimeout(() => setFeedbackMessage(null), 3000);
-                            } catch (error) {
-                              
-                              setFeedbackMessage({
-                                type: 'error',
-                                message: 'Erro ao gerar novo link. Tente novamente.'
-                              });
-                              setTimeout(() => setFeedbackMessage(null), 3000);
-                            }
-                          }}
-                          className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                        >
-                          Gerar Novo Link de Feedback
-                        </Button>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <Button
+                            onClick={async () => {
+                              try {
+                                const link = await feedbackService.createFeedbackLinkOnly({
+                                  procedureId: selectedProcedure.id,
+                                  emailCirurgiao: selectedProcedure.email_cirurgiao,
+                                  telefoneCirurgiao: selectedProcedure.telefone_cirurgiao
+                                });
+                                
+                                await navigator.clipboard.writeText(link);
+                                setFeedbackMessage({
+                                  type: 'success',
+                                  message: 'Novo link gerado e copiado!'
+                                });
+                                setTimeout(() => setFeedbackMessage(null), 3000);
+                              } catch (error) {
+                                setFeedbackMessage({
+                                  type: 'error',
+                                  message: 'Erro ao gerar novo link.'
+                                });
+                                setTimeout(() => setFeedbackMessage(null), 3000);
+                              }
+                            }}
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold"
+                          >
+                            <Copy className="w-4 h-4 mr-2" />
+                            Copiar Link
+                          </Button>
+
+                          <Button
+                            onClick={async () => {
+                              try {
+                                const link = await feedbackService.createFeedbackLinkOnly({
+                                  procedureId: selectedProcedure.id,
+                                  emailCirurgiao: selectedProcedure.email_cirurgiao,
+                                  telefoneCirurgiao: selectedProcedure.telefone_cirurgiao
+                                });
+                                
+                                const surgeonName = selectedProcedure.surgeon_name || selectedProcedure.nome_cirurgiao || 'Doutor';
+                                const anesthesiologistName = selectedProcedure.anesthesiologist_name || 'seu Anestesiologista';
+                                const message = `Olá Dr. ${surgeonName}, aqui é o Dr. ${anesthesiologistName}. Foi um prazer dividir sala com você hoje! Se puder avaliar nossa assistência anestésica, agradeço muito: ${link}`;
+                                
+                                const encodedMessage = encodeURIComponent(message);
+                                const phone = (selectedProcedure.telefone_cirurgiao || '').replace(/\D/g, '');
+                                window.open(`https://wa.me/${phone.startsWith('55') ? phone : '55' + phone}?text=${encodedMessage}`, '_blank');
+                              } catch (error) {
+                                setFeedbackMessage({
+                                  type: 'error',
+                                  message: 'Erro ao abrir WhatsApp.'
+                                });
+                                setTimeout(() => setFeedbackMessage(null), 3000);
+                              }
+                            }}
+                            className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold"
+                          >
+                            <svg className="w-4 h-4 mr-2 fill-current" viewBox="0 0 24 24">
+                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                            </svg>
+                            Enviar WhatsApp
+                          </Button>
+                        </div>
                         <p className="text-xs text-gray-500 mt-2 text-center">
-                          O link gerado terá validade de 48 horas e será copiado automaticamente
+                          O link gerado tem validade de 48 horas.
                         </p>
                       </div>
                     </>
@@ -2194,24 +2346,57 @@ function ProcedimentosContent() {
                     
                     {selectedProcedureFeedback ? (
                       <div className="bg-white rounded-lg p-4 border border-purple-200">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-gray-700">Náuseas ou Vômitos?</p>
-                            <p className={`text-sm font-semibold ${selectedProcedureFeedback.nauseaVomito === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
-                              {selectedProcedureFeedback.nauseaVomito}
+                        <div className="space-y-6">
+                          {/* Rating e Satisfação */}
+                          <div className="flex flex-col items-center justify-center p-4 bg-purple-50 rounded-xl border border-purple-100">
+                            <p className="text-sm font-bold text-purple-800 mb-2 uppercase tracking-wider">Satisfação do Cirurgião</p>
+                            <div className="flex items-center space-x-1 mb-2">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star 
+                                  key={star}
+                                  className={`w-8 h-8 ${
+                                    (selectedProcedureFeedback.satisfacao || 0) >= star 
+                                      ? 'text-amber-400 fill-amber-400' 
+                                      : 'text-gray-200'
+                                  }`} 
+                                />
+                              ))}
+                            </div>
+                            <p className="text-lg font-bold text-gray-800">
+                              {selectedProcedureFeedback.satisfacao === 5 && 'Excelente'}
+                              {selectedProcedureFeedback.satisfacao === 4 && 'Muito Bom'}
+                              {selectedProcedureFeedback.satisfacao === 3 && 'Bom'}
+                              {selectedProcedureFeedback.satisfacao === 2 && 'Regular'}
+                              {selectedProcedureFeedback.satisfacao === 1 && 'Pode Melhorar'}
                             </p>
                           </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-gray-700">Cefaleia?</p>
-                            <p className={`text-sm font-semibold ${selectedProcedureFeedback.cefaleia === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
-                              {selectedProcedureFeedback.cefaleia}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-gray-700">Dor Lombar?</p>
-                            <p className={`text-sm font-semibold ${selectedProcedureFeedback.dorLombar === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
-                              {selectedProcedureFeedback.dorLombar}
-                            </p>
+
+                          {/* Comentários */}
+                          {selectedProcedureFeedback.comentarios && (
+                            <div className="p-4 bg-white border-l-4 border-purple-500 rounded-r-xl shadow-sm italic text-gray-700">
+                              "{selectedProcedureFeedback.comentarios}"
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-gray-700">Náuseas ou Vômitos?</p>
+                              <p className={`text-sm font-semibold ${selectedProcedureFeedback.nauseaVomito === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
+                                {selectedProcedureFeedback.nauseaVomito}
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-gray-700">Cefaleia?</p>
+                              <p className={`text-sm font-semibold ${selectedProcedureFeedback.cefaleia === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
+                                {selectedProcedureFeedback.cefaleia}
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-gray-700">Dor Lombar?</p>
+                              <p className={`text-sm font-semibold ${selectedProcedureFeedback.dorLombar === 'Sim' ? 'text-red-600' : 'text-green-600'}`}>
+                                {selectedProcedureFeedback.dorLombar}
+                              </p>
+                            </div>
                           </div>
                         </div>
                         {selectedProcedureFeedback.respondidoEm && (
@@ -2371,6 +2556,16 @@ function ProcedimentosContent() {
                         { value: 'Sim', label: 'Sim' },
                         { value: 'Não', label: 'Não' }
                       ]}
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  )}
+                  {selectedProcedure.indicacao_cesariana === 'Sim' && (
+                    <EditField
+                      field="descricao_indicacao_cesariana"
+                      label="Descrição da Indicação"
+                      value={selectedProcedure.descricao_indicacao_cesariana || ''}
                       isEditingMode={isEditingMode}
                       editFormData={editFormData}
                       updateFormField={updateFormField}
@@ -2664,50 +2859,49 @@ function ProcedimentosContent() {
                                     💡 Para editar o status das parcelas, clique em "Editar" no cabeçalho do procedimento
                                   </div>
                                 )}
-                                {/* Debug: mostrar quantidade de parcelas */}
-                                <div className="text-xs text-blue-500">
-                                  Debug: {isEditingMode ? editFormData.parcelas?.length || 0 : parcelas.length} parcelas carregadas
-                                </div>
-                                {(isEditingMode ? editFormData.parcelas || [] : parcelas).map((parcela: any, index: number) => (
-                                  <div key={parcela.id} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <span className="text-sm font-medium text-gray-700">
-                                        Parcela {getParcelaNumero(parcela)}
-                                      </span>
-                                      <span className="text-sm font-bold text-teal-600">
-                                        R$ {getParcelaValor(parcela).toFixed(2).replace('.', ',')}
-                                      </span>
-              </div>
-                                    
-                                    <div className="space-y-2">
-                                      <label className="flex items-center space-x-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={parcela.recebida}
-                                          onChange={(e) => isEditingMode ? updateParcelaEdit(index, 'recebida', e.target.checked) : null}
-                                          disabled={!isEditingMode}
-                                          className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        />
-                                        <span className="text-sm text-gray-600">Recebida</span>
-                                      </label>
+                                {(isEditingMode ? editFormData.parcelas || [] : parcelas).map((parcela: any, index: number) => {
+                                  if (!parcela) return null
+                                  return (
+                                    <div key={parcela.id || `parcela-${index}`} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-gray-700">
+                                          Parcela {getParcelaNumero(parcela)}
+                                        </span>
+                                        <span className="text-sm font-bold text-teal-600">
+                                          R$ {getParcelaValor(parcela).toFixed(2).replace('.', ',')}
+                                        </span>
+                                      </div>
                                       
-                                      {parcela.recebida && (
-                                        <div className="ml-6">
-                                          <label className="block text-xs text-gray-500 mb-1">
-                                            Data de recebimento
-                                          </label>
+                                      <div className="space-y-2">
+                                        <label className="flex items-center space-x-2">
                                           <input
-                                            type="date"
-                                            value={parcela.data_recebimento || ''}
-                                            onChange={(e) => isEditingMode ? updateParcelaEdit(index, 'data_recebimento', e.target.value) : null}
+                                            type="checkbox"
+                                            checked={parcela.recebida}
+                                            onChange={(e) => isEditingMode ? updateParcelaEdit(index, 'recebida', e.target.checked) : null}
                                             disabled={!isEditingMode}
-                                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
+                                            className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                           />
-                                        </div>
-                                      )}
+                                          <span className="text-sm text-gray-600">Recebida</span>
+                                        </label>
+                                        
+                                        {parcela.recebida && (
+                                          <div className="ml-6">
+                                            <label className="block text-xs text-gray-500 mb-1">
+                                              Data de recebimento
+                                            </label>
+                                            <input
+                                              type="date"
+                                              value={parcela.data_recebimento || ''}
+                                              onChange={(e) => isEditingMode ? updateParcelaEdit(index, 'data_recebimento', e.target.value) : null}
+                                              disabled={!isEditingMode}
+                                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  )
+                                })}
                               </div>
                             )}
                           </div>
@@ -2732,6 +2926,55 @@ function ProcedimentosContent() {
                         Quando o valor for definido, você poderá atualizar o status do pagamento.
                       </p>
                     </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Visibilidade para Secretária */}
+              <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl p-6 shadow-sm border border-emerald-200">
+                <h3 className="text-xl font-bold text-emerald-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                    <Eye className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  Configurações de Visibilidade
+                </h3>
+                <div className="space-y-4">
+                  <div 
+                    className={`flex items-center gap-3 p-4 rounded-xl border transition-all ${
+                      isEditingMode ? 'cursor-pointer hover:bg-white/50' : ''
+                    } ${
+                      ((isEditingMode ? editFormData.show_to_secretary : selectedProcedure.show_to_secretary) ?? true)
+                        ? 'bg-emerald-50 border-emerald-200' 
+                        : 'bg-gray-50 border-gray-200 opacity-80'
+                    }`}
+                    onClick={() => {
+                      if (isEditingMode) {
+                        updateFormField('show_to_secretary', !((editFormData.show_to_secretary ?? selectedProcedure.show_to_secretary) ?? true) as any)
+                      }
+                    }}
+                  >
+                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+                      ((isEditingMode ? editFormData.show_to_secretary : selectedProcedure.show_to_secretary) ?? true)
+                        ? 'bg-emerald-600 border-emerald-600' 
+                        : 'bg-white border-gray-300'
+                    }`}>
+                      {((isEditingMode ? editFormData.show_to_secretary : selectedProcedure.show_to_secretary) ?? true) && (
+                        <Check className="w-4 h-4 text-white" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-emerald-900">Visível para Secretária</p>
+                      <p className="text-xs text-emerald-700">
+                        {((isEditingMode ? editFormData.show_to_secretary : selectedProcedure.show_to_secretary) ?? true)
+                          ? 'Este procedimento é visível no link seguro da secretária.'
+                          : 'Este procedimento está oculto no link seguro da secretária.'}
+                      </p>
+                    </div>
+                  </div>
+                  {!isEditingMode && (
+                    <p className="text-[10px] text-gray-400 italic">
+                      Para alterar a visibilidade, clique em editar no topo do formulário.
+                    </p>
                   )}
                 </div>
               </div>
@@ -2893,10 +3136,10 @@ function ProcedimentosContent() {
               )}
             </div>
 
-            <div className="flex justify-end p-6 bg-gray-50 border-t border-gray-200">
+            <div className="flex justify-end p-4 sm:p-6 bg-white border-t border-gray-200 sticky bottom-0 z-20 pb-[max(1rem,env(safe-area-inset-bottom))]">
               <Button 
                 onClick={closeDetailsModal} 
-                className="bg-teal-500 hover:bg-teal-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                className="w-full sm:w-auto bg-teal-500 hover:bg-teal-600 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95"
               >
                 Fechar
               </Button>
@@ -2907,93 +3150,50 @@ function ProcedimentosContent() {
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && procedureToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-[10000] overflow-y-auto">
-          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl my-4 max-h-[95vh] flex flex-col">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[10000] backdrop-blur-sm">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden animate-in zoom-in duration-200">
             {/* Header do Modal */}
-            <div className="bg-gradient-to-r from-red-50 to-red-100 border-b border-red-200 p-4 sm:p-6 rounded-t-xl flex-shrink-0">
-              <div className="flex items-center space-x-2 sm:space-x-3">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Trash2 className="w-5 h-5 sm:w-6 sm:h-6 text-red-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-lg sm:text-xl font-bold text-red-900 break-words">Confirmar Exclusão</h3>
-                  <p className="text-red-700 text-xs sm:text-sm mt-1 break-words">Tem certeza que deseja excluir este procedimento?</p>
-                </div>
+            <div className="bg-red-50 border-b border-red-100 p-5 sm:p-6 flex items-center space-x-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg sm:text-xl font-bold text-red-900 truncate">Confirmar Exclusão</h3>
               </div>
             </div>
 
             {/* Conteúdo do Modal */}
-            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4">
-                <div className="space-y-2 text-sm sm:text-base">
-                  <div>
-                    <span className="text-gray-500">Paciente:</span>{' '}
-                    <span className="font-semibold text-gray-900 break-words">
-                      {procedureToDelete.patient_name || 'Não informado'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Procedimento:</span>{' '}
-                    <span className="font-semibold text-gray-900 break-words">
-                      {procedureToDelete.procedure_type || 'Não informado'}
-                    </span>
-                  </div>
-                  {procedureToDelete.procedure_date && (
-                    <div>
-                      <span className="text-gray-500">Data:</span>{' '}
-                      <span className="font-semibold text-gray-900">
-                        {formatDate(procedureToDelete.procedure_date)}
-                        {procedureToDelete.procedure_time && ` às ${procedureToDelete.procedure_time}`}
-                      </span>
-                    </div>
-                  )}
-                  {procedureToDelete.procedure_value && (
-                    <div>
-                      <span className="text-gray-500">Valor:</span>{' '}
-                      <span className="font-semibold text-gray-900">
-                        {formatCurrency(procedureToDelete.procedure_value)}
-                        {procedureToDelete.payment_status && ` (${getStatusText(procedureToDelete.payment_status)})`}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-red-50 border-l-4 border-red-500 p-3 sm:p-4 rounded-r-lg">
-                <p className="text-sm sm:text-base text-red-700 break-words">
-                  Esta ação não pode ser desfeita. Todos os dados relacionados serão permanentemente excluídos.
+            <div className="p-5 sm:p-6 space-y-4">
+              <p className="text-gray-600 text-sm sm:text-base">
+                Tem certeza que deseja excluir o procedimento de <span className="font-bold text-gray-900">{procedureToDelete.patient_name}</span>?
+              </p>
+              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+                <p className="text-xs sm:text-sm text-red-700 leading-relaxed">
+                  Esta ação é permanente e removerá todos os registros e anexos vinculados.
                 </p>
               </div>
             </div>
 
             {/* Footer do Modal */}
-            <div className="bg-gray-50 border-t border-gray-200 p-4 sm:p-6 rounded-b-xl flex-shrink-0">
-              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-                <button
-                  onClick={cancelDelete}
-                  disabled={isDeleting}
-                  className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 text-sm sm:text-base text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={confirmDelete}
-                  disabled={isDeleting}
-                  className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 text-sm sm:text-base bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 font-medium shadow-sm"
-                >
-                  {isDeleting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Excluindo...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="w-4 h-4" />
-                      <span>Excluir</span>
-                    </>
-                  )}
-                </button>
-              </div>
+            <div className="p-5 sm:p-6 bg-gray-50 flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                onClick={cancelDelete}
+                disabled={isDeleting}
+                className="w-full sm:w-auto px-6 py-3 text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-bold order-2 sm:order-1"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                className="w-full sm:w-auto px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 font-bold shadow-lg shadow-red-100 order-1 sm:order-2"
+              >
+                {isDeleting ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : (
+                  <span>Excluir Permanentemente</span>
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -3037,25 +3237,24 @@ function ProcedimentosContent() {
 
       {/* Modal de Filtros Avançados */}
       {showAdvancedFilters && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-white rounded-xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center sm:p-4 z-[9999] backdrop-blur-sm">
+          <div className="bg-white rounded-t-2xl sm:rounded-xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90vh] shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300">
             {/* Header do Modal */}
-            <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-6 rounded-t-xl sticky top-0 z-10">
+            <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-5 sm:p-6 flex-shrink-0 sticky top-0 z-10">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                    <Filter className="w-6 h-6 text-white" />
+                    <Filter className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-white">Filtros Avançados</h2>
-                    <p className="text-teal-100 text-sm">Configure múltiplos filtros para refinar sua busca</p>
+                    <h2 className="text-lg sm:text-xl font-bold text-white">Filtros</h2>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowAdvancedFilters(false)}
-                  className="text-white hover:text-teal-200 transition-colors"
+                  className="w-10 h-10 flex items-center justify-center bg-white bg-opacity-10 hover:bg-opacity-20 rounded-full transition-colors"
                 >
-                  <X className="w-6 h-6" />
+                  <X className="w-5 h-5 text-white" />
                 </button>
               </div>
             </div>
@@ -3068,7 +3267,7 @@ function ProcedimentosContent() {
                   Status de Pagamento
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {['all', 'pending', 'paid'].map((status) => (
+                  {['all', 'pending', 'sent', 'paid'].map((status) => (
                     <button
                       key={status}
                       onClick={() => setStatusFilter(status)}
@@ -3078,11 +3277,13 @@ function ProcedimentosContent() {
                             ? 'bg-teal-600 text-white shadow-md'
                             : status === 'pending'
                             ? 'bg-amber-500 text-white shadow-md'
+                            : status === 'sent'
+                            ? 'bg-blue-600 text-white shadow-md'
                             : 'bg-green-500 text-white shadow-md'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      {status === 'all' ? 'Todos' : status === 'pending' ? 'Pendente' : 'Pago'}
+                      {status === 'all' ? 'Todos' : status === 'pending' ? 'Pendente' : status === 'sent' ? 'Enviado' : 'Pago'}
                     </button>
                   ))}
                 </div>
@@ -3175,7 +3376,7 @@ function ProcedimentosContent() {
                   <div className="flex flex-wrap gap-2">
                     {statusFilter !== 'all' && (
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
-                        Status: {statusFilter === 'pending' ? 'Pendente' : 'Pago'}
+                        Status: {statusFilter === 'pending' ? 'Pendente' : statusFilter === 'sent' ? 'Enviado' : 'Pago'}
                       </span>
                     )}
                     {dateFilter?.start && (

@@ -1,3 +1,4 @@
+import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -134,21 +135,31 @@ async function checkAuthStatus(accessToken: string): Promise<NextResponse> {
     // Secretárias sempre têm acesso
     subscriptionStatus = 'active'
     hasAccess = true
-  } else if (userResult.data) {
+  } else {
     const now = new Date()
-    
-    // Verificar período de teste primeiro
     let trialEndsAt: Date | null = null
-    if (userResult.data.trial_ends_at) {
-      trialEndsAt = new Date(userResult.data.trial_ends_at)
-    } else if (userResult.data.created_at) {
-      trialEndsAt = new Date(new Date(userResult.data.created_at).getTime() + 7 * 24 * 60 * 60 * 1000)
-    }
 
-    // Adicionar meses grátis se houver
-    const freeMonths = userResult.data.free_months || 0
-    if (trialEndsAt && freeMonths > 0) {
-      trialEndsAt = new Date(trialEndsAt.getTime() + (freeMonths * 30 * 24 * 60 * 60 * 1000))
+    if (userResult.data) {
+      // Verificar período de teste a partir dos dados do usuário
+      if (userResult.data.trial_ends_at) {
+        trialEndsAt = new Date(userResult.data.trial_ends_at)
+      } else if (userResult.data.created_at) {
+        trialEndsAt = new Date(new Date(userResult.data.created_at).getTime() + 7 * 24 * 60 * 60 * 1000)
+      }
+
+      // Adicionar meses grátis se houver
+      const freeMonths = userResult.data.free_months || 0
+      if (trialEndsAt && freeMonths > 0) {
+        trialEndsAt = new Date(trialEndsAt.getTime() + (freeMonths * 30 * 24 * 60 * 60 * 1000))
+      }
+    } else {
+      // Usuário não encontrado na tabela users (pode ser recém-cadastrado com insert pendente)
+      // Fallback: usar email_confirmed_at do Supabase Auth como base para o trial
+      if (user.email_confirmed_at) {
+        trialEndsAt = new Date(new Date(user.email_confirmed_at).getTime() + 7 * 24 * 60 * 60 * 1000)
+      } else if (user.created_at) {
+        trialEndsAt = new Date(new Date(user.created_at).getTime() + 7 * 24 * 60 * 60 * 1000)
+      }
     }
 
     if (trialEndsAt && now <= trialEndsAt) {
@@ -156,7 +167,7 @@ async function checkAuthStatus(accessToken: string): Promise<NextResponse> {
       hasAccess = true
     } else if (subscriptionResult.data) {
       const subscription = subscriptionResult.data
-      const periodEnd = subscription.current_period_end 
+      const periodEnd = subscription.current_period_end
         ? new Date(subscription.current_period_end)
         : null
 

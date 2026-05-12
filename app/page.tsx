@@ -1,8 +1,8 @@
-'use client'
+ 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { 
   TrendingUp, 
   Shield, 
@@ -13,50 +13,27 @@ import {
   DollarSign,
   FileText,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  MessageCircle,
+  Zap,
+  Smartphone
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
-import { useAuth } from '@/contexts/AuthContext'
 import { Navigation } from '@/components/layout/Navigation'
-import { FAQ } from '@/components/FAQ'
-import { ComparisonTable } from '@/components/ComparisonTable'
+const FAQ = dynamic(() => import('@/components/FAQ').then(m => m.FAQ), {
+  loading: () => null,
+})
+const ComparisonTable = dynamic(
+  () => import('@/components/ComparisonTable').then(m => m.ComparisonTable),
+  { loading: () => null }
+)
 
 export default function Home() {
-  const { user, isAuthenticated, isEmailConfirmed, isLoading, logout } = useAuth()
-  const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
-  const hasRedirected = useRef(false)
   const [avgProceduresPerMonth, setAvgProceduresPerMonth] = useState<string>('')
   const [avgValuePerProcedure, setAvgValuePerProcedure] = useState<string>('')
-
-  // Redirecionamento automático para dashboard quando autenticado (especialmente em mobile)
-  useEffect(() => {
-    // Evitar múltiplos redirecionamentos
-    if (hasRedirected.current) return
-
-    // Aguardar carregamento completo
-    if (isLoading) return
-
-    // Se estiver autenticado e email confirmado, redirecionar para dashboard
-    if (isAuthenticated && user && isEmailConfirmed) {
-      // Verificar se é mobile
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        typeof window !== 'undefined' ? navigator.userAgent : ''
-      )
-
-      // Em mobile, redirecionar imediatamente
-      // Em desktop, dar um pequeno delay para permitir visualização da página
-      const delay = isMobile ? 0 : 2000
-
-      hasRedirected.current = true
-      
-      setTimeout(() => {
-        router.replace('/dashboard')
-      }, delay)
-    }
-  }, [isAuthenticated, isEmailConfirmed, isLoading, user, router])
 
   // Controlar o vídeo de fundo
   useEffect(() => {
@@ -68,22 +45,6 @@ export default function Home() {
     }
   }, [])
 
-  // Mostrar loading enquanto verifica autenticação
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-white">
-        {/* Navigation sempre visível em mobile */}
-        <Navigation />
-        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] pt-16">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">Verificando autenticação...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   // Removido bloqueio de renderização - usuário pode ver a página inicial mesmo logado
   const features = [
     {
@@ -92,9 +53,9 @@ export default function Home() {
       description: 'Abra o app e veja: quantos procedimentos estão pendentes de pagamento, quanto você faturou no mês e quais convênios estão atrasando.'
     },
     {
-      icon: FileText,
-      title: 'Cadastro Rápido de Procedimentos',
-      description: 'Registre em 30 segundos: paciente, hospital, convênio, valor, data. Pronto. O sistema salva seus padrões e sugere valores automaticamente.'
+      icon: MessageCircle,
+      title: 'Cadastro de Procedimento via WhatsApp',
+      description: 'Chega de digitar. Envie uma foto da ficha anestésica no WhatsApp e nossa IA extrai todos os dados para você confirmar em segundos.'
     },
     {
       icon: DollarSign,
@@ -135,57 +96,13 @@ export default function Home() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'transparent' }}>
       {/* Header */}
-      <header className="backdrop-blur-lg border-b border-white/30 sticky top-0 z-50 bg-black/40">
+      <header className="backdrop-blur-xl border-b border-white/10 sticky top-0 z-[100] bg-black/60 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+          <div className="flex justify-between items-center h-16 sm:h-20">
             <div className="focus:outline-none">
               <Logo size="md" showText={false} />
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
-              {isAuthenticated && user ? (
-                // Usuário logado
-                <div className="flex items-center space-x-2 sm:space-x-4">
-                  <Link href="/como-funciona">
-                    <Button
-                      variant="ghost"
-                      className="text-white hover:text-emerald-300 hover:bg-white/10 border border-white/30 min-h-[44px] px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium"
-                    >
-                      Como funciona
-                    </Button>
-                  </Link>
-                  {isEmailConfirmed ? (
-                    // Email confirmado - mostrar botão para dashboard
-                    <Link href="/dashboard" className="flex items-center" data-testid="dashboard-button-link">
-                      <Button 
-                        size="sm" 
-                        className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-xl shadow-emerald-600/30 min-h-[44px] font-semibold w-full sm:w-auto"
-                        data-testid="dashboard-button"
-                        aria-label="Ir para Dashboard"
-                      >
-                        <span className="hidden sm:inline">Dashboard</span>
-                        <span className="sm:hidden">Dashboard</span>
-                      </Button>
-                    </Link>
-                  ) : (
-                    // Email não confirmado - mostrar botão para confirmação
-                    <Link href={`/confirm-email?email=${encodeURIComponent(user.email)}`}>
-                      <Button size="sm" className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3 bg-yellow-600 hover:bg-yellow-700 text-white border-0 shadow-xl shadow-yellow-600/30 min-h-[44px] font-semibold">
-                        <span className="hidden sm:inline">Confirmar Email</span>
-                        <span className="sm:hidden">Confirmar</span>
-                      </Button>
-                    </Link>
-                  )}
-                  <Button 
-                    variant="ghost" 
-                    className="text-white hover:text-emerald-300 hover:bg-white/20 border border-white/40 min-h-[44px] px-3 sm:px-4 font-medium"
-                    onClick={logout}
-                  >
-                    <span className="hidden sm:inline">Sair</span>
-                    <span className="sm:hidden">Sair</span>
-                  </Button>
-                </div>
-              ) : (
-                // Usuário não logado
                 <>
                   <Link href="/como-funciona">
                     <Button
@@ -208,14 +125,14 @@ export default function Home() {
                     </Button>
                   </Link>
                 </>
-              )}
+              
             </div>
           </div>
         </div>
       </header>
 
       {/* Hero Section - AnestEasy */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden py-24 pt-32 pb-20 -mt-16" style={{ backgroundColor: 'transparent' }}>
+      <section className="relative min-h-dvh flex items-center justify-center overflow-hidden py-24 pt-32 pb-20 -mt-16 sm:-mt-20" style={{ backgroundColor: 'transparent' }}>
         {/* Video Background - Começa atrás do header */}
         <video
           ref={videoRef}
@@ -223,7 +140,8 @@ export default function Home() {
           muted
           loop
           playsInline
-          preload="metadata"
+          preload="none"
+          poster="/images/hero-poster.jpg"
           className="absolute inset-0 w-full h-full object-cover"
           style={{ zIndex: 1, top: 0 }}
           onError={(e) => {
@@ -248,7 +166,7 @@ export default function Home() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center" style={{ zIndex: 20, backgroundColor: 'transparent' }}>
           <div className="max-w-5xl mx-auto p-6 sm:p-8 lg:p-12" style={{ backgroundColor: 'transparent' }}>
             {/* Main Heading */}
-            <h1 className="hero-subtitle text-5xl sm:text-6xl md:text-7xl lg:text-8xl xl:text-9xl 2xl:text-[10rem] font-bold tracking-tight mb-6 leading-tight text-emerald-500" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.8)' }}>
+            <h1 className="hero-subtitle text-5xl sm:text-6xl md:text-7xl lg:text-8xl xl:text-9xl 2xl:text-[10rem] font-bold tracking-tight mb-6 leading-tight text-teal-400 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
               <span className="block">
                 AnestEasy
               </span>
@@ -268,9 +186,9 @@ export default function Home() {
 
             {/* Bullet Points */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-3xl mx-auto mb-12">
-              <div className="flex items-center gap-3 bg-black/30 backdrop-blur-sm rounded-lg px-4 py-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                <span className="text-white text-sm sm:text-base font-medium">Registre procedimentos em 30 segundos</span>
+              <div className="flex items-center gap-3 bg-emerald-500/20 backdrop-blur-sm rounded-lg px-4 py-3 border border-emerald-500/30">
+                <MessageCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                <span className="text-white text-sm sm:text-base font-bold">NOVO: Cadastro de Procedimento via WhatsApp</span>
               </div>
               <div className="flex items-center gap-3 bg-black/30 backdrop-blur-sm rounded-lg px-4 py-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
@@ -286,16 +204,15 @@ export default function Home() {
               </div>
             </div>
             
-            {/* CTA Principal */}
-            <div className="cta-container flex justify-center mb-16" style={{ backgroundColor: 'transparent' }}>
-              <Link href="/register">
-                <Button size="lg" className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-12 py-5 text-xl font-bold shadow-2xl shadow-emerald-500/30 transition-all duration-300 hover:scale-105 rounded-xl flex flex-col items-center">
+            <div className="cta-container flex justify-center mb-16 px-4" style={{ backgroundColor: 'transparent' }}>
+              <Link href="/register" className="w-full sm:w-auto">
+                <Button size="lg" className="w-full sm:w-auto bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white px-8 sm:px-12 py-5 sm:py-6 text-lg sm:text-xl font-bold shadow-2xl shadow-teal-500/40 transition-all duration-300 hover:scale-[1.02] active:scale-95 rounded-2xl flex flex-col items-center">
                   <span className="flex items-center">
                     Comece gratuitamente
-                    <ArrowRight className="w-6 h-6 ml-3" />
+                    <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 ml-3" />
                   </span>
-                  <span className="text-sm font-normal mt-1 opacity-90">
-                    Free trial 7 dias
+                  <span className="text-xs sm:text-sm font-normal mt-1 opacity-90">
+                    Teste grátis por 7 dias
                   </span>
                 </Button>
               </Link>
@@ -331,6 +248,106 @@ export default function Home() {
                 <div className="text-slate-400 text-xs">Disponibilidade</div>
               </div>
             </div> */}
+          </div>
+        </div>
+      </section>
+      
+      {/* WhatsApp Marketing Section */}
+      <section className="py-24 bg-emerald-950 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-1/3 h-full bg-emerald-500/5 blur-3xl rounded-full translate-x-1/2" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            <div className="order-2 lg:order-1">
+              <div className="inline-flex items-center px-4 py-2 rounded-full bg-emerald-500/10 text-emerald-400 text-sm font-bold mb-6 border border-emerald-500/20">
+                <svg className="w-4 h-4 mr-2 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                </svg>
+                TECNOLOGIA DE PONTA
+              </div>
+              <h2 className="text-4xl md:text-5xl font-bold text-white mb-8 leading-tight">
+                Sua ficha vira dados <br />
+                <span className="text-emerald-400">em segundos via WhatsApp</span>
+              </h2>
+              <div className="space-y-6">
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center font-bold text-white">1</div>
+                  <div>
+                    <h4 className="text-xl font-bold text-white mb-1">Tire uma foto</h4>
+                    <p className="text-gray-400">Basta fotografar a ficha anestésica ou a etiqueta do paciente após a cirurgia.</p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center font-bold text-white">2</div>
+                  <div>
+                    <h4 className="text-xl font-bold text-white mb-1">Envie no nosso Bot</h4>
+                    <p className="text-gray-400">Envie a foto para o seu agente pessoal AnestEasy no WhatsApp.</p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center font-bold text-white">3</div>
+                  <div>
+                    <h4 className="text-xl font-bold text-white mb-1">Confirme e Pronto</h4>
+                    <p className="text-gray-400">Nossa IA lê os dados, você apenas confirma e o registro cai direto no seu dashboard.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="order-1 lg:order-2 flex justify-center">
+              <div className="relative w-full max-w-[320px]">
+                {/* Mockup de Celular Simples */}
+                <div className="bg-slate-900 rounded-[3rem] p-4 border-[8px] border-slate-800 shadow-2xl relative">
+                  <div className="bg-emerald-900/20 absolute inset-0 rounded-[2.5rem]" />
+                  <div className="relative bg-[#0b141a] rounded-[2.5rem] h-[550px] overflow-hidden flex flex-col">
+                    {/* Header do Wpp */}
+                    <div className="bg-[#1f2c34] p-4 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-emerald-500 flex-shrink-0 border border-emerald-400/30">
+                        <img 
+                          src="/images/bot-avatar.png" 
+                          alt="AnestEasy Bot" 
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.parentElement!.style.backgroundColor = '#10b981';
+                          }}
+                        />
+                      </div>
+                      <div className="text-white text-xs font-bold">AnestEasy Bot 🩺</div>
+                    </div>
+                    {/* Mensagens */}
+                    <div className="p-4 space-y-4 flex-grow overflow-y-auto">
+                      <div className="bg-emerald-900/40 text-white p-3 rounded-lg rounded-tl-none text-xs ml-auto max-w-[80%] border border-emerald-500/20">
+                        📸 [Foto da Ficha]
+                      </div>
+                      <div className="bg-[#1f2c34] text-white p-3 rounded-lg rounded-tr-none text-xs mr-auto max-w-[85%]">
+                        📋 *Ficha Analisada!* <br /><br />
+                        *Paciente:* João da Silva <br />
+                        *Proc:* Colecistectomia <br /><br />
+                        Confirma o registro?
+                      </div>
+                      <div className="bg-emerald-500 text-white p-2 px-4 rounded-full text-xs ml-auto w-fit font-bold">
+                        SIM ✅
+                      </div>
+                      <div className="bg-[#1f2c34] text-white p-3 rounded-lg rounded-tr-none text-xs mr-auto max-w-[85%]">
+                        ✅ *Sucesso!* Procedimento registrado no seu dashboard.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {/* Badge Flutuante */}
+                <div className="absolute -bottom-6 -right-6 bg-white p-4 rounded-2xl shadow-xl border border-emerald-100 flex items-center gap-3 animate-bounce">
+                  <div className="bg-emerald-500 p-2 rounded-lg">
+                    <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Economia de Tempo</div>
+                    <div className="text-sm font-black text-emerald-600">-90% esforço</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -658,9 +675,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      {/* Tabela Comparativa */}
-      <ComparisonTable />
 
       {/* FAQ Section */}
       <FAQ />

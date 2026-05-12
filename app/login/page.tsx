@@ -1,40 +1,53 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowLeft } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
-import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { getFullErrorMessage } from '@/lib/error-messages'
 
-export default function Login() {
+function LoginContent() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     email: '',
     password: ''
   })
-  const { isLoading, user, isAuthenticated } = useAuth()
   const { addToast } = useToast()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
-  // Redirecionar se já estiver logado - SIMPLES E DIRETO
+  // Feedback pós-confirmação de email
   useEffect(() => {
-    if (!isLoading && isAuthenticated && user) {
-      router.replace('/dashboard')
+    const confirmed = searchParams.get('confirmed')
+    const errorParam = searchParams.get('error')
+    if (confirmed === 'true') {
+      setSuccessMsg('Email confirmado com sucesso! Faça login para continuar.')
+    } else if (errorParam === 'creation_failed' || errorParam === 'confirmation_failed') {
+      setError('Houve um problema ao confirmar sua conta. Por favor, entre em contato com o suporte.')
     }
-  }, [isLoading, isAuthenticated, user, router])
+  }, [searchParams])
 
-  // Não renderizar se já estiver logado
-  if (isAuthenticated && user) {
-    return null
-  }
+  // Redirecionar se já estiver logado (sem depender do AuthContext para manter /login leve)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { supabase } = await import('@/lib/supabase')
+      const { data } = await supabase.auth.getSession()
+      const user = data.session?.user
+      if (!cancelled && user) router.replace('/dashboard')
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,150 +58,92 @@ export default function Login() {
       return
     }
 
-    if (formData.password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres')
-      return
-    }
-
-    // Prevenir múltiplos submits
-    if (isSubmitting) {
-      return
-    }
-
     setError('')
     setIsSubmitting(true)
 
     try {
-      // Importar diretamente o supabase para fazer login simples
+      // Login no CLIENTE para garantir que a sessão seja persistida imediatamente.
+      // Isso evita o caso em que o dashboard abre sem token/sessão e só carrega dados após F5.
       const { supabase } = await import('@/lib/supabase')
-      
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: formData.email.trim().toLowerCase(),
-        password: formData.password
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
       })
 
-      if (authError) {
-        if (authError.message.includes('Invalid login credentials')) {
+      if (error) {
+        const msg = error.message || 'Erro ao fazer login'
+        if (msg.includes('Invalid login credentials')) {
           setError('Email ou senha incorretos')
-        } else if (authError.message.includes('Email not confirmed')) {
+        } else if (msg.includes('Email not confirmed')) {
           setError('Email não confirmado. Verifique sua caixa de entrada')
         } else {
-          setError('Erro ao fazer login. Tente novamente')
+          setError(msg)
         }
         setIsSubmitting(false)
         return
       }
 
-      if (!data?.user) {
-        setError('Erro ao fazer login. Tente novamente')
-        setIsSubmitting(false)
-        return
-      }
 
-      // Obter token de acesso para usar no cache
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      // Chamar /api/auth/status para obter informações completas
-      let authStatus: any = null
-      try {
-        if (accessToken) {
-          const { fetchWithTimeout } = await import('@/lib/utils')
-          const statusResponse = await fetchWithTimeout('/api/auth/status', {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
-            },
-            timeout: 7000,
-            maxRetries: 2
-          })
-          
-          if (statusResponse.ok) {
-            authStatus = await statusResponse.json()
-            
-            // Armazenar cache local para renderização instantânea
-            if (authStatus.ok) {
-              localStorage.setItem('auth_cache', JSON.stringify({
-                role: authStatus.role,
-                subscription_status: authStatus.subscription_status,
-                email_confirmed: authStatus.email_confirmed,
-                has_access: authStatus.has_access,
-                timestamp: Date.now()
-              }))
-            }
-          }
-        }
-      } catch (error) {
-        // Se falhar, continuar sem cache (middleware vai verificar)
-        console.warn('Erro ao obter status de autenticação:', error)
+      // Limpar cache de auth para forçar nova verificação após login
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('auth_cache')
       }
-
-      // Atualizar last_login_at em background (não bloquear login)
-      if (authStatus?.role === 'anestesista') {
-        fetch('/api/admin/update-login-time', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: data.user.id })
-        }).catch(() => {
-          // Ignorar erros - não crítico
-        })
-      }
-
-      // Redirecionar imediatamente baseado no role do cache ou assumir dashboard padrão
-      const role = authStatus?.role || 'anestesista'
-      if (role === 'secretaria') {
-        window.location.href = '/secretaria/dashboard'
-      } else {
-        window.location.href = '/dashboard'
-      }
-      
+      router.replace('/dashboard')
     } catch (error: any) {
       const errorMsg = getFullErrorMessage(error)
-      setError(errorMsg.message)
+      setError(errorMsg.title)
       addToast({
-        title: errorMsg.message,
-        description: errorMsg.action,
-        variant: errorMsg.variant || 'error'
+        title: errorMsg.title,
+        description: errorMsg.description,
+        variant: errorMsg.variant
       })
       setIsSubmitting(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8 relative">
+    <div className="min-h-dvh bg-slate-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-x-hidden">
       {/* Botão Voltar */}
-      <div className="absolute top-6 left-6">
+      <div className="absolute top-4 sm:top-6 left-4 sm:left-6">
         <Link href="/">
-          <Button variant="ghost" size="sm" className="flex items-center space-x-2">
+          <Button variant="ghost" size="sm" className="flex items-center space-x-2 text-slate-600 hover:text-teal-600 transition-colors">
             <ArrowLeft className="w-4 h-4" />
-            <span>Voltar</span>
+            <span className="font-medium">Voltar</span>
           </Button>
         </Link>
       </div>
 
       <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <div className="flex justify-center mb-4">
-            <Logo size="lg" showText={false} />
+        <div className="text-center animate-in fade-in slide-in-from-top duration-500">
+          <div className="flex justify-center mb-6">
+            <Logo size="lg" showText={false} className="bg-teal-600 rounded-2xl p-2 shadow-xl shadow-teal-500/20" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mb-2 tracking-tight">
             Bem-vindo de volta
           </h1>
-          <p className="text-gray-600">
-            Faça login para continuar
+          <p className="text-slate-500 font-medium">
+            Gerencie seus procedimentos com AnestEasy
           </p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl font-bold text-center text-gray-900">
+        <Card className="shadow-2xl border-0 ring-1 ring-slate-200/60 animate-in zoom-in-95 duration-500">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-2xl font-bold text-center text-slate-900">
               Entrar
             </CardTitle>
-            <p className="text-center text-sm text-gray-500 mt-1">
-              Para anestesistas e secretárias
+            <p className="text-center text-sm text-slate-500 mt-1">
+              Portal do Anestesiologista
             </p>
           </CardHeader>
           
           <form onSubmit={handleSubmit} className="space-y-6 p-6 pt-0">
+            {successMsg && (
+              <div className="flex items-center space-x-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <span className="text-sm text-green-700">{successMsg}</span>
+              </div>
+            )}
             {error && (
               <div className="flex items-center space-x-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                 <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
@@ -253,10 +208,10 @@ export default function Login() {
 
             <Button 
               type="submit" 
-              className="w-full py-4 text-lg font-medium" 
+              className="w-full py-6 text-lg font-bold bg-teal-600 hover:bg-teal-700 shadow-xl shadow-teal-600/20 active:scale-[0.98] transition-all" 
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Entrando...' : 'Entrar'}
+              {isSubmitting ? 'Entrando...' : 'Entrar na conta'}
             </Button>
           </form>
 
@@ -280,5 +235,13 @@ export default function Login() {
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function Login() {
+  return (
+    <Suspense fallback={<div className="min-h-dvh bg-slate-50 flex items-center justify-center"><div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" /></div>}>
+      <LoginContent />
+    </Suspense>
   )
 }

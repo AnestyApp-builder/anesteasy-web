@@ -3,12 +3,11 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { CreditCard, Lock, Loader2, ArrowLeft } from 'lucide-react'
-import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { useAuth } from '@/contexts/AuthContext'
 import Link from 'next/link'
+import { Layout } from '@/components/layout/Layout'
 
 const PLAN_PRICES = {
   monthly: 79.00,
@@ -46,7 +45,8 @@ function CheckoutPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const plan = searchParams.get('plan') as 'monthly' | 'quarterly' | 'annual' | null
-  const { user, isAuthenticated } = useAuth()
+  const [user, setUser] = useState<{ name?: string; email?: string } | null>(null)
+  const isAuthenticated = !!user
 
   const [cardData, setCardData] = useState<CardData>({
     number: '',
@@ -68,6 +68,19 @@ function CheckoutPageContent() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { supabase } = await import('@/lib/supabase')
+      const { data } = await supabase.auth.getSession()
+      const u = data.session?.user
+      if (!cancelled) setUser(u ? { email: u.email || undefined, name: u.user_metadata?.name } : null)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!plan) {
@@ -234,20 +247,18 @@ function CheckoutPageContent() {
 
   if (!plan) {
     return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">Plano não selecionado</h1>
-            <p className="text-gray-600 mb-4">Por favor, selecione um plano para continuar.</p>
-            <Link href="/planos">
-              <Button>
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Voltar para Planos
-              </Button>
-            </Link>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Plano não selecionado</h1>
+          <p className="text-gray-600 mb-4">Por favor, selecione um plano para continuar.</p>
+          <Link href="/planos">
+            <Button>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Voltar para Planos
+            </Button>
+          </Link>
         </div>
-      </Layout>
+      </div>
     )
   }
 
@@ -255,9 +266,8 @@ function CheckoutPageContent() {
   const currentPlanName = PLAN_NAMES[plan]
 
   return (
-    <Layout>
-        <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-12 px-4">
-          <div className="max-w-3xl mx-auto">
+    <div className="bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-6 sm:py-8 lg:py-10 px-0 rounded-2xl">
+      <div className="max-w-3xl mx-auto">
             <div className="text-center mb-8">
               <Link href="/planos" className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-6 transition-colors">
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -543,25 +553,24 @@ function CheckoutPageContent() {
                 <span>Pagamento seguro processado pela Pagar.me</span>
               </div>
             </div>
-          </div>
-        </div>
-      </Layout>
+      </div>
+    </div>
   )
 }
 
 export default function CheckoutPage() {
   return (
     <Suspense fallback={
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
-            <p className="text-gray-600">Carregando...</p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
+          <p className="text-gray-600">Carregando...</p>
         </div>
-      </Layout>
+      </div>
     }>
-      <CheckoutPageContent />
+      <Layout>
+        <CheckoutPageContent />
+      </Layout>
     </Suspense>
   )
 }

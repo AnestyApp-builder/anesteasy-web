@@ -7,8 +7,6 @@ export interface SystemStats {
   total_users: number
   active_users: number
   paying_users: number
-  total_secretarias: number
-  active_secretarias: number
   total_medicos: number
   active_medicos: number
   total_procedures: number

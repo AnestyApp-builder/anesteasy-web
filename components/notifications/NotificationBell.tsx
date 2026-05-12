@@ -5,12 +5,12 @@ import { Bell, X, Check } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/badge'
-import { useSecretaria } from '@/contexts/SecretariaContext'
+import { useNotifications } from '@/contexts/NotificationsContext'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 export function NotificationBell() {
-  const { notifications, unreadNotifications, markNotificationAsRead, markAllNotificationsAsRead } = useSecretaria()
+  const { notifications, unreadNotifications, markNotificationAsRead, markAllNotificationsAsRead } = useNotifications()
   const [isOpen, setIsOpen] = useState(false)
 
   const handleMarkAsRead = async (notificationId: string) => {
@@ -57,7 +57,7 @@ export function NotificationBell() {
       >
         <Bell className="w-4 h-4" />
         {unreadNotifications > 0 && (
-          <Badge className="absolute -top-2 -right-2 bg-red-500 text-white text-xs min-w-[20px] h-5 flex items-center justify-center">
+          <Badge className="absolute -top-2 -right-2 bg-red-500 text-white text-xs min-w-[20px] h-5 flex items-center justify-center animate-pulse">
             {unreadNotifications}
           </Badge>
         )}
@@ -78,10 +78,10 @@ export function NotificationBell() {
                 <h3 className="font-semibold text-gray-900">Notificações</h3>
                 {unreadNotifications > 0 && (
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     onClick={handleMarkAllAsRead}
-                    className="text-xs whitespace-nowrap"
+                    className="text-xs whitespace-nowrap text-teal-600 hover:text-teal-700 hover:bg-teal-50 font-bold"
                   >
                     <Check className="w-3 h-3 mr-1" />
                     <span className="hidden sm:inline">Marcar todas como lidas</span>

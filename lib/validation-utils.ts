@@ -1,20 +1,17 @@
-/**
- * Utilitários de validação melhorados para o sistema AnestEasy
- */
+import { BUSINESS_RULES, UI_CONSTANTS, TECHNICAL_LIMITS } from './constants';
 
-// Limites de upload - Tamanhos removidos, mas mantém limite de quantidade
+// Limites de upload migrados para constants.ts
 export const LIMITES_UPLOAD = {
-  tamanhoMaximoPorArquivo: 100 * 1024 * 1024,  // 100MB por arquivo (não validado)
-  tamanhoMaximoTotal: 500 * 1024 * 1024,        // 500MB total (não validado)
-  quantidadeMaxima: 10 // Máximo 10 arquivos
+  tamanhoMaximoPorArquivo: UI_CONSTANTS.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
+  quantidadeMaxima: UI_CONSTANTS.MAX_FILES_COUNT
 }
 
-// Timeouts recomendados
+// Timeouts migrados para constants.ts
 export const TIMEOUTS = {
-  sessao: 15000,        // 15s (era 5s)
-  insercao: 45000,      // 45s (era 20s)
-  uploadArquivo: 30000, // 30s por arquivo
-  total: 180000         // 3min máximo total
+  sessao: TECHNICAL_LIMITS.TIMEOUT_SESSION_MS,
+  insercao: TECHNICAL_LIMITS.TIMEOUT_INSERT_MS,
+  uploadArquivo: TECHNICAL_LIMITS.TIMEOUT_UPLOAD_MS,
+  total: 180000
 }
 
 /**
@@ -117,20 +114,20 @@ export function validarDataProcedimento(dataISO: string | undefined | null): { v
   hoje.setHours(0, 0, 0, 0)
   
   const dataLimite = new Date()
-  dataLimite.setDate(dataLimite.getDate() + 90) // 90 dias no futuro
+  dataLimite.setDate(dataLimite.getDate() + BUSINESS_RULES.MAX_FUTURE_DAYS)
   dataLimite.setHours(23, 59, 59, 999)
   
-  // Verificar se não é muito antiga (mais de 10 anos atrás)
+  // Verificar se não é muito antiga
   const dataMinima = new Date()
-  dataMinima.setFullYear(dataMinima.getFullYear() - 10)
+  dataMinima.setFullYear(dataMinima.getFullYear() - BUSINESS_RULES.MAX_PAST_YEARS)
   
   if (data < dataMinima) {
-    return { valida: false, erro: 'Data muito antiga. Máximo de 10 anos atrás' }
+    return { valida: false, erro: `Data muito antiga. Máximo de ${BUSINESS_RULES.MAX_PAST_YEARS} anos atrás` }
   }
   
-  // Verificar se não é muito futura (mais de 90 dias)
+  // Verificar se não é muito futura
   if (data > dataLimite) {
-    return { valida: false, erro: 'Data não pode ser superior a 90 dias no futuro' }
+    return { valida: false, erro: `Data não pode ser superior a ${BUSINESS_RULES.MAX_FUTURE_DAYS} dias no futuro` }
   }
   
   return { valida: true }

@@ -7,6 +7,9 @@ export interface FeedbackFormData {
   cefaleia: 'Sim' | 'Não' | ''
   dorLombar: 'Sim' | 'Não' | ''
   anemiaTransfusao: 'Sim' | 'Não' | ''
+  // Novas métricas de satisfação
+  satisfacao?: number
+  comentarios?: string
   // Metadados
   respondidoEm?: string
   respondidoPor?: string
@@ -183,6 +186,8 @@ export const feedbackService = {
           cefaleia,
           dor_lombar,
           anemia_transfusao,
+          satisfacao,
+          comentarios,
           created_at
         `)
         .eq('feedback_link_id', linkData.id)
@@ -208,6 +213,8 @@ export const feedbackService = {
         cefaleia: data.cefaleia ? 'Sim' : 'Não',
         dorLombar: data.dor_lombar ? 'Sim' : 'Não',
         anemiaTransfusao: data.anemia_transfusao ? 'Sim' : 'Não',
+        satisfacao: (data as any).satisfacao,
+        comentarios: (data as any).comentarios,
         respondidoEm: data.created_at || undefined
       }
     } catch (error) {
@@ -276,7 +283,9 @@ export const feedbackService = {
           nausea_vomito: feedback.nauseaVomito === 'Sim',
           cefaleia: feedback.cefaleia === 'Sim',
           dor_lombar: feedback.dorLombar === 'Sim',
-          anemia_transfusao: feedback.anemiaTransfusao === 'Sim'
+          anemia_transfusao: feedback.anemiaTransfusao === 'Sim',
+          satisfacao: feedback.satisfacao,
+          comentarios: feedback.comentarios
         })
         .select()
         .single()

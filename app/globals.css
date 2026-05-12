@@ -388,19 +388,6 @@ a:has(.logo-icon):visited {
   100% { transform: rotate(360deg); }
 }
 
-/* Otimização de fontes para mobile - usar font-display: swap */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
-/* Preload de fontes críticas */
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiA.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
 :root {
   /* Cores primárias - Teal/Verde médico */
   --primary: 14 184 166;
@@ -474,7 +461,7 @@ a:has(.logo-icon):visited {
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: system-ui, sans-serif;
   font-feature-settings: 'cv11', 'ss01';
   font-variation-settings: 'opsz' 32;
   line-height: 1.6;
@@ -814,9 +801,4 @@ textarea:disabled {
     display: inline-block;
     vertical-align: top;
   }
-}
-
-/* Rotação da seta no VoiceRecorder quando details está aberto */
-details.voice-details[open] summary .voice-chevron {
-  transform: rotate(180deg);
 }

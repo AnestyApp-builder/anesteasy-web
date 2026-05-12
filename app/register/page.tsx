@@ -3,272 +3,125 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Stethoscope, Mail, Lock, User, Eye, EyeOff, CheckCircle, AlertCircle, Users, UserCheck, CreditCard } from 'lucide-react'
+import { Mail, Lock, User, Eye, EyeOff, CheckCircle, AlertCircle, UserCheck, CreditCard } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
-import { useAuth } from '@/contexts/AuthContext'
 import { authService } from '@/lib/auth'
 import { validateCPF, formatCPF } from '@/lib/utils'
 
 export default function Register() {
-  const [activeTab, setActiveTab] = useState<'anestesista' | 'secretaria'>('anestesista')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
   
-  // Formulário para anestesista
-  const [anestesistaForm, setAnestesistaForm] = useState({
+  const [form, setForm] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
-    specialty: '',
+    specialty: 'Anestesiologia',
     crm: '',
     gender: '',
     phone: '',
     cpf: ''
   })
   
-  // Formulário para secretaria
-  const [secretariaForm, setSecretariaForm] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    phone: '',
-    cpf: ''
-  })
-
-  const { register, user, isAuthenticated } = useAuth()
   const router = useRouter()
 
   // Redirecionar se já estiver logado
   useEffect(() => {
-    if (isAuthenticated && user) {
-      router.push('/dashboard')
+    let cancelled = false
+    ;(async () => {
+      const { supabase } = await import('@/lib/supabase')
+      const { data } = await supabase.auth.getSession()
+      if (!cancelled && data.session?.user) router.replace('/dashboard')
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [isAuthenticated, user, router])
-
-  // Mostrar loading enquanto verifica autenticação
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Verificando autenticação...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Não renderizar se já estiver logado (será redirecionado)
-  if (isAuthenticated && user) {
-    return null
-  }
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Prevenir múltiplos cliques
-    if (isRegistering) {
-      return
-    }
+    if (isRegistering) return
     
     setError('')
     setSuccess('')
     setIsRegistering(true)
     
-    if (activeTab === 'anestesista') {
-      // Validação para anestesista
-      if (!anestesistaForm.name || !anestesistaForm.email || !anestesistaForm.password || !anestesistaForm.specialty || !anestesistaForm.crm || !anestesistaForm.gender || !anestesistaForm.phone || !anestesistaForm.cpf) {
-        setError('Por favor, preencha todos os campos obrigatórios')
-        setIsRegistering(false)
-        return
-      }
+    // Validação
+    if (!form.name || !form.email || !form.password || !form.specialty || !form.crm || !form.gender || !form.phone || !form.cpf) {
+      setError('Por favor, preencha todos os campos obrigatórios')
+      setIsRegistering(false)
+      return
+    }
 
-      // Validar CPF
-      if (!validateCPF(anestesistaForm.cpf)) {
-        setError('CPF inválido. Por favor, verifique o CPF informado.')
-        setIsRegistering(false)
-        return
-      }
+    // Validar CPF
+    if (!validateCPF(form.cpf)) {
+      setError('CPF inválido. Por favor, verifique o CPF informado.')
+      setIsRegistering(false)
+      return
+    }
 
-      if (anestesistaForm.password.length < 6) {
-        setError('A senha deve ter pelo menos 6 caracteres')
-        setIsRegistering(false)
-        return
-      }
+    if (form.password.length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres')
+      setIsRegistering(false)
+      return
+    }
 
-      if (anestesistaForm.password !== anestesistaForm.confirmPassword) {
-        setError('As senhas não coincidem')
-        setIsRegistering(false)
-        return
-      }
+    if (form.password !== form.confirmPassword) {
+      setError('As senhas não coincidem')
+      setIsRegistering(false)
+      return
+    }
 
-      // Salvar email antes de limpar formulário
-      const userEmail = anestesistaForm.email.trim().toLowerCase()
-      
-      const result = await register(userEmail, anestesistaForm.password, {
-        name: anestesistaForm.name,
-        specialty: anestesistaForm.specialty,
-        crm: anestesistaForm.crm,
-        gender: anestesistaForm.gender,
-        phone: anestesistaForm.phone,
-        cpf: formatCPF(anestesistaForm.cpf)
-      })
+    const userEmail = form.email.trim().toLowerCase()
+    
+    const result = await authService.register(userEmail, form.password, {
+      name: form.name,
+      specialty: form.specialty,
+      crm: form.crm,
+      gender: form.gender,
+      phone: form.phone,
+      cpf: formatCPF(form.cpf)
+    })
 
-      if (!result.success) {
-        setError(result.message)
-        
-        // Se for rate limit, mostrar instruções adicionais
-        if (result.message.includes('Muitas tentativas')) {
-          setTimeout(() => {
-            setError('Muitas tentativas. Aguarde alguns minutos e tente novamente. Dica: O rate limit do Supabase é temporário e geralmente passa em 5-10 minutos.')
-          }, 2000)
-        }
-        setIsRegistering(false)
-      } else {
-        // Limpar formulário
-        setAnestesistaForm({
-          name: '',
-          email: '',
-          password: '',
-          confirmPassword: '',
-          specialty: '',
-          crm: '',
-          gender: '',
-          phone: '',
-          cpf: ''
-        })
-        
-        // Redirecionar imediatamente para confirmação de email
-        console.log('✅ [REGISTER] Registro bem-sucedido, redirecionando para confirmação de email...')
-        router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
-        
-        // Não definir setIsRegistering(false) aqui, pois será redirecionado
+    if (!result.success) {
+      setError(result.message)
+      if (result.message.includes('Muitas tentativas')) {
+        setTimeout(() => {
+          setError('Muitas tentativas. Aguarde alguns minutos e tente novamente.')
+        }, 2000)
       }
+      setIsRegistering(false)
     } else {
-      // Validação para secretaria
-      if (!secretariaForm.name || !secretariaForm.email || !secretariaForm.password || !secretariaForm.cpf) {
-        setError('Por favor, preencha todos os campos obrigatórios')
-        setIsRegistering(false)
-        return
-      }
-
-      // Validar CPF
-      if (!validateCPF(secretariaForm.cpf)) {
-        setError('CPF inválido. Por favor, verifique o CPF informado.')
-        setIsRegistering(false)
-        return
-      }
-
-      if (secretariaForm.password.length < 6) {
-        setError('A senha deve ter pelo menos 6 caracteres')
-        setIsRegistering(false)
-        return
-      }
-
-      if (secretariaForm.password !== secretariaForm.confirmPassword) {
-        setError('As senhas não coincidem')
-        setIsRegistering(false)
-        return
-      }
-
-      try {
-        const result = await authService.createSecretariaAccount(
-          secretariaForm.email,
-          secretariaForm.password,
-          secretariaForm.name,
-          secretariaForm.phone || undefined,
-          formatCPF(secretariaForm.cpf)
-        )
-
-        if (result.success) {
-          // Salvar email antes de limpar formulário
-          const userEmail = secretariaForm.email.trim().toLowerCase()
-          
-          // Limpar formulário
-          setSecretariaForm({
-            name: '',
-            email: '',
-            password: '',
-            confirmPassword: '',
-            phone: '',
-            cpf: ''
-          })
-          
-          // Redirecionar imediatamente para página de confirmação de email
-          console.log('✅ [REGISTER] Conta de secretaria criada com sucesso, redirecionando para confirmação de email...')
-          router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
-          
-          // Não definir setIsRegistering(false) aqui, pois será redirecionado
-        } else {
-          setError('Erro ao criar conta da secretaria. Tente novamente.')
-          setIsRegistering(false)
-        }
-      } catch (error) {
-        console.error('Erro ao criar conta de secretaria:', error)
-        setError('Erro interno. Tente novamente.')
-        setIsRegistering(false)
-      }
+      router.push('/confirm-email?email=' + encodeURIComponent(userEmail))
     }
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-dvh bg-slate-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-x-hidden">
       <div className="max-w-md w-full space-y-8">
-        {/* Logo */}
-        <div className="text-center">
-          <Link href="/" className="inline-block">
-            <Logo size="lg" showText={false} />
+        <div className="text-center animate-in fade-in slide-in-from-top duration-500">
+          <Link href="/" className="inline-block group">
+            <Logo size="lg" showText={false} className="bg-teal-600 rounded-2xl p-2 shadow-xl shadow-teal-500/20 group-hover:scale-105 transition-transform" />
           </Link>
         </div>
 
-        {/* Register Form */}
-        <Card className="animate-fade-in">
-          <CardHeader>
-            <CardTitle className="text-2xl text-center text-gray-900">
+        <Card className="shadow-2xl border-0 ring-1 ring-slate-200/60 animate-in zoom-in-95 duration-500">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-2xl font-bold text-center text-slate-900">
               Criar sua conta
             </CardTitle>
-            <p className="text-center text-gray-600 mt-2">
-              Comece sua jornada profissional conosco
+            <p className="text-center text-sm text-slate-500 mt-1">
+              Comece sua jornada com AnestEasy
             </p>
           </CardHeader>
-          
-          {/* Tabs */}
-          <div className="px-6 pt-0">
-            <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-              <button
-                type="button"
-                onClick={() => setActiveTab('anestesista')}
-                className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'anestesista'
-                    ? 'bg-white text-teal-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <UserCheck className="w-4 h-4 mr-2" />
-                Anestesista
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('secretaria')}
-                className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'secretaria'
-                    ? 'bg-white text-teal-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <Users className="w-4 h-4 mr-2" />
-                Secretaria
-              </button>
-            </div>
-          </div>
           
           <form onSubmit={handleSubmit} className="space-y-6 p-6 pt-0">
             {error && (
@@ -285,20 +138,13 @@ export default function Register() {
               </div>
             )}
 
-            {/* Campos comuns */}
             <Input
               label="Nome completo"
               type="text"
-              placeholder={activeTab === 'anestesista' ? 'Ex: Dr. João Silva' : 'Ex: Maria Silva'}
+              placeholder="Ex: Dr. João Silva"
               icon={<User className="w-5 h-5" />}
-              value={activeTab === 'anestesista' ? anestesistaForm.name : secretariaForm.name}
-              onChange={(e) => {
-                if (activeTab === 'anestesista') {
-                  setAnestesistaForm({ ...anestesistaForm, name: e.target.value })
-                } else {
-                  setSecretariaForm({ ...secretariaForm, name: e.target.value })
-                }
-              }}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
             />
 
@@ -307,228 +153,136 @@ export default function Register() {
               type="email"
               placeholder="Ex: seu.email@exemplo.com"
               icon={<Mail className="w-5 h-5" />}
-              value={activeTab === 'anestesista' ? anestesistaForm.email : secretariaForm.email}
-              onChange={(e) => {
-                if (activeTab === 'anestesista') {
-                  setAnestesistaForm({ ...anestesistaForm, email: e.target.value })
-                } else {
-                  setSecretariaForm({ ...secretariaForm, email: e.target.value })
-                }
-              }}
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
               required
             />
 
             <Input
               label="CPF"
               type="text"
-              placeholder="Ex: 000.000.000-00 (somente números e pontos)"
+              placeholder="Ex: 000.000.000-00"
               icon={<CreditCard className="w-5 h-5" />}
-              value={(() => {
-                const cpfValue = activeTab === 'anestesista' ? anestesistaForm.cpf : secretariaForm.cpf
-                if (cpfValue && cpfValue.length === 11) {
-                  return formatCPF(cpfValue)
-                }
-                return cpfValue || ''
-              })()}
+              value={form.cpf.length === 11 ? formatCPF(form.cpf) : form.cpf}
               onChange={(e) => {
                 const value = e.target.value.replace(/\D/g, '')
-                const formatted = value.length <= 11 ? value : value.slice(0, 11)
-                if (activeTab === 'anestesista') {
-                  setAnestesistaForm({ ...anestesistaForm, cpf: formatted })
-                } else {
-                  setSecretariaForm({ ...secretariaForm, cpf: formatted })
-                }
+                setForm({ ...form, cpf: value.slice(0, 11) })
               }}
               maxLength={14}
               required
             />
 
-            {/* Campos específicos para anestesista */}
-            {activeTab === 'anestesista' && (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <Input
-                    label="Especialidade"
-                    type="text"
-                    placeholder="Anestesiologia"
-                    value={anestesistaForm.specialty}
-                    onChange={(e) => setAnestesistaForm({ ...anestesistaForm, specialty: e.target.value })}
-                    required
-                  />
-                  <Input
-                    label="CRM"
-                    type="text"
-                    placeholder="Ex: 123456 (CRM completo)"
-                    value={anestesistaForm.crm}
-                    onChange={(e) => setAnestesistaForm({ ...anestesistaForm, crm: e.target.value })}
-                    required
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Sexo *
-                    </label>
-                    <select
-                      value={anestesistaForm.gender}
-                      onChange={(e) => setAnestesistaForm({ ...anestesistaForm, gender: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white text-gray-900"
-                      required
-                      style={{
-                        color: anestesistaForm.gender ? '#111827' : '#9CA3AF'
-                      }}
-                    >
-                      <option value="" disabled hidden>Selecione o sexo</option>
-                      <option value="M">Masculino</option>
-                      <option value="F">Feminino</option>
-                      <option value="Other">Outro</option>
-                    </select>
-                  </div>
-                  <Input
-                    label="Telefone"
-                    type="tel"
-                    placeholder="Ex: (11) 99999-9999"
-                    value={anestesistaForm.phone}
-                    onChange={(e) => setAnestesistaForm({ ...anestesistaForm, phone: e.target.value })}
-                    required
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Campos específicos para secretaria */}
-            {activeTab === 'secretaria' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Especialidade"
+                type="text"
+                placeholder="Anestesiologia"
+                value={form.specialty}
+                onChange={(e) => setForm({ ...form, specialty: e.target.value })}
+                required
+              />
+              <Input
+                label="CRM"
+                type="text"
+                placeholder="Ex: 123456"
+                value={form.crm}
+                onChange={(e) => setForm({ ...form, crm: e.target.value })}
+                required
+              />
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Sexo *
+                </label>
+                <select
+                  value={form.gender}
+                  onChange={(e) => setForm({ ...form, gender: e.target.value })}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all duration-200 bg-white text-slate-900"
+                  required
+                >
+                  <option value="" disabled hidden>Selecione</option>
+                  <option value="M">Masculino</option>
+                  <option value="F">Feminino</option>
+                  <option value="Other">Outro</option>
+                </select>
+              </div>
               <Input
                 label="Telefone"
                 type="tel"
-                placeholder="(11) 99999-9999"
-                value={secretariaForm.phone}
-                onChange={(e) => setSecretariaForm({ ...secretariaForm, phone: e.target.value })}
+                placeholder="Ex: (11) 99999-9999"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 required
               />
-            )}
+            </div>
             
-            <div className="relative">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Senha <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="Mínimo 6 caracteres"
-                    icon={<Lock className="w-5 h-5" />}
-                    value={activeTab === 'anestesista' ? anestesistaForm.password : secretariaForm.password}
-                    onChange={(e) => {
-                      if (activeTab === 'anestesista') {
-                        setAnestesistaForm({ ...anestesistaForm, password: e.target.value })
-                      } else {
-                        setSecretariaForm({ ...secretariaForm, password: e.target.value })
-                      }
-                    }}
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 flex items-center justify-center w-5 h-5 z-10"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="relative">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Confirmar senha <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    placeholder="Digite a senha novamente"
-                    icon={<Lock className="w-5 h-5" />}
-                    value={activeTab === 'anestesista' ? anestesistaForm.confirmPassword : secretariaForm.confirmPassword}
-                    onChange={(e) => {
-                      if (activeTab === 'anestesista') {
-                        setAnestesistaForm({ ...anestesistaForm, confirmPassword: e.target.value })
-                      } else {
-                        setSecretariaForm({ ...secretariaForm, confirmPassword: e.target.value })
-                      }
-                    }}
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 flex items-center justify-center w-5 h-5 z-10"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    aria-label={showConfirmPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                  >
-                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-start">
-              <div className="flex items-center h-5">
-                <input
-                  id="terms"
-                  name="terms"
-                  type="checkbox"
-                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  defaultChecked
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Senha *</label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Mínimo 6 caracteres"
+                  icon={<Lock className="w-5 h-5" />}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  required
                 />
-              </div>
-              <div className="ml-3 text-sm">
-                <label htmlFor="terms" className="text-gray-700">
-                  Eu concordo com os{' '}
-                  <Link href="/termos" className="text-primary-600 hover:text-primary-500">
-                    Termos de Uso
-                  </Link>{' '}
-                  e{' '}
-                  <Link href="/politica-privacidade" className="text-primary-600 hover:text-primary-500">
-                    Política de Privacidade
-                  </Link>
-                </label>
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={isRegistering}>
-              {isRegistering ? 'Criando conta...' : `Criar conta de ${activeTab === 'anestesista' ? 'Anestesista' : 'Secretaria'}`}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Confirmar senha *</label>
+              <div className="relative">
+                <Input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="Digite a senha novamente"
+                  icon={<Lock className="w-5 h-5" />}
+                  value={form.confirmPassword}
+                  onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                  required
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+
+            <Button 
+              type="submit" 
+              className="w-full py-6 text-lg font-bold bg-teal-600 hover:bg-teal-700 shadow-xl shadow-teal-600/20 active:scale-[0.98] transition-all" 
+              disabled={isRegistering}
+            >
+              {isRegistering ? 'Criando conta...' : 'Criar conta gratuita'}
             </Button>
-            
-            <p className="text-xs text-gray-500 text-center mt-4">
-              Campos marcados com <span className="text-red-500">*</span> são obrigatórios
-            </p>
           </form>
 
           <div className="px-6 pb-6">
-            <div className="relative">
+            <div className="relative flex justify-center text-sm mb-6">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-200" />
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Ou</span>
-              </div>
+              <span className="relative px-2 bg-white text-gray-500">Ou</span>
             </div>
 
-            <div className="mt-6 text-center space-y-2">
-              <p className="text-sm text-gray-600">
-                Já tem uma conta?{' '}
-                <Link href="/login" className="font-medium text-primary-600 hover:text-primary-500">
-                  Faça login
-                </Link>
-              </p>
-              {activeTab === 'secretaria' && (
-                <p className="text-xs text-gray-500">
-                  Secretarias fazem login na mesma tela que anestesistas
-                </p>
-              )}
-            </div>
+            <p className="text-sm text-gray-600 text-center">
+              Já tem uma conta?{' '}
+              <Link href="/login" className="font-medium text-primary-600 hover:text-primary-500">
+                Faça login
+              </Link>
+            </p>
           </div>
         </Card>
       </div>

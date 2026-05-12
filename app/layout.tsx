@@ -1,10 +1,17 @@
 import type { Metadata, Viewport } from 'next'
+import { Inter } from 'next/font/google'
 import './globals.css'
-import { AuthProvider } from '@/contexts/AuthContext'
-import { SecretariaProvider } from '@/contexts/SecretariaContext'
 import { ToastProvider } from '@/contexts/ToastContext'
-import { VersionInfo } from '@/components/VersionInfo'
+import { AuthProvider } from '@/contexts/AuthContext'
+import { NotificationsProvider } from '@/contexts/NotificationsContext'
+import { DeferredVersionInfo } from '@/components/DeferredVersionInfo'
 import { Toaster } from '@/components/ui/Toaster'
+import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister'
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'AnestEasy - Gestão Financeira para Anestesistas',
@@ -16,7 +23,7 @@ export const metadata: Metadata = {
     icon: [
       { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
       { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
-      { url: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+      { url: '/logo-anesteasy.png', sizes: 'any', type: 'image/png' },
     ],
     shortcut: '/icon-192.png',
     apple: [
@@ -64,6 +71,8 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className="h-full">
       <head>
+        <meta charSet="utf-8" />
+        <link rel="canonical" href="https://anesteasy.com" />
         {/* Cache otimizado - permite cache para recursos estáticos, mas força revalidação para HTML */}
         <meta httpEquiv="Cache-Control" content="public, max-age=3600, must-revalidate" />
         
@@ -88,49 +97,20 @@ export default function RootLayout({
         <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/apple-splash-750-1334.png" />
         <link rel="apple-touch-startup-image" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/apple-splash-2048-2732.png" />
         
-        {/* Service Worker Registration */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').then(
-                    function(registration) {
-                      // Verificar por atualizações a cada 5 minutos (reduzido de 30s para melhor performance)
-                      setInterval(() => {
-                        registration.update();
-                      }, 300000);
-                      
-                      // Detectar quando há uma nova versão esperando
-                      registration.addEventListener('updatefound', () => {
-                        const newWorker = registration.installing;
-                        newWorker.addEventListener('statechange', () => {
-                          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            // Nova versão disponível!
-                            window.location.reload();
-                          }
-                        });
-                      });
-                    },
-                    function(err) {
-                      // Falha ao registrar service worker
-                    }
-                  );
-                });
-              }
-            `,
-          }}
-        />
       </head>
-      <body className="h-full font-sans antialiased" style={{ backgroundColor: '#f1f5f9' }}>
+      <body
+        className={`h-full font-sans antialiased ${inter.className}`}
+        style={{ backgroundColor: '#f1f5f9' }}
+      >
         <AuthProvider>
-          <SecretariaProvider>
+          <NotificationsProvider>
             <ToastProvider>
               {children}
               <Toaster />
-              <VersionInfo />
+              <ServiceWorkerRegister />
+              <DeferredVersionInfo />
             </ToastProvider>
-          </SecretariaProvider>
+          </NotificationsProvider>
         </AuthProvider>
       </body>
     </html>

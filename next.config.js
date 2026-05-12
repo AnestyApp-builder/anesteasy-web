@@ -1,19 +1,24 @@
 /** @type {import('next').NextConfig} */
 const path = require('path')
+const { withSentryConfig } = require("@sentry/nextjs");
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+})
 
 const nextConfig = {
+  // Evita o Next inferir o root errado quando há múltiplos lockfiles
+  outputFileTracingRoot: __dirname,
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@supabase/supabase-js', '@supabase/ssr', 'framer-motion', 'recharts'],
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // ⚡ CACHE BUSTING: Gerar buildId único a cada deploy
-  generateBuildId: async () => {
-    // Usar timestamp + random para garantir uniqueness em cada build
-    return `build-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
-  },
-  // Otimizações para mobile
+
+  // Otimizações de imagem
   images: {
     remotePatterns: [
       {
@@ -32,24 +37,22 @@ const nextConfig = {
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
-  // Compressão e otimização
+
   compress: true,
   poweredByHeader: false,
+
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // Configurações do webpack para o servidor
       config.resolve = config.resolve || {}
       config.resolve.alias = config.resolve.alias || {}
-      // Garantir resolução correta de módulos
       config.resolve.fallback = config.resolve.fallback || {}
-      // Garantir que node_modules seja resolvido corretamente
       config.resolve.modules = [
         ...(config.resolve.modules || []),
         'node_modules',
         path.resolve(__dirname, 'node_modules'),
       ]
     } else {
-      // No cliente, garantir que stripe não seja incluído (é apenas server-side)
+      // No cliente, stripe é apenas server-side
       config.resolve = config.resolve || {}
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -58,45 +61,13 @@ const nextConfig = {
         tls: false,
       }
     }
-    
-    // Otimizações para mobile
-    if (!isServer) {
-      config.optimization = {
-        ...config.optimization,
-        moduleIds: 'deterministic',
-        runtimeChunk: 'single',
-        splitChunks: {
-          chunks: 'all',
-          cacheGroups: {
-            default: false,
-            vendors: false,
-            // Vendor chunk
-            vendor: {
-              name: 'vendor',
-              chunks: 'all',
-              test: /node_modules/,
-              priority: 20,
-            },
-            // Common chunk
-            common: {
-              name: 'common',
-              minChunks: 2,
-              chunks: 'all',
-              priority: 10,
-              reuseExistingChunk: true,
-              enforce: true,
-            },
-          },
-        },
-      }
-    }
-    
+
     return config
   },
-  // Headers para otimização mobile e CACHE BUSTING
+
   async headers() {
     return [
-      // Assets estáticos (vídeos, imagens) - cache longo
+      // Vídeos e imagens estáticas — cache longo
       {
         source: '/videos/:path*',
         headers: [
@@ -106,7 +77,8 @@ const nextConfig = {
           },
         ],
       },
-      // Assets do Next.js (_next/static) - cache longo com hash automático
+
+      // Assets do Next.js (_next/static) — cache longo, hash garante invalidação automática
       {
         source: '/_next/static/:path*',
         headers: [
@@ -116,21 +88,37 @@ const nextConfig = {
           },
         ],
       },
-      // ⚡ CACHE BUSTING: HTML pages - NUNCA fazer cache
+
+      // Imagens públicas — cache de 1 dia
+      {
+        source: '/images/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=3600',
+          },
+        ],
+      },
+
+      // Ícones e favicon — cache de 7 dias
+      {
+        source: '/:path(favicon.*|icon.*|apple-touch-icon.*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=604800, stale-while-revalidate=86400',
+          },
+        ],
+      },
+
+      // HTML das páginas — revalida mas usa cache enquanto revalida
+      // ISSO ERA O GRANDE PROBLEMA: estava com no-store, forçando download completo a cada visita no iPhone
       {
         source: '/:path*',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'no-cache, no-store, must-revalidate, max-age=0',
-          },
-          {
-            key: 'Pragma',
-            value: 'no-cache',
-          },
-          {
-            key: 'Expires',
-            value: '0',
+            value: 'public, max-age=0, must-revalidate',
           },
           {
             key: 'X-DNS-Prefetch-Control',
@@ -150,8 +138,9 @@ const nextConfig = {
           },
         ],
       },
-    ];
+    ]
   },
+
   env: {
     NEXT_PUBLIC_SUPABASE_URL: 'https://zmtwwajyhusyrugobxur.supabase.co',
     NEXT_PUBLIC_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptdHd3YWp5aHVzeXJ1Z29ieHVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczMzYzNzAsImV4cCI6MjA3MjkxMjM3MH0.NC6t2w_jFWTMJjVv5FmPLouVyOVgCTBReCr0zOA2dx8',
@@ -160,4 +149,25 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+module.exports = withBundleAnalyzer(
+  withSentryConfig(
+    nextConfig,
+    {
+      silent: !process.env.CI,
+      widenClientFileUpload: true,
+      tunnelRoute: "/monitoring",
+      hideSourceMaps: true,
+      
+      // Novas opções para evitar avisos de depreciação
+      webpack: {
+        treeshake: {
+          removeDebugLogging: true,
+        },
+        automaticVercelMonitors: true,
+        reactComponentAnnotation: {
+          enabled: true,
+        },
+      },
+    }
+  )
+)

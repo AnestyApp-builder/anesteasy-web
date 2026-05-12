@@ -109,13 +109,8 @@ function ResetPasswordContent() {
         }
       } else {
         setSuccess('Senha atualizada com sucesso! Redirecionando para login...')
-        // Verificar se é secretaria para redirecionar corretamente
         setTimeout(() => {
-          if (type === 'secretaria') {
-            router.push('/secretaria/login')
-          } else {
-            router.push('/login')
-          }
+          router.push('/login')
         }, 2000)
       }
     } catch (error) {

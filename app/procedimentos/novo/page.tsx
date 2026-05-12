@@ -23,7 +23,9 @@ import {
   ChevronDown,
   ChevronUp,
   Users,
-  Info
+  Info,
+  Eye,
+  Check
 } from 'lucide-react'
 import Link from 'next/link'
 import { Layout } from '@/components/layout/Layout'
@@ -37,15 +39,17 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { procedureService } from '@/lib/procedures'
 import { feedbackService } from '@/lib/feedback'
 import { useAuth } from '@/contexts/AuthContext'
-import { useSecretaria } from '@/contexts/SecretariaContext'
 import { useToast } from '@/contexts/ToastContext'
 import { getFullErrorMessage } from '@/lib/error-messages'
 import { formatCurrency } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { uploadToSupabaseStorage, getPublicUrl } from '@/lib/supabase-upload'
 import { getCorrectMimeType } from '@/lib/mime-utils'
+import { compressImage } from '@/lib/image-compression'
 import { parseFicha } from '@/utils/parseFicha'
 import { validarArquivos, LIMITES_UPLOAD, formatarTamanhoArquivo } from '@/lib/validation-utils'
+import { ConvenioCombobox } from '@/components/ui/ConvenioCombobox'
+import { normalizarConvenio } from '@/lib/convenios'
 import dynamic from 'next/dynamic'
 
 // Lazy load componentes pesados - só carregam quando necessário
@@ -59,14 +63,6 @@ const OCRResultDisplay = dynamic(() => import('@/components/OCRResultDisplay'), 
   loading: () => <div className="p-4 text-center text-gray-400">Carregando...</div>
 })
 // VoiceRecorder e VoiceExtractionDisplay são named exports, não default
-const VoiceRecorder = dynamic(() => import('@/components/VoiceRecorder').then(mod => ({ default: mod.VoiceRecorder })), { 
-  ssr: false,
-  loading: () => <div className="p-4 text-center text-gray-400">Carregando...</div>
-})
-const VoiceExtractionDisplay = dynamic(() => import('@/components/VoiceExtractionDisplay').then(mod => ({ default: mod.VoiceExtractionDisplay })), { 
-  ssr: false,
-  loading: () => <div className="p-4 text-center text-gray-400">Carregando...</div>
-})
 
 interface FormData {
   // 1. Identificação do Procedimento
@@ -123,7 +119,6 @@ interface FormData {
     data_recebimento: string
   }>
   statusPagamento: string
-  secretariaId: string
   dataPagamento: string
   observacoes: string
   
@@ -131,6 +126,7 @@ interface FormData {
   fichas: File[]
   
   // 5. OCR
+  show_to_secretary: boolean
 }
 
 
@@ -212,7 +208,6 @@ const TIPOS_ANESTESIA = [
 
 function NovoProcedimentoContent() {
   const { user } = useAuth()
-  const { secretaria, linkSecretaria } = useSecretaria()
   const { addToast } = useToast()
   const [formData, setFormData] = useState<FormData>({
     nomePaciente: '',
@@ -257,10 +252,10 @@ function NovoProcedimentoContent() {
     parcelas_recebidas: '0',
     parcelas: [],
     statusPagamento: 'Pendente',
-    secretariaId: '',
     dataPagamento: '',
     observacoes: '',
     fichas: [],
+    show_to_secretary: true,
   })
   
   const [loading, setLoading] = useState(false)
@@ -269,8 +264,6 @@ function NovoProcedimentoContent() {
   const [info, setInfo] = useState('')
   const [feedbackType, setFeedbackType] = useState<'error' | 'success' | 'info' | null>(null)
   const [currentSection, setCurrentSection] = useState(0)
-  const [voiceTranscription, setVoiceTranscription] = useState<string | undefined>(undefined)
-  const [voiceExtractedFields, setVoiceExtractedFields] = useState<Record<string, any> | undefined>(undefined)
   const [ocrRawText, setOcrRawText] = useState<string>('')
   const [ocrConfidence, setOcrConfidence] = useState<number | undefined>(undefined)
   const [ocrCamposPreenchidos, setOcrCamposPreenchidos] = useState<string[]>([])
@@ -287,72 +280,14 @@ function NovoProcedimentoContent() {
   } | null>(null)
   const [anestesiasFiltradas, setAnestesiasFiltradas] = useState(TIPOS_ANESTESIA)
   const [buscaAnestesia, setBuscaAnestesia] = useState('')
-  const [showSecretariaModal, setShowSecretariaModal] = useState(false)
-  const [secretariasVinculadas, setSecretariasVinculadas] = useState<Array<{ id: string; nome: string; email: string }>>([])
   const [showOcrInfo, setShowOcrInfo] = useState(false)
 
-  // Função para carregar secretárias vinculadas
-  const loadSecretarias = React.useCallback(async () => {
-    if (!user?.id || !supabase) {
-      setSecretariasVinculadas([])
-      return
-    }
 
-    try {
-      const { data, error } = await supabase
-        .from('anestesista_secretaria')
-        .select(`
-          secretarias (
-            id,
-            nome,
-            email
-          )
-        `)
-        .eq('anestesista_id', user.id)
 
-      if (error) {
-        setSecretariasVinculadas([])
-        return
-      }
-
-      const secretarias = (data || [])
-        .map(item => item.secretarias)
-        .filter(Boolean) as Array<{ id: string; nome: string; email: string }>
-      
-      setSecretariasVinculadas(secretarias)
-
-      // Se houver apenas uma secretária vinculada, selecionar automaticamente
-      if (secretarias.length === 1 && !formData.secretariaId) {
-        setFormData(prev => ({
-          ...prev,
-          secretariaId: secretarias[0].id
-        }))
-      }
-    } catch (error) {
-      setSecretariasVinculadas([])
-    }
-  }, [user?.id, formData.secretariaId])
-
-  // Buscar todas as secretárias vinculadas ao anestesista (apenas uma vez no mount)
-  useEffect(() => {
-    loadSecretarias()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Carregar apenas uma vez no mount
-
-  // Definir secretaria automaticamente se houver uma vinculada (compatibilidade com código antigo)
-  useEffect(() => {
-    if (secretaria && !formData.secretariaId) {
-      setFormData(prev => ({
-        ...prev,
-        secretariaId: secretaria.id
-      }))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [secretaria?.id]) // Apenas quando o ID da secretária mudar
 
   // Prevenir scroll do body quando modais estão abertos (importante no mobile)
   useEffect(() => {
-    if (showSuccessModal || showSecretariaModal) {
+    if (showSuccessModal) {
       document.body.style.overflow = 'hidden'
       document.body.style.position = 'fixed'
       document.body.style.width = '100%'
@@ -366,7 +301,7 @@ function NovoProcedimentoContent() {
       document.body.style.position = ''
       document.body.style.width = ''
     }
-  }, [showSuccessModal, showSecretariaModal])
+  }, [showSuccessModal])
 
   // Fechar tooltip de OCR ao clicar fora
   useEffect(() => {
@@ -679,6 +614,27 @@ function NovoProcedimentoContent() {
       return { success: false }
     }
     
+    // COMPRESSÃO: Comprimir imagens antes de enviar para o servidor (economiza banda e custo Vercel)
+    if (fileToUpload instanceof File && fileToUpload.type.startsWith('image/')) {
+      const TARGET_SIZE_MB = 1.5;
+      if (fileToUpload.size > TARGET_SIZE_MB * 1024 * 1024) {
+        try {
+          const compressed = await compressImage(fileToUpload, {
+            maxSizeMB: TARGET_SIZE_MB,
+            maxWidth: 2500,
+            maxHeight: 2500,
+            quality: 0.85
+          });
+          fileToUpload = compressed;
+          fileName = compressed.name;
+          fileSize = compressed.size;
+          fileType = compressed.type;
+        } catch (compressError) {
+          console.warn("[UPLOAD] Falha na compressão, enviando original", compressError);
+        }
+      }
+    }
+    
     
     // Atualizar status do arquivo para "uploading" com progresso inicial de 1%
     setFileUploadProgress(prev => {
@@ -690,7 +646,7 @@ function NovoProcedimentoContent() {
       }> = {
         ...prev,
         [index]: {
-          fileName: file.name,
+          fileName: fileName,
           status: 'uploading' as const,
           progress: 1 // Progresso inicial para mostrar que iniciou
         }
@@ -706,7 +662,7 @@ function NovoProcedimentoContent() {
         isUploading: true,
         currentFile: completedFiles,
         totalFiles: totalFiles,
-        currentFileName: file.name,
+        currentFileName: fileName,
         progress: progressPercent
       })
       
@@ -897,14 +853,14 @@ function NovoProcedimentoContent() {
         success: true,
         attachment: {
           file_name: safeFileName,
-          file_size: file.size,
+          file_size: fileSize,
           file_type: correctMimeType,
           file_url: publicUrl,
           filePath: filePath
         }
       }
     } catch (error: any) {
-      console.error(`[UPLOAD] ❌ Erro inesperado ao fazer upload de ${file.name}:`, error)
+      console.error(`[UPLOAD] ❌ Erro inesperado ao fazer upload de ${fileName}:`, error)
       
       setFileUploadProgress(prev => ({
         ...prev,
@@ -917,7 +873,7 @@ function NovoProcedimentoContent() {
       }))
       
         const errorMessage = error?.message || 'Erro desconhecido ao fazer upload'
-        const safeFileName = file.name.length > 100 ? file.name.substring(0, 100) + '...' : file.name
+        const safeFileName = fileName.length > 100 ? fileName.substring(0, 100) + '...' : fileName
         showFeedback('error', `❌ Erro ao enviar ${safeFileName}: ${errorMessage}`)
       return { success: false }
     }
@@ -940,6 +896,7 @@ function NovoProcedimentoContent() {
       tipoProcedimento: 'Cesariana',
       tecnicaAnestesica: 'Raquianestesia',
       codigoTSSU: '30701029',
+      grupoAnestesico: 'Geral',
       especialidadeCirurgiao: 'Ginecologia',
       nomeCirurgiao: 'Dr. João Santos',
       nomeEquipe: 'Equipe Cirúrgica A',
@@ -982,7 +939,6 @@ function NovoProcedimentoContent() {
         { numero: 3, valor: 1166.66, recebida: false, data_recebimento: '' }
       ],
       statusPagamento: 'Pendente',
-      secretariaId: formData.secretariaId || '',
       dataPagamento: '',
       observacoes: 'Primeira parcela recebida',
       
@@ -1224,8 +1180,9 @@ function NovoProcedimentoContent() {
         
         reader.onload = (e) => {
           clearTimeout(timeoutId)
-          if (e.target?.result) {
-            setPreviewFiles(prev => [...prev, e.target.result as string])
+          const result = e.target?.result
+          if (result) {
+            setPreviewFiles(prev => [...prev, result as string])
           } else {
             setPreviewFiles(prev => [...prev, ''])
           }
@@ -1420,8 +1377,69 @@ function NovoProcedimentoContent() {
   }
 
   // Função para processar OCR e preencher campos automaticamente
-  const handleOCRExtract = async (rawText: string, confidence?: number) => {
+  const handleOCRExtract = async (rawText: string, confidence?: number, parsedData?: any) => {
     try {
+      // Se já temos dados parseados pela IA Vision, usar eles diretamente
+      if (parsedData) {
+        console.log('✅ [AI Vision] Dados recebidos (Detailed):', parsedData)
+        
+        const updates: Partial<FormData> = {}
+        const camposPreenchidos: string[] = []
+        
+        // Mapeamento direto
+        if (parsedData.nome) {
+          updates.nomePaciente = parsedData.nome
+          camposPreenchidos.push('Nome do Paciente')
+        }
+        if (parsedData.nascimento) {
+          const isoBirth = convertDateToISO(parsedData.nascimento)
+          if (isoBirth) {
+            updates.dataNascimento = isoBirth
+            camposPreenchidos.push('Data de Nascimento')
+          }
+        }
+        if (parsedData.dataProcedimento) {
+          const isoDate = convertDateToISO(parsedData.dataProcedimento)
+          if (isoDate) {
+            updates.dataProcedimento = isoDate
+            camposPreenchidos.push('Data do Procedimento')
+          }
+        }
+        if (parsedData.tipoProcedimento) {
+          const match = matchTipoProcedimento(parsedData.tipoProcedimento)
+          if (match) {
+            updates.tipoProcedimento = match
+            camposPreenchidos.push('Tipo de Procedimento')
+          }
+        }
+        if (parsedData.tecnica) {
+          const match = matchTecnicaAnestesica(parsedData.tecnica)
+          if (match) {
+            updates.tecnicaAnestesica = match
+            const item = TIPOS_ANESTESIA.find(a => a.nome === match)
+            if (item) updates.codigoTSSU = item.codigo
+            camposPreenchidos.push('Técnica Anestésica')
+          }
+        }
+        
+        // Campos Detalhados
+        if (parsedData.sexo) updates.patientGender = (parsedData.sexo === 'M' ? 'M' : parsedData.sexo === 'F' ? 'F' : 'Other') as any
+        if (parsedData.convenio) updates.convenio = normalizarConvenio(parsedData.convenio)
+        if (parsedData.carteirinha) updates.carteirinha = parsedData.carteirinha
+        if (parsedData.hospital) updates.hospital = parsedData.hospital
+        if (parsedData.nomeCirurgiao) updates.nomeCirurgiao = parsedData.nomeCirurgiao
+        if (parsedData.horario) updates.horario = parsedData.horario
+
+        // Aplicar todos os updates
+        Object.entries(updates).forEach(([field, value]) => {
+          updateFormData(field as keyof FormData, value)
+        })
+
+        setOcrCamposPreenchidos(camposPreenchidos)
+        showFeedback('success', `✅ IA Vision processada! ${camposPreenchidos.length} campos principais identificados.`)
+        return
+      }
+
       if (!rawText || rawText.trim().length === 0) {
         showFeedback('error', '⚠️ Nenhum texto foi extraído da imagem. Verifique se a imagem está clara e legível.')
         return
@@ -1562,7 +1580,7 @@ function NovoProcedimentoContent() {
 
       // 7. Convênio * (obrigatório)
       if (parsed.convenio && parsed.convenio.trim()) {
-        updates.convenio = parsed.convenio.trim()
+        updates.convenio = normalizarConvenio(parsed.convenio)
         camposPreenchidos.push('Convênio')
       }
 
@@ -1642,106 +1660,6 @@ function NovoProcedimentoContent() {
     }
   }
 
-  // Handler para dados extraídos por comando de voz
-  const handleVoiceData = (extractedData: any, transcription?: string) => {
-    try {
-      console.log('🎤 [VOICE] Dados recebidos do comando de voz:', extractedData)
-      console.log('📝 [VOICE] Transcrição:', transcription)
-      
-      // Validar se há dados
-      if (!extractedData || Object.keys(extractedData).length === 0) {
-        showFeedback('error', '⚠️ Nenhum dado foi extraído do comando de voz. Tente falar novamente com mais detalhes.')
-        return
-      }
-      
-      // Armazenar transcrição e campos extraídos para exibição
-      setVoiceTranscription(transcription)
-      setVoiceExtractedFields(extractedData)
-
-      // Mapear os dados extraídos para o formato do formulário
-      const mappedData: Partial<FormData> = {}
-
-      // Campos básicos
-      if (extractedData.patient_name) mappedData.nomePaciente = extractedData.patient_name
-      if (extractedData.data_nascimento) mappedData.dataNascimento = extractedData.data_nascimento
-      if (extractedData.procedure_date) mappedData.dataProcedimento = extractedData.procedure_date
-      if (extractedData.convenio) mappedData.convenio = extractedData.convenio
-      if (extractedData.carteirinha) mappedData.carteirinha = extractedData.carteirinha
-      
-      // Tipo do procedimento - usar o NOME do procedimento (ex: "Cesariana")
-      // Prioridade: procedure_name > procedure_type
-      if (extractedData.procedure_name) {
-        mappedData.tipoProcedimento = extractedData.procedure_name
-      } else if (extractedData.procedure_type) {
-        // Se não tiver nome mas tiver tipo, usar o tipo
-        mappedData.tipoProcedimento = extractedData.procedure_type
-      }
-      
-      if (extractedData.tecnica_anestesica) mappedData.tecnicaAnestesica = extractedData.tecnica_anestesica
-      if (extractedData.codigo_tssu) mappedData.codigoTSSU = extractedData.codigo_tssu
-      if (extractedData.grupo_anestesico) mappedData.grupoAnestesico = extractedData.grupo_anestesico
-      if (extractedData.especialidade_cirurgiao) mappedData.especialidadeCirurgiao = extractedData.especialidade_cirurgiao
-      if (extractedData.nome_cirurgiao) mappedData.nomeCirurgiao = extractedData.nome_cirurgiao
-      if (extractedData.nome_equipe) mappedData.nomeEquipe = extractedData.nome_equipe
-      if (extractedData.hospital_clinic) mappedData.hospital = extractedData.hospital_clinic
-      if (extractedData.patient_gender) {
-        if (extractedData.patient_gender === 'Masculino') mappedData.patientGender = 'M'
-        else if (extractedData.patient_gender === 'Feminino') mappedData.patientGender = 'F'
-        else mappedData.patientGender = 'Other'
-      }
-      if (extractedData.horario) mappedData.horario = extractedData.horario
-      if (extractedData.duracao_minutos) mappedData.duracaoMinutos = String(extractedData.duracao_minutos)
-
-      // Campos do procedimento
-      if (extractedData.sangramento) mappedData.sangramento = extractedData.sangramento
-      if (extractedData.nausea_vomito) mappedData.nauseaVomito = extractedData.nausea_vomito
-      if (extractedData.dor) mappedData.dor = extractedData.dor
-      if (extractedData.observacoes_procedimento) mappedData.observacoesProcedimento = extractedData.observacoes_procedimento
-
-      // Campos obstétricos
-      if (extractedData.acompanhamento_antes) mappedData.acompanhamentoAntes = extractedData.acompanhamento_antes
-      if (extractedData.tipo_parto) mappedData.tipoParto = extractedData.tipo_parto
-      if (extractedData.tipo_cesariana) mappedData.tipoCesariana = extractedData.tipo_cesariana
-      if (extractedData.indicacao_cesariana) mappedData.indicacaoCesariana = extractedData.indicacao_cesariana
-      if (extractedData.descricao_indicacao_cesariana) mappedData.descricaoIndicacaoCesariana = extractedData.descricao_indicacao_cesariana
-      if (extractedData.retencao_placenta) mappedData.retencaoPlacenta = extractedData.retencao_placenta
-      if (extractedData.laceracao_presente) mappedData.laceracaoPresente = extractedData.laceracao_presente
-      if (extractedData.grau_laceracao) mappedData.grauLaceracao = extractedData.grau_laceracao
-      if (extractedData.hemorragia_puerperal) mappedData.hemorragiaPuerperal = extractedData.hemorragia_puerperal
-      if (extractedData.transfusao_realizada) mappedData.transfusaoRealizada = extractedData.transfusao_realizada
-
-      // Campos financeiros
-      if (extractedData.procedure_value) mappedData.valor = String(extractedData.procedure_value)
-      if (extractedData.forma_pagamento) mappedData.formaPagamento = extractedData.forma_pagamento
-      if (extractedData.numero_parcelas) mappedData.numero_parcelas = String(extractedData.numero_parcelas)
-      if (extractedData.payment_status) {
-        if (extractedData.payment_status === 'paid') mappedData.statusPagamento = 'Pago'
-        else if (extractedData.payment_status === 'pending') mappedData.statusPagamento = 'Pendente'
-        else if (extractedData.payment_status === 'cancelled') mappedData.statusPagamento = 'Cancelado'
-      }
-      if (extractedData.payment_date) mappedData.dataPagamento = extractedData.payment_date
-      if (extractedData.observacoes_financeiras) mappedData.observacoes = extractedData.observacoes_financeiras
-
-      // Feedback
-      if (extractedData.email_cirurgiao) mappedData.emailCirurgiao = extractedData.email_cirurgiao
-      if (extractedData.telefone_cirurgiao) mappedData.telefoneCirurgiao = extractedData.telefone_cirurgiao
-      if (extractedData.feedback_solicitado) mappedData.enviarRelatorioCirurgiao = 'Sim'
-
-      // Atualizar o formData com os dados extraídos
-      setFormData(prev => ({
-        ...prev,
-        ...mappedData
-      }))
-
-      showFeedback('success', '✅ Dados extraídos do comando de voz com sucesso! Verifique os campos preenchidos.')
-      
-      console.log('✅ [VOICE] FormData atualizado:', mappedData)
-    } catch (error: any) {
-      console.error('❌ [VOICE] Erro ao processar dados de voz:', error)
-      showFeedback('error', `❌ Erro ao processar comando de voz: ${error.message || 'Erro desconhecido'}`)
-    }
-  }
-
   // ===== SOLUÇÃO: handleSubmit otimizado para salvar no mobile =====
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1775,9 +1693,16 @@ function NovoProcedimentoContent() {
       .map(([key]) => key)
     
     if (faltando.length > 0) {
-      showFeedback('error', `⚠️ Campos obrigatórios: ${faltando.join(', ')}`)
-          return
-        }
+      showFeedback('error', `⚠️ Campos obrigatórios não preenchidos: ${faltando.join(', ')}`)
+      addToast({
+        title: 'Campos obrigatórios',
+        description: `Preencha: ${faltando.join(', ')}`,
+        variant: 'error',
+        duration: 6000
+      })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
         
       // Timeout de segurança - 90s no mobile (createProcedure tem timeout de 45s x 3 tentativas = até 135s, mas vamos usar 90s como segurança)
       const safetyTimeout = setTimeout(() => {
@@ -1802,6 +1727,7 @@ function NovoProcedimentoContent() {
         tecnica_anestesica: formData.tecnicaAnestesica,
         user_id: user.id,
         anesthesiologist_name: user.name || 'Anônimo',
+        show_to_secretary: formData.show_to_secretary,
       }
       
       // Adicionar campos opcionais apenas se tiverem valor
@@ -1870,7 +1796,6 @@ function NovoProcedimentoContent() {
       }
       
       if (formData.observacoes) procedureData.observacoes_financeiras = formData.observacoes
-      if (formData.secretariaId && formData.secretariaId.trim()) procedureData.secretaria_id = formData.secretariaId
 
       // Feedback
       if (formData.enviarRelatorioCirurgiao === 'Sim') {
@@ -2303,80 +2228,8 @@ function NovoProcedimentoContent() {
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Preenchimento Automático (Opcional)</span>
             <div className="h-px flex-1 bg-gray-200"></div>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <VoiceRecorder 
-              compact
-              onTranscriptionComplete={handleVoiceData}
-              onError={(error) => showFeedback('error', error)}
-            />
-            <div className="space-y-2">
-              <div className="relative ocr-info-container">
-                <UploadFicha 
-                  onExtract={handleOCRExtract}
-                  onError={(error) => showFeedback('error', `Erro no OCR: ${error}`)}
-                />
-                {/* Ícone de informação - clicável - Mobile Responsive */}
-                <button
-                  type="button"
-                  onClick={() => setShowOcrInfo(!showOcrInfo)}
-                  className="absolute top-2 right-2 sm:top-3 sm:right-3 p-2 sm:p-1.5 rounded-full text-blue-600 hover:text-blue-700 active:text-blue-800 transition-colors z-10 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex items-center justify-center touch-manipulation"
-                  aria-label="Informação sobre upload de ficha"
-                >
-                  <Info className="h-5 w-5 sm:h-4 sm:w-4" />
-                </button>
-                
-                {/* Tooltip com informação - Mobile Responsive */}
-                {showOcrInfo && (
-                  <div className="absolute top-14 right-0 sm:top-12 z-20 w-[calc(100%-1rem)] sm:w-64 md:w-80 max-w-sm bg-white border border-blue-200 rounded-lg shadow-lg p-3 sm:p-3 text-xs sm:text-xs text-gray-700">
-                    <div className="flex items-start gap-2">
-                      <Info className="h-4 w-4 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <strong className="text-blue-800 block mb-1 text-xs sm:text-xs">Importante:</strong>
-                        <p className="text-gray-700 leading-relaxed text-xs sm:text-xs">
-                          Esta foto é usada apenas para extrair os dados automaticamente e <strong>não será salva</strong>. Para salvar imagens do procedimento, use o <strong>Passo 4 - Upload de Fichas</strong>.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowOcrInfo(false)}
-                        className="ml-auto flex-shrink-0 text-gray-400 hover:text-gray-600 active:text-gray-700 transition-colors min-w-[32px] min-h-[32px] flex items-center justify-center touch-manipulation"
-                        aria-label="Fechar"
-                      >
-                        <X className="h-4 w-4 sm:h-3 sm:w-3" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
-
-        {/* Exibição dos dados extraídos (Voz e OCR) */}
-        {(voiceTranscription || voiceExtractedFields || ocrRawText) && (
-          <div className="mb-6 space-y-4">
-            {voiceTranscription || voiceExtractedFields ? (
-              <VoiceExtractionDisplay
-                transcription={voiceTranscription}
-                extractedFields={voiceExtractedFields}
-                onClose={() => {
-                  setVoiceTranscription(undefined)
-                  setVoiceExtractedFields(undefined)
-                }}
-              />
-            ) : null}
-            {ocrRawText && (
-              <OCRResultDisplay
-                ocrRawText={ocrRawText}
-                camposPreenchidos={ocrCamposPreenchidos}
-                camposFaltando={ocrCamposFaltando}
-                confidence={ocrConfidence}
-              />
-            )}
-          </div>
-        )}
-
+          
         {/* Progress Indicator - Mobile Optimized */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
@@ -2510,31 +2363,54 @@ function NovoProcedimentoContent() {
 
           {/* Section 0: Identificação do Procedimento */}
           {currentSection === 0 && (
-        <Card>
-          <CardHeader>
+            <div className="space-y-6">
+              {/* OCR IA Vision - Agora apenas no passo 1 */}
+              <div className="relative ocr-info-container mb-6">
+                <UploadFicha 
+                  onExtract={handleOCRExtract}
+                  onError={(error) => showFeedback('error', `Erro no OCR: ${error}`)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOcrInfo(!showOcrInfo)}
+                  className="absolute top-2 right-2 sm:top-3 sm:right-3 p-2 sm:p-1.5 rounded-full text-blue-600 hover:text-blue-700 transition-colors z-10 flex items-center justify-center"
+                >
+                  <Info className="h-5 w-5 sm:h-4 sm:w-4" />
+                </button>
+                
+                {showOcrInfo && (
+                  <div className="absolute top-14 right-0 z-20 w-full sm:w-80 bg-white border border-blue-200 rounded-lg shadow-lg p-3 text-xs text-gray-700">
+                    <div className="flex items-start gap-2">
+                      <Info className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <strong className="text-blue-800 block mb-1">Importante:</strong>
+                        <p>Esta foto é usada apenas para extrair os dados e <strong>não será salva</strong>.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Exibição dos resultados do OCR */}
+              {ocrRawText && (
+                <div className="mb-6">
+                  <OCRResultDisplay
+                    ocrRawText={ocrRawText}
+                    camposPreenchidos={ocrCamposPreenchidos}
+                    camposFaltando={ocrCamposFaltando}
+                    confidence={ocrConfidence}
+                  />
+                </div>
+              )}
+
+              <Card>
+                <CardHeader>
                 <CardTitle className="flex items-center">
                   <User className="w-5 h-5 mr-2" />
                   Identificação do Procedimento
                 </CardTitle>
           </CardHeader>
               <div className="p-6 space-y-6">
-            {/* Exibição dos resultados do OCR (se houver) */}
-            {ocrRawText && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="h-px flex-1 bg-gray-200"></div>
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Resultado do OCR</span>
-                  <div className="h-px flex-1 bg-gray-200"></div>
-                </div>
-                <OCRResultDisplay
-                  ocrRawText={ocrRawText}
-                  camposPreenchidos={ocrCamposPreenchidos}
-                  camposFaltando={ocrCamposFaltando}
-                  confidence={ocrConfidence}
-                />
-              </div>
-            )}
-
             {/* Dados da Paciente */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
@@ -2568,12 +2444,9 @@ function NovoProcedimentoContent() {
                     onChange={(e) => updateFormData('dataProcedimento', e.target.value)}
                 required
               />
-              <Input
-                    label="Convênio / Particular"
-                    placeholder="Ex: Unimed, SulAmérica, Particular, etc."
-                    icon={<CreditCard className="w-5 h-5" />}
-                    value={formData.convenio}
-                    onChange={(e) => updateFormData('convenio', e.target.value)}
+              <ConvenioCombobox
+                value={formData.convenio}
+                onChange={(v) => updateFormData('convenio', v)}
               />
               <Input
                     label="Carterinha/Prontuário"
@@ -2699,6 +2572,31 @@ function NovoProcedimentoContent() {
                     onChange={(e) => updateFormData('hospital', e.target.value)}
                   />
             </div>
+ 
+            {/* Visibilidade para Secretária */}
+            <div className="pt-2">
+              <div 
+                className="flex items-center gap-3 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 cursor-pointer hover:bg-emerald-50 transition-colors"
+                onClick={() => updateFormData('show_to_secretary', !formData.show_to_secretary)}
+              >
+                <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+                  formData.show_to_secretary 
+                    ? 'bg-emerald-600 border-emerald-600' 
+                    : 'bg-white border-gray-300'
+                }`}>
+                  {formData.show_to_secretary && (
+                    <Check className="w-4 h-4 text-white" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Eye className="w-4 h-4 text-emerald-600" />
+                    <p className="text-sm font-semibold text-emerald-900">Visível no Link Seguro (Secretária)</p>
+                  </div>
+                  <p className="text-xs text-emerald-700">Se desmarcado, este procedimento não aparecerá no portal da secretária.</p>
+                </div>
+              </div>
+            </div>
 
             {/* Horário e Duração */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2733,11 +2631,12 @@ function NovoProcedimentoContent() {
                 placeholder="Intercorrências iniciais, comorbidades da paciente, observações importantes..."
                 value={formData.observacoes}
                 onChange={(e) => updateFormData('observacoes', e.target.value)}
-                  />
-                </div>
-              </div>
-            </Card>
-          )}
+              />
+            </div>
+          </div>
+        </Card>
+      </div>
+    )}
 
           {/* Section 1: Dados do Procedimento */}
           {currentSection === 1 && (
@@ -3414,43 +3313,6 @@ function NovoProcedimentoContent() {
                 </CardTitle>
               </CardHeader>
               <div className="p-6 space-y-6">
-                {/* Secretaria Responsável - Primeiro item */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Adicionar Secretária *
-                  </label>
-                  <select
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                    value={formData.secretariaId}
-                    onChange={(e) => {
-                      if (e.target.value === 'new') {
-                        // Abrir modal de cadastro de secretária
-                        setShowSecretariaModal(true)
-                      } else {
-                        updateFormData('secretariaId', e.target.value)
-                      }
-                    }}
-                  >
-                    <option value="">Nenhum</option>
-                    {secretariasVinculadas.map((sec) => (
-                      <option key={sec.id} value={sec.id}>
-                        {sec.nome} ({sec.email})
-                      </option>
-                    ))}
-                    <option value="new">+ Vincular Nova Secretária</option>
-                  </select>
-                  {formData.secretariaId && formData.secretariaId !== 'new' && (
-                    <p className="text-sm text-gray-600 mt-1">
-                      {(() => {
-                        const selected = secretariasVinculadas.find(s => s.id === formData.secretariaId)
-                        return selected 
-                          ? `Secretária vinculada: ${selected.nome} (${selected.email})`
-                          : 'Secretária selecionada'
-                      })()}
-                    </p>
-                  )}
-                </div>
-
                 {/* Status do Pagamento */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -3592,7 +3454,30 @@ function NovoProcedimentoContent() {
                   </div>
                 )}
 
-                {/* Campo Secretaria */}
+                {/* Visibilidade para Secretária */}
+                <div className="pt-2">
+                  <div 
+                    className="flex items-center gap-3 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 cursor-pointer hover:bg-emerald-50 transition-colors"
+                    onClick={() => updateFormData('show_to_secretary', !formData.show_to_secretary)}
+                  >
+                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+                      formData.show_to_secretary 
+                        ? 'bg-emerald-600 border-emerald-600' 
+                        : 'bg-white border-gray-300'
+                    }`}>
+                      {formData.show_to_secretary && (
+                        <Check className="w-4 h-4 text-white" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Eye className="w-4 h-4 text-emerald-600" />
+                        <p className="text-sm font-semibold text-emerald-900">Visível para Secretária</p>
+                      </div>
+                      <p className="text-xs text-emerald-700">Se desmarcado, este procedimento não aparecerá no link seguro da secretária.</p>
+                    </div>
+                  </div>
+                </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -3804,26 +3689,33 @@ function NovoProcedimentoContent() {
           {/* Navigation - Mobile Optimized */}
           <div className="mt-8">
             {/* Mobile: Stacked buttons */}
-            <div className="block md:hidden space-y-3">
+            {/* Mobile: Sticky Navigation Bar */}
+            <div className="fixed bottom-0 left-0 right-0 md:hidden bg-white/95 backdrop-blur-md border-t border-gray-100 p-4 z-[45] pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)]">
               <div className="flex gap-3">
                 {currentSection > 0 && (
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setCurrentSection(Math.max(0, currentSection - 1))}
-                    className="flex-1 py-4 text-base font-medium"
+                    onClick={() => {
+                      setCurrentSection(Math.max(0, currentSection - 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="flex-1 h-12 text-base font-bold rounded-xl border-2 border-gray-200"
                   >
                     <ArrowLeft className="w-4 h-4 mr-2" />
-                    Voltar (Passo {currentSection})
+                    Voltar
                   </Button>
                 )}
                 {currentSection < 3 ? (
                   <Button
                     type="button"
-                    onClick={() => setCurrentSection(Math.min(3, currentSection + 1))}
-                    className={`py-4 text-base font-medium ${currentSection > 0 ? 'flex-1' : 'w-full'}`}
+                    onClick={() => {
+                      setCurrentSection(Math.min(3, currentSection + 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className={`h-12 text-base font-bold rounded-xl shadow-lg shadow-teal-100 ${currentSection > 0 ? 'flex-1' : 'w-full'}`}
                   >
-                    Próximo (Passo {currentSection + 2})
+                    Próximo
                     <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
                   </Button>
                 ) : (
@@ -3831,17 +3723,23 @@ function NovoProcedimentoContent() {
                     type="button" 
                     onClick={handleSubmit}
                     disabled={loading}
-                    className={`py-4 text-base font-medium bg-green-600 hover:bg-green-700 ${currentSection > 0 ? 'flex-1' : 'w-full'}`}
+                    className={`h-12 text-base font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-lg shadow-teal-100 ${currentSection > 0 ? 'flex-1' : 'w-full'}`}
                   >
-                    <Save className="w-4 h-4 mr-2" />
-                    {loading ? 'Salvando...' : 'Finalizar e Salvar'}
+                    {loading ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Finalizar
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
             </div>
-            
-            {/* Desktop: Side by side buttons */}
-            <div className="hidden md:flex justify-between items-center gap-4">
+
+            {/* Desktop Navigation */}
+            <div className="hidden md:flex justify-between items-center gap-4 mt-8">
               <Button
                 type="button"
                 variant="outline"
@@ -3887,16 +3785,7 @@ function NovoProcedimentoContent() {
       {/* Modal de Sucesso */}
       {showSuccessModal && successData && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-          style={{ 
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            overflow: 'hidden',
-            touchAction: 'none'
-          }}
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center sm:p-4 z-[9999] backdrop-blur-sm"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               handleSuccessModalClose()
@@ -3904,15 +3793,10 @@ function NovoProcedimentoContent() {
           }}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            style={{
-              maxHeight: '90vh',
-              maxHeight: 'calc(100vh - 2rem)',
-              WebkitOverflowScrolling: 'touch'
-            }}
+            className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto flex flex-col animate-in slide-in-from-bottom duration-300"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-8">
+            <div className="p-6 sm:p-8 overflow-y-auto">
               {/* Header do Modal */}
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -4050,135 +3934,6 @@ function NovoProcedimentoContent() {
         </div>
       )}
 
-      {/* Modal de Cadastro de Secretária */}
-      {showSecretariaModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          style={{ 
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            overflow: 'hidden',
-            touchAction: 'none'
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowSecretariaModal(false)
-            }
-          }}
-        >
-          <div 
-            className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
-            style={{
-              maxHeight: 'calc(100vh - 2rem)',
-              WebkitOverflowScrolling: 'touch'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-6 border-b border-teal-200 bg-teal-50">
-              <h3 className="text-lg font-semibold text-teal-800">Vincular Nova Secretária</h3>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => setShowSecretariaModal(false)}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nome da Secretária *
-                </label>
-                <input
-                  type="text"
-                  id="secretariaNome"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                  placeholder="Nome completo da secretária"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  id="secretariaEmail"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                  placeholder="email@exemplo.com"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Telefone
-                </label>
-                <input
-                  type="tel"
-                  id="secretariaTelefone"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                  placeholder="(11) 99999-9999"
-                />
-              </div>
-            </div>
-            
-            <div className="flex justify-end gap-3 p-6 border-t border-teal-200">
-              <Button 
-                variant="outline"
-                onClick={() => setShowSecretariaModal(false)}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                onClick={async () => {
-                  const nome = (document.getElementById('secretariaNome') as HTMLInputElement)?.value
-                  const email = (document.getElementById('secretariaEmail') as HTMLInputElement)?.value
-                  const telefone = (document.getElementById('secretariaTelefone') as HTMLInputElement)?.value
-                  
-                  if (!nome || !email) {
-                    addToast({
-                      title: 'Campos obrigatórios',
-                      description: 'Nome e email são obrigatórios para vincular secretária.',
-                      variant: 'warning'
-                    })
-                    return
-                  }
-                  
-                  const result = await linkSecretaria(email, nome, telefone)
-                  if (result.success) {
-                    // Recarregar lista de secretárias vinculadas
-                    await loadSecretarias()
-                    setShowSecretariaModal(false)
-                    // Se for nova secretaria, informar sobre senha temporária
-                    if (result.isNew) {
-                      addToast({
-                        title: 'Secretária vinculada',
-                        description: 'Uma senha temporária foi gerada. Verifique o console (F12) para ver a senha temporária.',
-                        variant: 'success',
-                        duration: 7000
-                      })
-                    }
-                  } else {
-                    addToast({
-                      title: 'Erro ao vincular',
-                      description: 'Não foi possível vincular a secretária. Verifique se o email está correto e tente novamente.',
-                      variant: 'error'
-                    })
-                  }
-                }}
-                className="bg-teal-600 hover:bg-teal-700 text-white"
-              >
-                Vincular Secretária
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      
     </Layout>
   )
 }

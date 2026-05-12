@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { User } from './types'
-import logger from './logger'
+import { logger } from './logger'
 
 export interface AuthState {
   user: User | null
@@ -196,17 +196,6 @@ export const authService = {
         return { success: false, message: 'Email já cadastrado' }
       }
 
-      // REGRA: Verificar se o email já existe como secretária (secretarias)
-      const { data: existingSecretaria } = await supabase
-        .from('secretarias')
-        .select('email')
-        .eq('email', email)
-        .maybeSingle()
-
-      if (existingSecretaria) {
-        return { success: false, message: 'Este email já está cadastrado como secretária. Um email de secretária não pode ser usado como anestesista.' }
-      }
-
       // Verificar se o CRM já existe
       if (userData.crm) {
         const { data: existingUserByCrm } = await supabase
@@ -232,16 +221,6 @@ export const authService = {
           return { success: false, message: 'CPF já cadastrado' }
         }
         
-        // CRÍTICO: Verificar se CPF existe na tabela secretarias
-        const { data: existingSecretariaByCpf } = await supabase
-          .from('secretarias')
-          .select('cpf')
-          .eq('cpf', userData.cpf)
-          .maybeSingle()
-        
-        if (existingSecretariaByCpf) {
-          return { success: false, message: 'CPF já cadastrado como secretária. Um CPF de secretária não pode ser usado como anestesista.' }
-        }
       }
 
       // FLUXO CORRETO: Criar no Supabase Auth primeiro, depois confirmar email
@@ -270,8 +249,10 @@ export const authService = {
           return { success: false, message: 'Senha deve ter pelo menos 6 caracteres' }
         } else if (authError.message.includes('Email')) {
           return { success: false, message: 'Email inválido' }
-        } else if (authError.message.includes('rate limit') || authError.message.includes('Error sending confirmation email')) {
-          return { success: false, message: 'Muitas tentativas. Aguarde alguns minutos e tente novamente. Configure o SMTP personalizado no Supabase para resolver definitivamente.' }
+        } else if (authError.message.includes('rate limit') || authError.message.includes('over_email_send_rate_limit')) {
+          return { success: false, message: 'O sistema atingiu o limite de emails de confirmação. Aguarde 1 hora e tente novamente, ou entre em contato com o suporte.' }
+        } else if (authError.message.includes('Error sending confirmation email') || authError.message.includes('smtp') || authError.message.includes('SMTP')) {
+          return { success: false, message: 'Não foi possível enviar o email de confirmação no momento. Tente novamente em alguns minutos.' }
         }
         
         return { success: false, message: 'Erro ao criar conta. Tente novamente.' }
@@ -279,8 +260,17 @@ export const authService = {
 
       if (authData.user) {
 
-        // NÃO criar na tabela users ainda - será criado apenas após confirmação de email
-        // O usuário será criado na tabela users quando clicar no link de confirmação
+        // Notificar admin sobre novo cadastro (sem bloquear resposta)
+        fetch('/api/notify/new-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: userData.name,
+            email,
+            specialty: userData.specialty || '',
+            crm: userData.crm || '',
+          }),
+        }).catch(() => {})
 
         return {
           success: true,
@@ -412,54 +402,24 @@ export const authService = {
     }
   },
 
-  // Reset de senha (funciona para anestesistas e secretarias)
   async resetPassword(email: string): Promise<{ success: boolean; message: string }> {
     try {
-      // IMPORTANTE: Por segurança, sempre retornamos sucesso mesmo se o email não existir
-      // Isso evita que atacantes descubram quais emails estão registrados no sistema
-      
-      // Verificar se é uma secretaria para usar redirect correto
-      // Mas não expor se o email existe ou não
-      let redirectTo = 'https://www.anesteasy.com.br/reset-password'
-      
-      try {
-        const { data: secretaria } = await supabase
-          .from('secretarias')
-          .select('id')
-          .eq('email', email)
-          .maybeSingle()
-
-        if (secretaria) {
-          redirectTo = 'https://www.anesteasy.com.br/reset-password?type=secretaria'
-        }
-      } catch (error) {
-        // Ignorar erro na verificação de secretaria, continuar com redirect padrão
-        logger.error('Erro ao verificar secretaria:', error)
-      }
-
-      // Tentar enviar email de recuperação
-      // O Supabase pode não enviar email se o usuário não existir, mas não vamos expor isso
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: redirectTo
+        redirectTo: 'https://www.anesteasy.com.br/reset-password'
       })
 
-      // SEMPRE retornar sucesso para não revelar se o email existe ou não
-      // Esta é uma prática de segurança padrão para evitar information disclosure
-      // Se o email não existir, simplesmente não será enviado email, mas o usuário não saberá disso
       return { 
         success: true, 
         message: 'Se o email estiver cadastrado, você receberá um link de recuperação em breve. Verifique sua caixa de entrada e pasta de spam.' 
       }
     } catch (error) {
       logger.error('Erro interno ao resetar senha:', error)
-      // Mesmo em caso de erro, retornar mensagem genérica de sucesso por segurança
       return { 
         success: true, 
         message: 'Se o email estiver cadastrado, você receberá um link de recuperação em breve. Verifique sua caixa de entrada e pasta de spam.' 
       }
     }
   },
-
   // Atualizar senha
   async updatePassword(currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
     try {
@@ -567,215 +527,33 @@ export const authService = {
     }
   },
 
-  // Criar conta de secretaria (usado quando anestesista vincula uma secretaria)
-  async createSecretariaAccount(
-    email: string,
-    password: string,
-    nome: string,
-    telefone?: string,
-    cpf?: string
-  ): Promise<{ success: boolean; tempPassword?: string }> {
-    try {
-      // REGRA: Verificar se o email já existe como anestesista (users)
-      const { data: existingAnestesista } = await supabase
-        .from('users')
-        .select('email')
-        .eq('email', email)
-        .maybeSingle()
-
-      if (existingAnestesista) {
-        return { success: false }
-      }
-
-      // Verificar se o email já existe na tabela secretarias
-      const { data: existingSecretaria } = await supabase
-        .from('secretarias')
-        .select('email')
-        .eq('email', email)
-        .maybeSingle()
-
-      if (existingSecretaria) {
-        return { success: false }
-      }
-
-      // Verificar se o CPF já existe na tabela secretarias
-      if (cpf) {
-        const { data: existingSecretariaByCpf } = await supabase
-          .from('secretarias')
-          .select('cpf')
-          .eq('cpf', cpf)
-          .maybeSingle()
-
-        if (existingSecretariaByCpf) {
-          return { success: false }
-        }
-      }
-
-      // Criar conta no Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: 'https://anesteasy.com.br/auth/confirm?next=/secretaria/login&type=signup',
-          data: {
-            name: nome,
-            phone: telefone || '',
-            cpf: cpf || '',
-            role: 'secretaria'
-          }
-        }
-      })
-
-      if (authError) {
-        logger.error('Erro ao criar conta de autenticação:', authError.message)
-        return { success: false }
-      }
-
-      if (!authData.user) {
-        return { success: false }
-      }
-
-      // CRÍTICO: Verificar e remover qualquer registro incorreto na tabela users
-      // Garantir que secretária NÃO existe na tabela users
-      const { data: existingUserIncorrect } = await supabase
-        .from('users')
-        .select('id')
-        .eq('id', authData.user.id)
-        .maybeSingle()
-      
-      if (existingUserIncorrect) {
-        await supabase
-          .from('users')
-          .delete()
-          .eq('id', authData.user.id)
-      }
-
-      // Criar registro na tabela secretarias
-      // IMPORTANTE: Secretária deve existir APENAS na tabela secretarias
-      const { error: secretariaError } = await supabase
-        .from('secretarias')
-        .insert({
-          id: authData.user.id,
-          email: email,
-          nome: nome,
-          telefone: telefone || null,
-          cpf: cpf || null,
-          data_cadastro: new Date().toISOString()
-        })
-
-      if (secretariaError) {
-        logger.error('Erro ao criar registro na tabela secretarias:', secretariaError.message)
-        
-        // Se o erro for de constraint de status, tentar valores alternativos
-        if (secretariaError.code === '23514' && secretariaError.message?.includes('status')) {
-          // Tentar com valores alternativos comuns
-          const statusValues = ['ativo', 'Ativo', 'ATIVO', 'pendente', 'Pendente']
-          
-          for (const statusValue of statusValues) {
-            const { error: retryError } = await supabase
-              .from('secretarias')
-              .insert({
-                id: authData.user.id,
-                email: email,
-                nome: nome,
-                telefone: telefone || null,
-                cpf: cpf || null,
-                status: statusValue,
-                data_cadastro: new Date().toISOString()
-              })
-            
-            if (!retryError) {
-              return { success: true, tempPassword: password }
-            }
-          }
-        }
-        
-        return { success: false }
-      }
-
-      return { success: true, tempPassword: password }
-    } catch (error) {
-      console.error('Erro interno ao criar conta de secretaria:', error)
-      return { success: false }
-    }
-  },
-
   // Excluir conta do usuário
   async deleteAccount(userId: string): Promise<{ success: boolean; message: string }> {
     try {
-      // Verificar se é secretaria ou anestesista
-      const { isSecretaria } = await import('@/lib/user-utils')
-      const isSecretariaUser = await isSecretaria(userId)
+      const tablesToClean = [
+        'procedures',
+        'goals', 
+        'shifts',
+        'feedback'
+      ]
 
-      if (isSecretariaUser) {
-        // É SECRETARIA - excluir da tabela secretarias e relacionamentos
-        
-        // 1. Excluir relacionamentos
+      for (const table of tablesToClean) {
         await supabase
-          .from('anestesista_secretaria')
+          .from(table)
           .delete()
-          .eq('secretaria_id', userId)
-        
-        await supabase
-          .from('secretaria_link_requests')
-          .delete()
-          .eq('secretaria_id', userId)
-        
-        // 2. Excluir procedimentos vinculados à secretaria
-        await supabase
-          .from('procedures')
-          .delete()
-          .eq('secretaria_id', userId)
-
-        // 3. Excluir da tabela secretarias
-        const { error: secretariaError } = await supabase
-          .from('secretarias')
-          .delete()
-          .eq('id', userId)
-
-        if (secretariaError) {
-          logger.error('Erro ao excluir secretaria:', secretariaError.message)
-          return { success: false, message: 'Erro ao excluir dados da secretaria.' }
-        }
-      } else {
-        // É ANESTESISTA - excluir da tabela users e relacionamentos
-        
-        // 1. Excluir dados relacionados do usuário
-        const tablesToClean = [
-          'procedures',
-          'goals', 
-          'shifts',
-          'feedback',
-          'secretaria_links',
-          'anestesista_secretaria' // Relacionamentos com secretarias
-        ]
-
-        for (const table of tablesToClean) {
-          await supabase
-            .from(table)
-            .delete()
-            .eq('user_id', userId)
-        }
-
-        // 2. Excluir solicitações de vinculação
-        await supabase
-          .from('secretaria_link_requests')
-          .delete()
-          .eq('anestesista_id', userId)
-
-        // 3. Excluir o usuário da tabela users
-        const { error: userError } = await supabase
-          .from('users')
-          .delete()
-          .eq('id', userId)
-
-        if (userError) {
-          logger.error('Erro ao excluir anestesista:', userError.message)
-          return { success: false, message: 'Erro ao excluir dados do usuário.' }
-        }
+          .eq('user_id', userId)
       }
 
-      // 4. Excluir do Supabase Auth via API (para ambos os tipos)
+      const { error: userError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId)
+
+      if (userError) {
+        logger.error('Erro ao excluir anestesista:', userError.message)
+        return { success: false, message: 'Erro ao excluir dados do usuário.' }
+      }
+
       try {
         const response = await fetch('/api/delete-user', {
           method: 'POST',

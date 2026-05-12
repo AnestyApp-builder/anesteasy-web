@@ -6,10 +6,6 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { 
   Users, 
-  UserCheck, 
-  CreditCard, 
-  Stethoscope, 
-  FileText,
   RefreshCw,
   TrendingUp,
   Calendar
@@ -167,31 +163,6 @@ export default function AdminStatsPage() {
           </CardContent>
         </Card>
 
-        {/* Secretárias */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserCheck className="w-5 h-5 text-purple-500" />
-              Secretárias
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Total:</span>
-                <span className="text-2xl font-bold text-gray-900">
-                  {stats.total_secretarias}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Ativas:</span>
-                <span className="text-xl font-semibold text-green-600">
-                  {stats.active_secretarias}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Procedimentos */}
         <Card>
@@ -281,12 +252,6 @@ export default function AdminStatsPage() {
               <p className="text-sm text-gray-600">Usuários Pagando</p>
               <p className="text-2xl font-bold text-blue-600">
                 {stats.paying_users}
-              </p>
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-gray-600">Secretárias Ativas</p>
-              <p className="text-2xl font-bold text-purple-600">
-                {stats.active_secretarias}
               </p>
             </div>
             <div className="text-center">

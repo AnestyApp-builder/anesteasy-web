@@ -1,9 +1,12 @@
+import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/utils/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
     const { email } = await request.json()
+    const supabase = await createClient()
+    const origin = request.nextUrl.origin
 
     if (!email) {
       return NextResponse.json(
@@ -12,23 +15,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    
-
     // Reenviar email de confirmação
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email: email,
       options: {
-        emailRedirectTo: 'http://localhost:3000/auth/confirm?next=/login&type=signup'
+        emailRedirectTo: `${origin}/auth/confirm?next=/login&type=signup`
       }
     })
 
     if (error) {
       
       
-      if (error.message.includes('rate limit')) {
+      if (error.message.includes('rate limit') || error.message.includes('over_email_send_rate_limit')) {
         return NextResponse.json(
-          { success: false, message: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' },
+          { success: false, message: 'Limite de emails atingido. Aguarde alguns minutos e tente novamente.' },
           { status: 429 }
         )
       }

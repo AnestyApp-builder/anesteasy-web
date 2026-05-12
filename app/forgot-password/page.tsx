@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
-import { useAuth } from '@/contexts/AuthContext'
 import { authService } from '@/lib/auth'
 
 export default function ForgotPassword() {
@@ -17,32 +16,20 @@ export default function ForgotPassword() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   const router = useRouter()
 
-  // Redirecionar se já estiver logado
+  // Redirecionar se já estiver logado (sem depender do AuthContext para manter /forgot-password leve)
   useEffect(() => {
-    if (isAuthenticated && user) {
-      router.push('/dashboard')
+    let cancelled = false
+    ;(async () => {
+      const { supabase } = await import('@/lib/supabase')
+      const { data } = await supabase.auth.getSession()
+      if (!cancelled && data.session?.user) router.replace('/dashboard')
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [isAuthenticated, user, router])
-
-  // Mostrar loading enquanto verifica autenticação
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Verificando autenticação...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Não renderizar se já estiver logado (será redirecionado)
-  if (isAuthenticated && user) {
-    return null
-  }
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

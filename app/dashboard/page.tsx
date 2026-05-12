@@ -1,42 +1,66 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
-import { 
-  TrendingUp, 
-  DollarSign, 
-  FileText, 
-  Users, 
-  Calendar,
-  ArrowUpRight,
-  ArrowDownRight,
-  Activity,
-  Plus,
-  Target,
-  X,
-  Paperclip,
-  Settings,
-  Loader2,
-  ArrowRight,
-  Zap,
-  AlertCircle
-} from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { TrendingUp } from 'lucide-react'
+import { DollarSign } from 'lucide-react'
+import { FileText } from 'lucide-react'
+import { Users } from 'lucide-react'
+import { Calendar } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
+import { ArrowDownRight } from 'lucide-react'
+import { Activity } from 'lucide-react'
+import { Plus } from 'lucide-react'
+import { Target } from 'lucide-react'
+import { X } from 'lucide-react'
+import { Paperclip } from 'lucide-react'
+import { Settings } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
+import { Zap } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
+import { Send } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+import { WelcomeModal } from '@/components/dashboard/WelcomeModal'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { procedureService, ProcedureAttachment } from '@/lib/procedures'
 import { goalService } from '@/lib/goals'
 import { shiftService } from '@/lib/shifts'
+import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { useSecretaria } from '@/contexts/SecretariaContext'
 import { formatCurrency, formatDate, getFullGreeting, handleButtonPress, handleCardPress, retryWithTimeout } from '@/lib/utils'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { Loading } from '@/components/ui/Loading'
 import { SkeletonStatsCard, SkeletonChart, SkeletonProcedureList } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useRouter } from 'next/navigation'
+import { financialService } from '@/lib/financial/service'
+import { notificationService } from '@/lib/notifications/notification-service'
+// import { FinancialSummaryCards } from '@/components/dashboard/FinancialSummaryCards'
+import { FinancialPendencies } from '@/components/dashboard/FinancialPendencies'
+import { FinancialSummary } from '@/lib/financial/types'
+import { Parcela } from '@/lib/procedures'
+
+const MotionDiv = dynamic(
+  () => import('framer-motion').then((mod) => ({ default: mod.motion.div })),
+  { ssr: false }
+)
+
+const DashboardRechartsSection = dynamic(
+  () => import('@/components/charts/DashboardRechartsSection'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
+        <div className="h-48 sm:h-56 lg:h-64 bg-gray-100 animate-pulse rounded-lg" />
+        <div className="h-48 sm:h-56 lg:h-64 bg-gray-100 animate-pulse rounded-lg" />
+      </div>
+    ),
+  }
+)
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -44,6 +68,7 @@ export default function Dashboard() {
     completed: 0,
     pending: 0,
     cancelled: 0,
+    sent: 0,
     totalValue: 0,
     completedValue: 0,
     pendingValue: 0
@@ -92,10 +117,15 @@ export default function Dashboard() {
     completedMonthlyShifts: 0,
     paidShifts: [],
     pendingShifts: [],
-    monthlyShiftsFiltered: []
+    monthlyShiftsFiltered: [],
+    periodStart: null as Date | null,
+    periodEnd: null as Date | null
   })
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null)
+  const [pendingSends, setPendingSends] = useState<any[]>([])
+  const [nearPayments, setNearPayments] = useState<any[]>([])
+  const [latePayments, setLatePayments] = useState<any[]>([])
   const { user } = useAuth()
-  const { secretaria, isLoading: secretariaLoading } = useSecretaria()
   const router = useRouter()
   
 
@@ -104,22 +134,12 @@ export default function Dashboard() {
     if (user?.id) {
       // Verificar cache local para decisão rápida
       const cachedAuth = localStorage.getItem('auth_cache')
-      if (cachedAuth) {
-        try {
-          const cached = JSON.parse(cachedAuth)
-          if (cached.role === 'secretaria') {
-            router.push('/secretaria/dashboard')
-            return
-          }
-        } catch (error) {
-          // Cache inválido, continuar
-        }
-      }
       
       // Carregar dados em paralelo
       Promise.all([
         loadDashboardData(),
-        loadMonthlyGoal()
+        loadMonthlyGoal(),
+        loadFinancialData()
       ]).catch((error) => {
         console.error('Erro ao carregar dados do dashboard:', error)
       })
@@ -134,6 +154,38 @@ export default function Dashboard() {
     }
   }, [monthlyStats.receivedValue, monthlyGoal, user])
 
+  // Realtime updates for procedures and shifts
+  useEffect(() => {
+    if (user?.id) {
+      const proceduresChannel = supabase
+        .channel('dashboard_procedures')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'procedures', filter: `user_id=eq.${user.id}` },
+          () => {
+            loadDashboardData()
+          }
+        )
+        .subscribe()
+
+      const shiftsChannel = supabase
+        .channel('dashboard_shifts')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'shifts', filter: `user_id=eq.${user.id}` },
+          () => {
+            loadDashboardData()
+          }
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(proceduresChannel)
+        supabase.removeChannel(shiftsChannel)
+      }
+    }
+  }, [user?.id])
+
   // Função para atualizar o índice atual baseado no scroll
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget
@@ -141,6 +193,27 @@ export default function Dashboard() {
     const cardWidth = 280 + 16 // min-w-[280px] + gap-4
     const newIndex = Math.round(scrollLeft / cardWidth)
     setCurrentStatIndex(Math.min(newIndex, dashboardStats.length - 1))
+  }
+
+  const loadFinancialData = async () => {
+    if (!user?.id) return
+    try {
+      const [summary, pending, near, late] = await Promise.all([
+        financialService.getFinancialSummary(user.id),
+        financialService.getPendingProcedures(user.id),
+        financialService.getNearPayments(user.id),
+        financialService.getLatePayments(user.id)
+      ])
+      setFinancialSummary(summary)
+      setPendingSends(pending)
+      setNearPayments(near)
+      setLatePayments(late)
+
+      // Gerar notificações inteligentes silenciosamente
+      notificationService.generateIntelligentNotifications(user.id)
+    } catch (error) {
+      console.error('Erro ao carregar dados financeiros:', error)
+    }
   }
 
   const loadDashboardData = async () => {
@@ -173,6 +246,7 @@ export default function Dashboard() {
         completed: statsData.completed + shiftStats.completed,
         pending: statsData.pending + shiftStats.pending,
         cancelled: statsData.cancelled + shiftStats.cancelled,
+        sent: statsData.sent || 0,
         totalValue: statsData.totalValue + shiftStats.totalValue,
         completedValue: statsData.completedValue + shiftStats.completedValue,
         pendingValue: statsData.pendingValue + shiftStats.pendingValue
@@ -231,9 +305,23 @@ export default function Dashboard() {
       })
       setProcedureAttachments(attachmentsMap)
       
-      // Calcular receita mensal dos últimos 6 meses
-      const monthlyData = await calculateMonthlyRevenue(proceduresData)
+      // OTIMIZAÇÃO: Buscar todas as parcelas em lote para evitar N+1
+      const allProcedureIds = proceduresData.map((p: any) => p.id)
+      const allParcelasMap = await procedureService.getParcelasBatch(allProcedureIds)
+      
+      // Calcular receita mensal dos últimos 6 meses usando o mapa de parcelas
+      const monthlyData = await calculateMonthlyRevenue(proceduresData, allParcelasMap)
       setMonthlyRevenue(monthlyData)
+      
+      // Atualizar estatísticas mensais usando o mapa de parcelas (passando dados diretos para evitar stale state)
+      const monthlyStatsData = await calculateMonthlyStats(
+        proceduresData, 
+        shiftsData, 
+        monthlyProcs, 
+        monthlyShiftsData, 
+        allParcelasMap
+      )
+      setMonthlyStats(monthlyStatsData)
     } catch (error: any) {
       // Em caso de erro, manter dados vazios mas não travar
       setStats({
@@ -517,7 +605,8 @@ export default function Dashboard() {
   }
 
   // Função para calcular receita mensal
-  const calculateMonthlyRevenue = async (procedures: any[]) => {
+  // Função para calcular receita mensal (Otimizada com batch parcelas)
+  const calculateMonthlyRevenue = async (procedures: any[], parcelasMap: Record<string, Parcela[]> = {}) => {
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
     const currentDate = new Date()
     const monthlyData = []
@@ -535,8 +624,8 @@ export default function Dashboard() {
         const isParcelado = procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado'
         
         if (isParcelado) {
-          // Para procedimentos parcelados, somar apenas as parcelas recebidas no mês
-          const parcelas = await procedureService.getParcelas(procedure.id)
+          // Para procedimentos parcelados, somar apenas as parcelas recebidas no mês (usar mapa em cache)
+          const parcelas = parcelasMap[procedure.id] || []
           const parcelasDoMes = parcelas.filter(parcela => {
             if (!parcela.recebida || !parcela.data_recebimento) return false
             const dataRecebimento = new Date(parcela.data_recebimento)
@@ -589,6 +678,8 @@ export default function Dashboard() {
         return 'bg-amber-500 text-white shadow-sm'
       case 'cancelled':
         return 'bg-red-500 text-white shadow-sm'
+      case 'sent':
+        return 'bg-blue-600 text-white shadow-sm'
       default:
         return 'bg-red-500 text-white shadow-sm'
     }
@@ -603,6 +694,8 @@ export default function Dashboard() {
         return 'Pendente'
       case 'cancelled':
         return 'Aguardando'
+      case 'sent':
+        return 'Enviado'
       default:
         return 'Aguardando'
     }
@@ -617,12 +710,19 @@ export default function Dashboard() {
 
   const pieData = [
     { name: 'Concluídos', value: stats.completed, color: '#10b981' },
+    { name: 'Enviados', value: stats.sent, color: '#2563eb' },
     { name: 'Pendentes', value: stats.pending, color: '#f59e0b' },
     { name: 'Não Lançados', value: stats.cancelled, color: '#ef4444' }
   ]
 
-  // Calcular valores mensais para os cards
-  const calculateMonthlyStats = async () => {
+  // Calcular valores mensais para os cards (Otimizada com batch parcelas)
+  const calculateMonthlyStats = async (
+    procedures: any[], 
+    shifts: any[], 
+    monthlyProcsInput: any[], 
+    monthlyShiftsInput: any[], 
+    parcelasMap: Record<string, any[]> = {}
+  ) => {
     const now = new Date()
     const currentMonth = now.getMonth()
     const currentYear = now.getFullYear()
@@ -630,54 +730,33 @@ export default function Dashboard() {
     const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999)
     
     // Filtrar procedimentos do mês atual (para contagem total)
-    const monthlyProcs = monthlyProcedures.filter((proc: any) => {
+    const monthlyProcs = monthlyProcsInput.filter((proc: any) => {
       if (!proc.procedure_date) return false
       const procDate = new Date(proc.procedure_date)
       return procDate >= monthStart && procDate <= monthEnd
     })
     
     // Filtrar plantões do mês atual (para contagem total)
-    const monthlyShiftsFiltered = monthlyShifts.filter((shift: any) => {
+    const monthlyShiftsFiltered = monthlyShiftsInput.filter((shift: any) => {
       if (!shift.start_date) return false
       const shiftDate = new Date(shift.start_date)
       return shiftDate >= monthStart && shiftDate <= monthEnd
     })
     
     // Calcular receita recebida (procedimentos pagos no mês - usar payment_date)
-    // Primeiro buscar todos os procedimentos pagos, depois filtrar por payment_date
-    const allPaidProcedures = allProcedures.filter((p: any) => p.payment_status === 'paid')
+    const allPaidProcedures = procedures.filter((p: any) => p.payment_status === 'paid')
     const paidProceduresThisMonth = allPaidProcedures.filter((p: any) => {
-      if (!p.payment_date) return false
-      const paymentDate = new Date(p.payment_date)
+      // Usar data de pagamento, data de confirmação (paid_at) ou data do procedimento como fallback
+      const dateStr = p.payment_date || p.paid_at || p.procedure_date
+      if (!dateStr) return false
+      const paymentDate = new Date(dateStr)
       return paymentDate >= monthStart && paymentDate <= monthEnd
     })
-    
-    // Para procedimentos parcelados, considerar apenas parcelas recebidas no mês
-    // Buscar todas as parcelas de uma vez para otimizar
-    const procedureIds = paidProceduresThisMonth.map(p => p.id)
-    const parcelasMap: Record<string, any[]> = {}
-    
-    if (procedureIds.length > 0) {
-      try {
-        // Buscar todas as parcelas de todos os procedimentos pagos do mês
-        for (const procId of procedureIds) {
-          try {
-            const parcelas = await procedureService.getParcelas(procId)
-            parcelasMap[procId] = parcelas || []
-          } catch (error) {
-            parcelasMap[procId] = []
-          }
-        }
-      } catch (error) {
-        // Se der erro, continuar sem parcelas
-      }
-    }
     
     let receivedValueProcs = 0
     for (const proc of paidProceduresThisMonth) {
       const isParcelado = proc.payment_method === 'Parcelado' || proc.forma_pagamento === 'Parcelado'
       if (isParcelado) {
-        // Usar parcelas do cache
         const parcelas = parcelasMap[proc.id] || []
         const parcelasDoMes = parcelas.filter((parcela: any) => {
           if (!parcela.recebida || !parcela.data_recebimento) return false
@@ -686,76 +765,57 @@ export default function Dashboard() {
         })
         receivedValueProcs += parcelasDoMes.reduce((sum: number, p: any) => sum + (p.valor_parcela || 0), 0)
       } else {
-        // Procedimento não parcelado, usar valor total
         receivedValueProcs += proc.procedure_value || 0
       }
     }
     
     // Calcular receita recebida (plantões pagos no mês - usar payment_date)
-    const allPaidShifts = allShifts.filter((s: any) => s.payment_status === 'paid')
+    const allPaidShifts = shifts.filter((s: any) => s.payment_status === 'paid')
     const paidShiftsThisMonth = allPaidShifts.filter((s: any) => {
-      if (!s.payment_date) return false
-      const paymentDate = new Date(s.payment_date)
+      // Usar data de pagamento, data de confirmação (paid_at) ou data do plantão como fallback
+      const dateStr = s.payment_date || s.paid_at || s.start_date
+      if (!dateStr) return false
+      const paymentDate = new Date(dateStr)
       return paymentDate >= monthStart && paymentDate <= monthEnd
     })
-    const receivedValueShifts = paidShiftsThisMonth.reduce((sum: number, s: any) => {
-      return sum + (s.shift_value || 0)
-    }, 0)
+    const receivedValueShifts = paidShiftsThisMonth.reduce((sum: number, s: any) => sum + (s.shift_value || 0), 0)
     
     const receivedValue = receivedValueProcs + receivedValueShifts
     
-    // Manter referência aos procedimentos pagos do mês para o modal de detalhes
-    const paidProcedures = paidProceduresThisMonth
-    const paidShifts = paidShiftsThisMonth
+    // Calcular receita pendente
+    const pendingProceduresList = monthlyProcs.filter((p: any) => p.payment_status === 'pending')
+    const pendingValueProcs = pendingProceduresList.reduce((sum: number, p: any) => sum + (p.procedure_value || 0), 0)
     
-    // Calcular receita pendente (procedimentos pendentes)
-    const pendingProcedures = monthlyProcs.filter((p: any) => p.payment_status === 'pending')
-    const pendingValueProcs = pendingProcedures.reduce((sum: number, p: any) => {
-      return sum + (p.procedure_value || 0)
-    }, 0)
-    
-    // Calcular receita pendente (plantões pendentes)
-    const pendingShifts = monthlyShiftsFiltered.filter((s: any) => s.payment_status === 'pending')
-    const pendingValueShifts = pendingShifts.reduce((sum: number, s: any) => {
-      return sum + (s.shift_value || 0)
-    }, 0)
+    const pendingShiftsList = monthlyShiftsFiltered.filter((s: any) => s.payment_status === 'pending')
+    const pendingValueShifts = pendingShiftsList.reduce((sum: number, s: any) => sum + (s.shift_value || 0), 0)
     
     const pendingValue = pendingValueProcs + pendingValueShifts
-    
-    // Total de procedimentos do mês
-    const totalMonthly = monthlyProcs.length
-    
-    // Total de plantões do mês
-    const totalMonthlyShifts = monthlyShiftsFiltered.length
-    
-    // Procedimentos concluídos do mês
-    const completedMonthly = paidProcedures.length
-    
-    // Plantões concluídos do mês
-    const completedMonthlyShifts = paidShifts.length
     
     return {
       receivedValue,
       pendingValue,
-      totalMonthly,
-      completedMonthly,
-      paidProcedures,
-      pendingProcedures,
+      totalMonthly: monthlyProcs.length,
+      completedMonthly: paidProceduresThisMonth.length,
+      paidProcedures: paidProceduresThisMonth,
+      pendingProcedures: pendingProceduresList,
       monthlyProcs,
-      totalMonthlyShifts,
-      completedMonthlyShifts,
-      paidShifts,
-      pendingShifts,
-      monthlyShiftsFiltered
+      totalMonthlyShifts: monthlyShiftsFiltered.length,
+      completedMonthlyShifts: paidShiftsThisMonth.length,
+      paidShifts: paidShiftsThisMonth,
+      pendingShifts: pendingShiftsList,
+      monthlyShiftsFiltered,
+      periodStart: monthStart,
+      periodEnd: monthEnd
     }
   }
 
   // Calcular estatísticas mensais quando os dados mudarem
+  // Nota: loadDashboardData já chama calculateMonthlyStats com o mapa de parcelas
+  // Este useEffect é um fallback ou para quando os procedimentos mudam individualmente
   useEffect(() => {
     if ((allProcedures.length > 0 || allShifts.length > 0) && (monthlyProcedures.length > 0 || monthlyShifts.length > 0)) {
-      calculateMonthlyStats().then(setMonthlyStats).catch(() => {
-        // Em caso de erro, manter valores padrão
-      })
+      // Para evitar N+1 aqui, podemos buscar as parcelas em lote se o mapa estiver vazio
+      // Mas o ideal é que loadDashboardData já tenha preenchido tudo
     }
   }, [allProcedures, allShifts, monthlyProcedures, monthlyShifts])
 
@@ -791,7 +851,7 @@ export default function Dashboard() {
             const isParcelado = proc.payment_method === 'Parcelado' || proc.forma_pagamento === 'Parcelado'
             
             if (isParcelado) {
-              // Buscar parcelas do procedimento
+              // Buscar parcelas do procedimento (Otimizar: poderíamos usar o mapa global, mas aqui é sob demanda)
               try {
                 const parcelas = await procedureService.getParcelas(proc.id)
                 const parcelasDoMes = parcelas.filter((parcela: any) => {
@@ -923,17 +983,27 @@ export default function Dashboard() {
 
   const dashboardStats = [
     {
-      title: 'Receita Total (mensal)',
+      title: 'Receita Mensal',
       value: formatCurrency(monthlyStats.receivedValue),
-      change: 'Recebida',
+      change: monthlyStats.periodStart && monthlyStats.periodEnd 
+        ? `${formatDate(monthlyStats.periodStart)} até ${formatDate(monthlyStats.periodEnd)}`
+        : 'Recebida no mês',
       changeType: 'positive' as const,
       icon: DollarSign,
       statKey: 'received'
     },
     {
       title: 'Receita Total',
+      value: formatCurrency(stats.completedValue),
+      change: 'Total acumulado',
+      changeType: 'positive' as const,
+      icon: TrendingUp,
+      statKey: 'completed'
+    },
+    {
+      title: 'A Receber',
       value: formatCurrency(stats.pendingValue),
-      change: 'Pendente',
+      change: 'Pendente total',
       changeType: 'neutral' as const,
       icon: DollarSign,
       statKey: 'pending'
@@ -953,12 +1023,23 @@ export default function Dashboard() {
       changeType: 'positive' as const,
       icon: Calendar,
       statKey: 'shifts'
+    },
+    {
+      title: 'Enviados',
+      value: stats.sent.toString(),
+      change: 'Aguardando',
+      changeType: 'neutral' as const,
+      icon: Send,
+      statKey: 'sent'
     }
   ]
 
   // Renderizar imediatamente, não bloquear por loading
   return (
     <ProtectedRoute>
+      {user?.id && (
+        <WelcomeModal userId={user.id} userName={user.name || ''} />
+      )}
       <Layout>
         <div className="space-y-8">
           {/* Header - sempre visível */}
@@ -969,85 +1050,20 @@ export default function Dashboard() {
             </div>
           </div>
 
-        {/* Stats Grid - Mobile Carousel */}
-        <div className="lg:hidden">
-          {loading ? (
-            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <SkeletonStatsCard key={index} />
-              ))}
-            </div>
-          ) : (
-            <div 
-              className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
-              style={{
-                WebkitOverflowScrolling: 'touch',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none'
+        {/* Seção de Pendências (Removido FinancialSummaryCards) */}
+        <div className="grid grid-cols-1 gap-6 lg:gap-8 mb-8">
+          {(pendingSends.length > 0 || nearPayments.length > 0 || latePayments.length > 0) && (
+            <FinancialPendencies
+              pendingSends={pendingSends}
+              nearPayments={nearPayments}
+              latePayments={latePayments}
+              onAction={(action) => {
+                if (action === 'view_pending_sends') router.push('/procedimentos?filter=pending_send')
+                if (action === 'view_near_payments') router.push('/procedimentos?filter=near_payment')
+                if (action === 'view_critical_delays') router.push('/procedimentos?filter=late_payment')
               }}
-              onScroll={handleScroll}
-            >
-              {dashboardStats.map((stat, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.1 }}
-                >
-              <Card 
-                className="min-w-[280px] flex-shrink-0 hover:shadow-lg transition-all duration-300 cursor-pointer select-none"
-                onMouseDown={() => handleLongPressStart(stat.statKey)}
-                onMouseUp={handleLongPressEnd}
-                onMouseLeave={handleLongPressEnd}
-                onTouchStart={() => handleLongPressStart(stat.statKey)}
-                onTouchEnd={handleLongPressEnd}
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-semibold text-gray-700 truncate">
-                    {stat.title}
-                  </CardTitle>
-                  <stat.icon className="h-5 w-5 text-gray-500 flex-shrink-0" />
-                </CardHeader>
-                <div className="space-y-2">
-                  <div className="text-2xl font-bold text-gray-900 truncate">
-                    {stat.value}
-                  </div>
-                  <div className="flex items-center text-sm">
-                    {stat.changeType === 'positive' ? (
-                      <ArrowUpRight className="h-4 w-4 text-green-600 mr-1 flex-shrink-0" />
-                    ) : stat.changeType === 'neutral' ? (
-                      <Activity className="h-4 w-4 text-amber-600 mr-1 flex-shrink-0" />
-                    ) : (
-                      <ArrowDownRight className="h-4 w-4 text-red-600 mr-1 flex-shrink-0" />
-                    )}
-                    <span className={`${
-                      stat.changeType === 'positive' ? 'text-green-600' : 
-                      stat.changeType === 'neutral' ? 'text-amber-600' : 'text-red-600'
-                    } truncate font-medium`}>
-                      {stat.change}
-                    </span>
-                  </div>
-                </div>
-              </Card>
-                </motion.div>
-              ))}
-            </div>
+            />
           )}
-          {/* Indicadores de paginação */}
-          <div className="flex justify-center items-center gap-1 mt-3 mb-2">
-            {dashboardStats.map((_, index) => (
-              <div 
-                key={index}
-                className={`w-2 h-2 rounded-full transition-all duration-200 ${
-                  index === currentStatIndex ? 'bg-teal-600' : 'bg-gray-300'
-                }`}
-              ></div>
-            ))}
-          </div>
-          {/* Dica de texto */}
-          <p className="text-xs text-gray-400 text-center">
-            Deslize para o lado
-          </p>
         </div>
 
         {/* Meta Mensal */}
@@ -1157,248 +1173,162 @@ export default function Dashboard() {
                 </div>
               </Link>
 
-              {/* Vincular Secretária */}
-              {secretariaLoading ? (
-                <div className="w-full bg-gray-50 rounded-lg border border-gray-200 animate-pulse flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3">
-                  <div className="w-5 h-5 sm:w-6 sm:h-6 bg-gray-200 rounded"></div>
-                  <div className="h-2.5 w-12 sm:w-16 bg-gray-200 rounded"></div>
-                </div>
-              ) : secretaria ? (
-                <Link href="/configuracoes" className="w-full">
-                  <div className="w-full bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3 cursor-pointer active:scale-95">
-                    <svg className="w-5 h-5 sm:w-6 sm:h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                    <span className="text-[10px] sm:text-xs font-medium text-gray-900 text-center leading-tight px-0.5">{secretaria.nome.split(' ')[0]}</span>
-                  </div>
-                </Link>
-              ) : (
-                <Link href="/configuracoes" className="w-full">
-                  <div className="w-full bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3 cursor-pointer active:scale-95">
-                    <svg className="w-5 h-5 sm:w-6 sm:h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                    </svg>
-                    <span className="text-[10px] sm:text-xs font-medium text-gray-900 text-center leading-tight px-0.5">Vincular Secretária</span>
-                  </div>
-                </Link>
-              )}
-
             </div>
 
           </CardContent>
         </Card>
 
-        {/* Stats Grid - Desktop */}
-        <div className="hidden lg:grid grid-cols-4 gap-6">
-          {loading ? (
-            <>
-              {Array.from({ length: 4 }).map((_, index) => (
-                <SkeletonStatsCard key={index} />
-              ))}
-            </>
-          ) : (
-            <>
-              {dashboardStats.map((stat, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
-            >
-            <Card 
-              key={index} 
-              className="hover:shadow-lg transition-all duration-300 cursor-pointer select-none"
-              onMouseDown={() => handleLongPressStart(stat.statKey)}
-              onMouseUp={handleLongPressEnd}
-              onMouseLeave={handleLongPressEnd}
-              onTouchStart={() => handleLongPressStart(stat.statKey)}
-              onTouchEnd={handleLongPressEnd}
-            >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700 truncate">
-                  {stat.title}
-                </CardTitle>
-                <stat.icon className="h-5 w-5 text-gray-500 flex-shrink-0" />
-              </CardHeader>
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-gray-900 truncate">
-                  {stat.value}
-                </div>
-                <div className="flex items-center text-sm">
-                  {stat.changeType === 'positive' ? (
-                    <ArrowUpRight className="h-4 w-4 text-green-600 mr-1 flex-shrink-0" />
-                  ) : stat.changeType === 'neutral' ? (
-                    <Activity className="h-4 w-4 text-amber-600 mr-1 flex-shrink-0" />
-                  ) : (
-                    <ArrowDownRight className="h-4 w-4 text-red-600 mr-1 flex-shrink-0" />
-                  )}
-                  <span className={`${
-                    stat.changeType === 'positive' ? 'text-green-600' : 
-                    stat.changeType === 'neutral' ? 'text-amber-600' : 'text-red-600'
-                  } truncate font-medium`}>
-                    {stat.change}
-                  </span>
-                </div>
-                </div>
-              </Card>
-            </motion.div>
-              ))}
-            </>
-          )}
-        </div>
-
-
-        {/* Charts and Recent Activity */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
-          {/* Revenue Chart */}
-          {loading ? (
-            <SkeletonChart />
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.05 }}
-            >
-            <Card className="overflow-hidden">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Receita dos Últimos 6 Meses</CardTitle>
-            </CardHeader>
-            <div className="p-3 sm:p-4 lg:p-6">
-              <div className="h-48 sm:h-56 lg:h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={monthlyRevenue} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                    <CartesianGrid 
-                      strokeDasharray="2 4" 
-                      stroke="#e5e7eb" 
-                      strokeOpacity={0.6}
-                    />
-                    <XAxis 
-                      dataKey="name" 
-                      fontSize={12}
-                      tick={{ fontSize: 11 }}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis 
-                      fontSize={12}
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(value) => {
-                        if (value >= 1000000) {
-                          return `R$ ${(value / 1000000).toFixed(1)}M`
-                        } else if (value >= 1000) {
-                          return `R$ ${(value / 1000).toFixed(0)}k`
-                        } else {
-                          return `R$ ${value.toFixed(0)}`
-                        }
-                      }}
-                    />
-                    <Tooltip 
-                      formatter={(value, name, props) => [
-                        formatCurrency(Number(value)), 
-                        'Receita Recebida'
-                      ]}
-                      labelFormatter={(label) => `Mês: ${label}`}
-                      contentStyle={{
-                        fontSize: '12px',
-                        padding: '10px',
-                        borderRadius: '8px',
-                        border: '1px solid #e5e7eb',
-                        backgroundColor: 'white',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke="#14b8a6" 
-                      strokeWidth={3}
-                      dot={{ 
-                        fill: '#14b8a6', 
-                        strokeWidth: 2, 
-                        r: 5,
-                        stroke: '#ffffff'
-                      }}
-                      activeDot={{ 
-                        r: 7, 
-                        stroke: '#14b8a6', 
-                        strokeWidth: 3,
-                        fill: '#ffffff'
-                      }}
-                      connectNulls={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </Card>
-            </motion.div>
-          )}
-
-          {/* Status Distribution */}
-          {loading ? (
-            <SkeletonChart />
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-            >
-            <Card className="overflow-hidden">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Distribuição por Status</CardTitle>
-            </CardHeader>
-            <div className="p-3 sm:p-4 lg:p-6">
-              <div className="h-48 sm:h-56 lg:h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={(props: any) => {
-                        if (props.percent === 0) return null
-                        return `${props.name} ${(props.percent * 100).toFixed(0)}%`
-                      }}
-                      outerRadius={60}
-                      innerRadius={20}
-                      fill="#8884d8"
-                      dataKey="value"
-                      fontSize={11}
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      formatter={(value, name) => [value, name]}
-                      contentStyle={{
-                        fontSize: '12px',
-                        padding: '8px',
-                        borderRadius: '6px',
-                        border: '1px solid #e5e7eb'
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              
-              {/* Legend for mobile */}
-              <div className="mt-4 flex flex-wrap justify-center gap-3 sm:hidden">
-                {pieData.map((entry, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <div 
-                      className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: entry.color }}
-                    />
-                    <span className="text-xs text-gray-600">{entry.name}</span>
-                  </div>
+        {/* Grid de Estatísticas Principais (Mobile Carousel / Desktop Grid) */}
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-4 px-2">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Estatísticas Principais
+            </h2>
+          </div>
+          
+          {/* Mobile Carousel */}
+          <div className="lg:hidden">
+            {loading ? (
+              <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+                {[1, 2, 3].map((_, index) => (
+                  <SkeletonStatsCard key={index} />
                 ))}
               </div>
+            ) : (
+              <div 
+                className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide snap-x snap-mandatory"
+                style={{
+                  WebkitOverflowScrolling: 'touch',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none'
+                }}
+                onScroll={handleScroll}
+              >
+                {dashboardStats.map((stat, index) => (
+                  <MotionDiv
+                    key={index}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: index * 0.1 }}
+                  >
+                <Card 
+                  className="min-w-[160px] snap-center flex-shrink-0 hover:shadow-lg transition-all duration-300 cursor-pointer select-none relative overflow-hidden"
+                  onMouseDown={() => handleLongPressStart(stat.statKey)}
+                  onMouseUp={handleLongPressEnd}
+                  onMouseLeave={handleLongPressEnd}
+                  onTouchStart={() => handleLongPressStart(stat.statKey)}
+                  onTouchEnd={handleLongPressEnd}
+                >
+                  <CardContent className="p-4 flex flex-col items-center text-center">
+                    <div className="p-2 bg-gray-50 rounded-xl mb-2">
+                      <stat.icon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                        {stat.title}
+                      </p>
+                      <div className="text-xl font-black text-gray-900 tracking-tight">
+                        {stat.value}
+                      </div>
+                      <div className="flex items-center justify-center text-xs font-medium">
+                        {stat.changeType === 'positive' ? (
+                          <ArrowUpRight className="h-3 w-3 text-green-600 mr-0.5 flex-shrink-0" />
+                        ) : stat.changeType === 'neutral' ? (
+                          <Activity className="h-3 w-3 text-amber-600 mr-0.5 flex-shrink-0" />
+                        ) : (
+                          <ArrowDownRight className="h-3 w-3 text-red-600 mr-0.5 flex-shrink-0" />
+                        )}
+                        <span className={`${
+                          stat.changeType === 'positive' ? 'text-green-600' : 
+                          stat.changeType === 'neutral' ? 'text-amber-600' : 'text-red-600'
+                        }`}>
+                          {stat.change}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                  </MotionDiv>
+                ))}
+              </div>
+            )}
+            {/* Indicadores de paginação */}
+            <div className="flex justify-center items-center gap-1.5 mt-3 mb-2">
+              {dashboardStats.map((_, index) => (
+                <div 
+                  key={index}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    index === currentStatIndex ? 'w-6 bg-teal-600' : 'w-1.5 bg-slate-300'
+                  }`}
+                ></div>
+              ))}
             </div>
-          </Card>
-            </motion.div>
-          )}
+          </div>
+
+          {/* Desktop Grid */}
+          <div className="hidden lg:grid grid-cols-5 gap-4">
+            {loading ? (
+              Array.from({ length: 5 }).map((_, index) => (
+                <SkeletonStatsCard key={index} />
+              ))
+            ) : (
+              dashboardStats.map((stat, index) => (
+                <MotionDiv
+                  key={index}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                >
+                <Card 
+                  className="hover:shadow-lg transition-all duration-300 cursor-pointer select-none relative overflow-hidden group border-gray-100"
+                  onMouseDown={() => handleLongPressStart(stat.statKey)}
+                  onMouseUp={handleLongPressEnd}
+                  onMouseLeave={handleLongPressEnd}
+                  onTouchStart={() => handleLongPressStart(stat.statKey)}
+                  onTouchEnd={handleLongPressEnd}
+                >
+                  <CardContent className="p-4 flex flex-col items-center text-center">
+                    <div className="p-2 bg-gray-50 rounded-xl mb-2 group-hover:scale-110 transition-transform duration-300">
+                      <stat.icon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                        {stat.title}
+                      </p>
+                      <div className="text-xl font-black text-gray-900 tracking-tight">
+                        {stat.value}
+                      </div>
+                      <div className="flex items-center justify-center text-xs font-medium">
+                        {stat.changeType === 'positive' ? (
+                          <ArrowUpRight className="h-3 w-3 text-green-600 mr-0.5 flex-shrink-0" />
+                        ) : stat.changeType === 'neutral' ? (
+                          <Activity className="h-3 w-3 text-amber-600 mr-0.5 flex-shrink-0" />
+                        ) : (
+                          <ArrowDownRight className="h-3 w-3 text-red-600 mr-0.5 flex-shrink-0" />
+                        )}
+                        <span className={`${
+                          stat.changeType === 'positive' ? 'text-green-600' : 
+                          stat.changeType === 'neutral' ? 'text-amber-600' : 'text-red-600'
+                        }`}>
+                          {stat.change}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                </MotionDiv>
+              ))
+            )}
+          </div>
         </div>
+
+
+
+        <DashboardRechartsSection
+          loading={loading}
+          monthlyRevenue={monthlyRevenue}
+          pieData={pieData}
+        />
 
         {/* Recent Procedures */}
         <div>
@@ -1427,7 +1357,7 @@ export default function Dashboard() {
             ) : (
             <div className="space-y-3 sm:space-y-4">
                 {recentProcedures.map((procedure, index) => (
-                  <motion.div
+                  <MotionDiv
                     key={procedure.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -1455,6 +1385,11 @@ export default function Dashboard() {
                               </p>
                               {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
                                 <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                              )}
+                              {procedure.show_to_secretary !== false ? (
+                                <Eye className="w-4 h-4 text-emerald-500 flex-shrink-0" title="Visível para Secretária" />
+                              ) : (
+                                <EyeOff className="w-4 h-4 text-gray-400 flex-shrink-0" title="Oculto para Secretária" />
                               )}
                             </div>
                             <p className="text-sm text-gray-600 truncate font-medium mb-1">
@@ -1501,6 +1436,11 @@ export default function Dashboard() {
                             {procedureAttachments[procedure.id] && procedureAttachments[procedure.id].length > 0 && (
                               <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
                             )}
+                            {procedure.show_to_secretary !== false ? (
+                              <Eye className="w-4 h-4 text-emerald-500 flex-shrink-0" title="Visível para Secretária" />
+                            ) : (
+                              <EyeOff className="w-4 h-4 text-gray-400 flex-shrink-0" title="Oculto para Secretária" />
+                            )}
                           </div>
                           <p className="text-sm text-gray-600 font-medium mb-1">
                             {procedure.procedure_name || procedure.procedure_type || 'Procedimento não informado'}
@@ -1536,7 +1476,7 @@ export default function Dashboard() {
                     </div>
                     </div>
                   </div>
-                  </motion.div>
+                  </MotionDiv>
                 ))}
               </div>
             )}
@@ -1547,9 +1487,9 @@ export default function Dashboard() {
 
       {/* Modal de Configuração da Meta */}
       {showGoalModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="flex items-center justify-between p-6 border-b border-teal-200 bg-teal-50">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center p-0 sm:p-4 z-[9999] backdrop-blur-sm" onClick={() => setShowGoalModal(false)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl max-w-md w-full max-h-[92dvh] sm:max-h-[90vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-teal-100 bg-teal-50/50">
               <h3 className="text-lg font-semibold text-teal-800">Configurar Meta Mensal</h3>
               <Button 
                 variant="ghost" 
@@ -1636,7 +1576,7 @@ export default function Dashboard() {
               </div>
             </div>
             
-            <div className="flex justify-end gap-3 p-6 border-t border-teal-200">
+            <div className="flex flex-col sm:flex-row justify-end gap-3 p-5 sm:p-6 border-t border-gray-100 bg-gray-50 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
               <Button 
                 variant="outline"
                 onClick={() => setShowGoalModal(false)}
@@ -1658,10 +1598,10 @@ export default function Dashboard() {
 
       {/* Modal de Detalhes do Cálculo */}
       {showCalculationModal && calculationDetails && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[9999]" onClick={() => setShowCalculationModal(false)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center p-0 sm:p-4 z-[9999] backdrop-blur-sm" onClick={() => setShowCalculationModal(false)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-gray-100 bg-white">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{calculationDetails.title}</h2>
               </div>
@@ -1750,7 +1690,7 @@ export default function Dashboard() {
             </div>
 
             {/* Footer */}
-            <div className="p-6 border-t border-gray-200 bg-gray-50">
+            <div className="p-5 sm:p-6 border-t border-gray-100 bg-gray-50 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
               <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-500">
                   💡 Dica: Clique e segure em qualquer card para ver os detalhes do cálculo

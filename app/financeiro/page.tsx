@@ -2,21 +2,20 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { 
-  DollarSign, 
-  TrendingUp, 
-  TrendingDown,
-  CreditCard,
-  Banknote,
-  PieChart,
-  Calendar,
-  ArrowUpRight,
-  ArrowDownRight,
-  Target,
-  Settings,
-  CheckCircle,
-  X
-} from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { DollarSign } from 'lucide-react'
+import { TrendingUp } from 'lucide-react'
+import { TrendingDown } from 'lucide-react'
+import { CreditCard } from 'lucide-react'
+import { Banknote } from 'lucide-react'
+import { PieChart } from 'lucide-react'
+import { Calendar } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
+import { ArrowDownRight } from 'lucide-react'
+import { Target } from 'lucide-react'
+import { Settings } from 'lucide-react'
+import { CheckCircle } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/Card'
@@ -26,7 +25,22 @@ import { goalService } from '@/lib/goals'
 import { shiftService } from '@/lib/shifts'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatCurrency } from '@/lib/utils'
-import { ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts'
+
+const FinanceiroCharts = dynamic(
+  () => import('@/components/charts/FinanceiroCharts'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="h-64 bg-gray-100 animate-pulse rounded-lg" />
+          <div className="h-64 bg-gray-100 animate-pulse rounded-lg" />
+        </div>
+        <div className="h-64 bg-gray-100 animate-pulse rounded-lg" />
+      </div>
+    ),
+  }
+)
 
 function FinanceiroContent() {
   const [stats, setStats] = useState({
@@ -152,6 +166,13 @@ function FinanceiroContent() {
         cor: '#f59e0b', // amber-500 - atenção
         bgColor: 'bg-amber-50',
         textColor: 'text-amber-700'
+      },
+      {
+        status: 'Enviado',
+        quantidade: procedures.filter(p => p.payment_status === 'sent').length,
+        cor: '#2563eb', // blue-600
+        bgColor: 'bg-blue-50',
+        textColor: 'text-blue-700'
       },
       {
         status: 'Não Lançado',
@@ -503,7 +524,7 @@ function FinanceiroContent() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-2xl font-bold text-gray-900">{item.value}</div>
+                <div className="text-xl sm:text-2xl font-bold text-gray-900 break-all">{item.value}</div>
                 <div className="flex items-center text-sm">
                   {item.changeType === 'positive' ? (
                     <ArrowUpRight className="h-4 w-4 text-emerald-600 mr-1" />
@@ -568,25 +589,25 @@ function FinanceiroContent() {
                 {/* Stats */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center p-3 bg-emerald-50 rounded-lg">
-                    <div className="text-2xl font-bold text-emerald-600">
+                    <div className="text-xl sm:text-2xl font-bold text-emerald-600 break-all">
                       {formatCurrency(currentProgress.currentValue)}
                     </div>
                     <div className="text-sm text-emerald-700">Arrecadado</div>
                   </div>
                   <div className="text-center p-3 bg-blue-50 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-600">
+                    <div className="text-xl sm:text-2xl font-bold text-blue-600 break-all">
                       {formatCurrency(monthlyGoal.targetValue)}
                     </div>
                     <div className="text-sm text-blue-700">Meta</div>
                   </div>
                   <div className="text-center p-3 bg-orange-50 rounded-lg">
-                    <div className="text-2xl font-bold text-orange-600">
+                    <div className="text-xl sm:text-2xl font-bold text-orange-600 break-all">
                       {formatCurrency(Math.max(0, monthlyGoal.targetValue - currentProgress.currentValue))}
                     </div>
                     <div className="text-sm text-orange-700">Restante</div>
                   </div>
                   <div className="text-center p-3 bg-purple-50 rounded-lg">
-                    <div className="text-2xl font-bold text-purple-600">
+                    <div className="text-xl sm:text-2xl font-bold text-purple-600">
                       {currentProgress.daysRemaining}
                     </div>
                     <div className="text-sm text-purple-700">Dias Restantes</div>
@@ -624,182 +645,12 @@ function FinanceiroContent() {
           </CardContent>
         </Card>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <Card className="border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold">Distribuição de Receitas</CardTitle>
-              <CardDescription>Status dos pagamentos dos procedimentos</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={(props: any) => `${props.name} ${(props.percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Valor']} />
-                  </RechartsPieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold">Evolução da Receita</CardTitle>
-              <CardDescription>Últimos 6 meses de receitas</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={monthlyRevenueData}>
-                    <defs>
-                      <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#14b8a6" stopOpacity={0.1}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="name" stroke="#666" />
-                    <YAxis stroke="#666" />
-                    <Tooltip 
-                      formatter={(value) => [formatCurrency(Number(value)), 'Receita']}
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="receita" 
-                      stroke="#14b8a6" 
-                      strokeWidth={2}
-                      fillOpacity={1} 
-                      fill="url(#colorReceita)" 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Gráfico de Quantidade de Procedimentos */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-          <Card className="border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold">Quantidade de Procedimentos</CardTitle>
-              <CardDescription>Distribuição dos procedimentos por status de pagamento</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={procedureChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis 
-                    dataKey="status" 
-                    stroke="#666"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis 
-                    stroke="#666"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '12px',
-                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                      fontSize: '14px'
-                    }}
-                    formatter={(value: any, name: any, props: any) => [
-                      value, 
-                      'Procedimentos',
-                      { color: props.payload?.cor }
-                    ]}
-                    labelStyle={{ 
-                      color: '#374151', 
-                      fontWeight: '600',
-                      fontSize: '14px'
-                    }}
-                    itemStyle={{ 
-                      color: '#374151',
-                      fontSize: '13px'
-                    }}
-                  />
-                  <Bar 
-                    dataKey="quantidade" 
-                    radius={[4, 4, 0, 0]}
-                  >
-                    {procedureChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.cor} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            
-                {/* Resumo das Estatísticas */}
-                <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {procedureChartData.map((item, index) => (
-                    <div 
-                      key={index} 
-                      className={`text-center p-4 rounded-lg border ${item.bgColor} border-opacity-20 cursor-pointer hover:shadow-md transition-all duration-200 hover:scale-105`}
-                      onClick={() => {
-                        // Mapear status para filtros
-                        let filterParam = ''
-                        switch(item.status) {
-                          case 'Total':
-                            filterParam = 'all'
-                            break
-                          case 'Pago':
-                            filterParam = 'paid'
-                            break
-                          case 'Pendente':
-                            filterParam = 'pending'
-                            break
-                          case 'Não Lançado':
-                            filterParam = 'cancelled'
-                            break
-                          default:
-                            filterParam = 'all'
-                        }
-                        
-                        // Redirecionar para procedimentos com filtro
-                        router.push(`/procedimentos?status=${filterParam}`)
-                      }}
-                    >
-                      <div
-                        className="w-4 h-4 rounded-full mx-auto mb-3 shadow-sm"
-                        style={{ backgroundColor: item.cor }}
-                      ></div>
-                      <div className={`text-3xl font-bold ${item.textColor} mb-1`}>{item.quantidade}</div>
-                      <div className={`text-sm font-medium ${item.textColor} opacity-80`}>{item.status}</div>
-                    </div>
-                  ))}
-                </div>
-          </CardContent>
-        </Card>
-        </div>
+        <FinanceiroCharts
+          pieData={pieData}
+          monthlyRevenueData={monthlyRevenueData}
+          procedureChartData={procedureChartData}
+          formatCurrency={formatCurrency}
+        />
 
         {/* Modal de Configuração da Meta */}
         {showGoalModal && (

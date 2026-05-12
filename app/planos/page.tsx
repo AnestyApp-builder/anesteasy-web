@@ -15,12 +15,10 @@ import {
   Gift,
   X
 } from 'lucide-react'
-import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { useAuth } from '@/contexts/AuthContext'
-import { isSecretaria } from '@/lib/user-utils'
 import Link from 'next/link'
+import { Layout } from '@/components/layout/Layout'
 
 interface Plan {
   id: 'monthly' | 'quarterly' | 'annual'
@@ -104,7 +102,8 @@ interface TrialInfo {
 }
 
 function PlanosContent() {
-  const { user, isAuthenticated } = useAuth()
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null)
+  const isAuthenticated = !!user
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(false)
@@ -112,6 +111,21 @@ function PlanosContent() {
   const [activeSubscription, setActiveSubscription] = useState<ActiveSubscription | null>(null)
   const [loadingSubscription, setLoadingSubscription] = useState(true)
   const [trialInfo, setTrialInfo] = useState<TrialInfo | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { supabase } = await import('@/lib/supabase')
+      const { data } = await supabase.auth.getSession()
+      const u = data.session?.user
+      if (!cancelled) {
+        setUser(u ? { id: u.id, email: u.email || undefined } : null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const fetchActiveSubscription = useCallback(async () => {
     if (!user) {
@@ -166,14 +180,57 @@ function PlanosContent() {
       }
 
       // Processar trial
+      let trialInfoResolved: TrialInfo | null = null
+
       if (trialResponse.ok) {
-        const trialData = await trialResponse.json()
-        if (trialData.trialInfo) {
-          setTrialInfo(trialData.trialInfo)
+        try {
+          const trialData = await trialResponse.json()
+          if (trialData.trialInfo) {
+            trialInfoResolved = trialData.trialInfo
+          }
+        } catch {
+          // json parse failed
         }
       }
+
+      // Fallback: se a API falhou ou não retornou trialInfo,
+      // calcular diretamente do Auth session (sempre disponível)
+      if (!trialInfoResolved && session?.user) {
+        const baseDate = session.user.email_confirmed_at || session.user.created_at
+        if (baseDate) {
+          const trialEnd = new Date(new Date(baseDate).getTime() + 7 * 24 * 60 * 60 * 1000)
+          const daysLeft = Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+          if (daysLeft > 0) {
+            trialInfoResolved = {
+              isInTrial: true,
+              daysRemaining: daysLeft,
+              trial_ends_at: trialEnd.toISOString(),
+              free_months: null
+            }
+          }
+        }
+      }
+
+      if (trialInfoResolved) {
+        setTrialInfo(trialInfoResolved)
+      }
     } catch (error) {
-      // Erro ao buscar assinatura
+      // Erro ao buscar assinatura — tentar fallback de trial via Auth session
+      try {
+        const { supabase } = await import('@/lib/supabase')
+        const { data: { session: fallbackSession } } = await supabase.auth.getSession()
+        const authUser = fallbackSession?.user
+        if (authUser) {
+          const baseDate = authUser.email_confirmed_at || authUser.created_at
+          if (baseDate) {
+            const trialEnd = new Date(new Date(baseDate).getTime() + 7 * 24 * 60 * 60 * 1000)
+            const daysLeft = Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+            if (daysLeft > 0) {
+              setTrialInfo({ isInTrial: true, daysRemaining: daysLeft, trial_ends_at: trialEnd.toISOString(), free_months: null })
+            }
+          }
+        }
+      } catch { /* ignore */ }
       setActiveSubscription(null)
     } finally {
       setLoadingSubscription(false)
@@ -181,45 +238,12 @@ function PlanosContent() {
   }, [user])
 
   useEffect(() => {
-    // Redirecionar secretárias - elas não precisam pagar
     if (isAuthenticated && user) {
-      let mounted = true
-      
-      const checkSecretaria = async () => {
-        try {
-          // Timeout de 2 segundos para evitar travamento
-          const timeoutPromise = new Promise<boolean>((_, reject) => {
-            setTimeout(() => reject(new Error('Timeout')), 2000)
-          })
-          
-          const secretariaPromise = isSecretaria(user.id)
-          const isSec = await Promise.race([secretariaPromise, timeoutPromise]) as boolean
-          
-          if (!mounted) return
-          
-          if (isSec) {
-            router.push('/secretaria/dashboard')
-          } else {
-            // Buscar assinatura ativa
-            fetchActiveSubscription()
-          }
-        } catch (error) {
-          // Se der timeout ou erro, continuar como anestesista
-          if (!mounted) return
-          // Erro ao verificar secretária
-          fetchActiveSubscription()
-        }
-      }
-      
-      checkSecretaria()
-      
-      return () => {
-        mounted = false
-      }
+      fetchActiveSubscription()
     } else {
       setLoadingSubscription(false)
     }
-  }, [isAuthenticated, user, router, fetchActiveSubscription])
+  }, [isAuthenticated, user, fetchActiveSubscription])
 
   // Verificação automática quando não há assinatura ativa
   useEffect(() => {
@@ -464,9 +488,8 @@ function PlanosContent() {
   // O login será solicitado apenas quando tentar assinar um plano
 
   return (
-    <Layout>
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-12 px-4">
-        <div className="max-w-7xl mx-auto">
+    <div className="bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-6 sm:py-8 lg:py-10 px-0 rounded-2xl">
+      <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="text-center mb-12">
             {isAuthenticated && (
@@ -800,26 +823,24 @@ function PlanosContent() {
               </div>
             </CardContent>
           </Card>
-        </div>
       </div>
-
-    </Layout>
+    </div>
   )
 }
 
 export default function Planos() {
   return (
     <Suspense fallback={
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
-            <p className="text-gray-600">Carregando...</p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
+          <p className="text-gray-600">Carregando...</p>
         </div>
-      </Layout>
+      </div>
     }>
-      <PlanosContent />
+      <Layout>
+        <PlanosContent />
+      </Layout>
     </Suspense>
   )
 }

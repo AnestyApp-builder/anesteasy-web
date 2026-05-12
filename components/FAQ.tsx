@@ -11,32 +11,28 @@ interface FAQItem {
 
 const faqItems: FAQItem[] = [
   {
-    question: 'Como funciona a integração com secretária?',
-    answer: 'Você convida sua secretária por email. Ela cria uma conta gratuita (secretárias não pagam) e pode visualizar, cadastrar e confirmar procedimentos. Você recebe notificações de todas as alterações que ela fizer. Tudo fica registrado e rastreável.'
+    question: 'Como funciona o cadastro de procedimento via WhatsApp?',
+    answer: 'É muito simples! Você envia uma foto da ficha anestésica para o nosso bot no WhatsApp. Nossa Inteligência Artificial lê os dados (paciente, hospital, convênio, etc) e te envia um resumo para confirmação. Uma vez confirmado, o dado cai direto no seu dashboard financeiro. Zero digitação.'
   },
   {
-    question: 'Posso ter múltiplas secretárias ou trabalhar em vários hospitais?',
-    answer: 'Sim! Você pode vincular quantas secretárias precisar e organizar procedimentos por hospital, convênio ou qualquer critério que faça sentido para você. Não há limite de procedimentos ou hospitais.'
+    question: 'Os dados dos meus pacientes estão seguros?',
+    answer: 'Totalmente. Seguimos rigorosamente a LGPD. Todos os dados sensíveis são criptografados com padrão bancário (AES-256). Além disso, o processamento via WhatsApp é protegido por criptografia de ponta a ponta e os dados são anonimizados em nossos servidores de análise.'
   },
   {
-    question: 'Como funciona o trial gratuito? Preciso cadastrar cartão?',
-    answer: 'O trial é 100% gratuito por 7 dias. NÃO precisa cadastrar cartão de crédito. Você testa tudo sem compromisso. Só pedimos pagamento se decidir continuar após o trial.'
+    question: 'Como funciona a integração com minha secretária?',
+    answer: 'Você pode convidar sua secretária para a plataforma. Ela terá um acesso específico onde poderá ver apenas o necessário para realizar as cobranças e conciliações, sem acesso aos seus dados privados. É o fim das planilhas compartilhadas e mensagens perdidas.'
   },
   {
-    question: 'Posso exportar meus dados? E se eu quiser cancelar?',
-    answer: 'Sim! Você pode exportar todos os seus dados em Excel ou PDF a qualquer momento. Se cancelar, seus dados ficam disponíveis por 90 dias para download. Não há multa ou taxa de cancelamento.'
+    question: 'O trial gratuito exige cartão de crédito?',
+    answer: 'Não. Você pode testar todas as funcionalidades, inclusive o cadastro via WhatsApp, por 7 dias sem cadastrar nenhum cartão. Queremos que você sinta a facilidade no seu dia a dia antes de qualquer compromisso.'
   },
   {
-    question: 'Os dados são seguros? Tem LGPD?',
-    answer: 'Sim! Temos criptografia de nível bancário, backup automático diário e estamos 100% em conformidade com a LGPD. Dados de pacientes são anonimizados e você tem controle total sobre quem acessa o quê.'
+    question: 'E se eu esquecer de cobrar algum procedimento?',
+    answer: 'O AnestEasy te alerta automaticamente. No seu dashboard, mostramos uma seção de "Atrasos Graves" para itens com mais de 90 dias sem recebimento, garantindo que você nunca mais perca dinheiro por esquecimento.'
   },
   {
-    question: 'Tem app mobile ou só funciona no computador?',
-    answer: 'Atualmente funciona perfeitamente no navegador mobile (responsivo). App nativo para iOS e Android está no roadmap para os próximos meses. Você pode adicionar à tela inicial do celular e usar como app.'
-  },
-  {
-    question: 'Quanto tempo leva para cadastrar um procedimento?',
-    answer: 'Menos de 30 segundos. Campos principais: paciente (iniciais), hospital, convênio, valor e data. Depois você pode adicionar mais detalhes se quiser. O sistema aprende seus padrões e sugere valores automaticamente.'
+    question: 'Consigo exportar os dados para meu contador?',
+    answer: 'Com certeza. Com um clique você gera relatórios completos em Excel ou PDF com todos os procedimentos realizados, valores recebidos e pendências por convênio ou período.'
   }
 ]
 

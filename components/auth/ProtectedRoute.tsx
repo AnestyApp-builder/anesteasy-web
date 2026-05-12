@@ -15,7 +15,7 @@ interface AuthStatus {
   ok: boolean
   authenticated: boolean
   email_confirmed: boolean
-  role: 'secretaria' | 'anestesista' | 'admin'
+  role: 'anestesista' | 'admin'
   subscription_status: 'active' | 'trial' | 'expired' | 'none'
   has_access: boolean
 }
@@ -32,7 +32,6 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
 
   useEffect(() => {
     let mounted = true
-    let timeoutId: NodeJS.Timeout
 
     const checkAuthStatus = async () => {
       if (!mounted) return
@@ -43,12 +42,12 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
 
       // Verificar cache local primeiro para renderização instantânea
       const cachedAuth = localStorage.getItem('auth_cache')
-      let cachedData: any = null
+      let cachedData: (AuthStatus & { timestamp: number }) | null = null
       if (cachedAuth) {
         try {
           cachedData = JSON.parse(cachedAuth)
           // Cache válido por 15 minutos (aumentado de 5 para reduzir verificações)
-          if (Date.now() - cachedData.timestamp < 15 * 60 * 1000) {
+          if (cachedData && Date.now() - cachedData.timestamp < 15 * 60 * 1000) {
             if (mounted) {
               setAuthStatus({
                 ok: true,
@@ -62,51 +61,40 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
             }
             return // ✅ Usar cache e não fazer verificação no servidor
           }
-        } catch (error) {
+        } catch (error: unknown) {
+          console.warn('Erro ao ler cache de autenticação:', error)
           // Cache inválido, continuar com verificação
         }
       }
 
-      // Se não tem usuário autenticado, redirecionar para login
-      if (!user) {
-        if (mounted) {
-          router.push('/login')
-          setIsChecking(false)
-        }
-        return
-      }
-
       try {
-        // ✅ FIX CRÍTICO: Adicionar timeout em getSession()
         const { supabase } = await import('@/lib/supabase')
-        
-        const sessionPromise = supabase.auth.getSession()
-        const sessionTimeout = new Promise<{ data: { session: null } }>((resolve) => {
-          timeoutId = setTimeout(() => {
-            console.warn('⏱️ [AUTH] Timeout ao obter sessão (5s)')
-            resolve({ data: { session: null } })
-          }, 5000) // ✅ 5 segundos de timeout
-        })
 
-        const { data: { session } } = await Promise.race([sessionPromise, sessionTimeout])
-
-        if (timeoutId) clearTimeout(timeoutId)
+        // Após server action de login, cookies podem hidratar alguns ms depois — várias tentativas antes de desistir
+        let session: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session'] = null
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const { data } = await supabase.auth.getSession()
+          session = data.session
+          if (session?.access_token) break
+          await new Promise((r) => setTimeout(r, 100 * (attempt + 1)))
+        }
 
         if (!mounted) return
-        
+
         if (!session?.access_token) {
-          router.push('/login')
-          setIsChecking(false)
+          if (!user) {
+            router.push('/login')
+            setIsChecking(false)
+          }
           return
         }
 
-        // Chamar endpoint unificado /api/auth/status com timeout reduzido
         const response = await fetchWithTimeout('/api/auth/status', {
           headers: {
-            'Authorization': `Bearer ${session.access_token}`
+            Authorization: `Bearer ${session.access_token}`,
           },
-          timeout: 5000, // ✅ Reduzido de 7s para 5s
-          maxRetries: 1  // ✅ Reduzido de 2 para 1 tentativa
+          timeout: 12000,
+          maxRetries: 1,
         })
 
         if (!mounted) return
@@ -148,12 +136,6 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
           return
         }
 
-        // Secretária tentando acessar rota de anestesista
-        if (status.role === 'secretaria' && !pathname.startsWith('/secretaria')) {
-          router.push('/secretaria/dashboard')
-          setIsChecking(false)
-          return
-        }
 
         // Verificar assinatura se necessário
         if (requireSubscription && !publicRoutes.includes(pathname)) {
@@ -165,7 +147,7 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
         }
 
         setIsChecking(false)
-      } catch (error) {
+      } catch (error: unknown) {
         console.warn('⚠️ [AUTH] Erro na verificação, permitindo acesso temporário:', error)
         // ✅ FIX: Em caso de erro, setar isChecking(false) para não ficar travado
         if (mounted) {
@@ -190,7 +172,6 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
     // ✅ Cleanup adequado
     return () => {
       mounted = false
-      if (timeoutId) clearTimeout(timeoutId)
     }
   }, [isLoading, user, router, pathname, requireSubscription])
 

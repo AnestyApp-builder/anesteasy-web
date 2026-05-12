@@ -1,41 +1,8 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { createClient as createBrowserClient } from '@/utils/supabase/client'
+import { SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://zmtwwajyhusyrugobxur.supabase.co'
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptdHd3YWp5aHVzeXJ1Z29ieHVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczMzYzNzAsImV4cCI6MjA3MjkxMjM3MH0.NC6t2w_jFWTMJjVv5FmPLouVyOVgCTBReCr0zOA2dx8'
-
-export const supabaseOptions = {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    storageKey: 'sb-auth-token',
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-    flowType: 'pkce'
-  },
-  global: {
-    headers: { 
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    }
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
-  }
-}
-
-// Função para criar o cliente Supabase
-function createSupabaseClient(): SupabaseClient {
-  return createClient(supabaseUrl, supabaseAnonKey, supabaseOptions)
-}
-
-// Criar cliente apenas no cliente (browser)
-let supabase: SupabaseClient | null = null
-
-if (typeof window !== 'undefined') {
-  supabase = createSupabaseClient()
-}
+// Criar cliente usando @supabase/ssr (apenas no browser)
+const supabase = typeof window !== 'undefined' ? createBrowserClient() : (null as unknown as SupabaseClient)
 
 export { supabase }
 
@@ -55,60 +22,54 @@ export type Database = {
   }
   public: {
     Tables: {
-      secretarias: {
+      admin_login_attempts: {
         Row: {
-          id: string
-          nome: string
-          email: string
-          telefone: string | null
-          cpf: string | null
-          data_cadastro: string
-          status: string
           created_at: string | null
-          updated_at: string | null
+          email: string
+          failure_reason: string | null
+          id: string
+          ip_address: string | null
+          success: boolean | null
+          user_agent: string | null
         }
         Insert: {
-          id?: string
-          nome: string
-          email: string
-          telefone?: string | null
-          cpf?: string | null
-          data_cadastro?: string
-          status?: string
           created_at?: string | null
-          updated_at?: string | null
+          email: string
+          failure_reason?: string | null
+          id?: string
+          ip_address?: string | null
+          success?: boolean | null
+          user_agent?: string | null
         }
         Update: {
-          id?: string
-          nome?: string
-          email?: string
-          telefone?: string | null
-          cpf?: string | null
-          data_cadastro?: string
-          status?: string
           created_at?: string | null
-          updated_at?: string | null
+          email?: string
+          failure_reason?: string | null
+          id?: string
+          ip_address?: string | null
+          success?: boolean | null
+          user_agent?: string | null
         }
         Relationships: []
       }
       anestesista_secretaria: {
         Row: {
-          id: string
           anestesista_id: string
-          secretaria_id: string
           created_at: string | null
+          id: string
+          secretaria_id: string
         }
         Insert: {
-          id?: string
           anestesista_id: string
-          secretaria_id: string
           created_at?: string | null
+          id?: string
+          secretaria_id: string
         }
         Update: {
-          id?: string
           anestesista_id?: string
-          secretaria_id?: string
           created_at?: string | null
+          id?: string
+          secretaria_id?: string
         }
         Relationships: [
           {
@@ -127,43 +88,132 @@ export type Database = {
           },
         ]
       }
-      procedure_logs: {
+      anestesistas: {
         Row: {
-          id: string
-          procedure_id: string
-          changed_by_id: string
-          changed_by_type: string
-          changed_by_name: string
-          field_name: string
-          old_value: string | null
-          new_value: string | null
+          cep: string | null
+          cidade: string | null
           created_at: string | null
+          crm: string
+          data_nascimento: string | null
+          email: string
+          endereco: string | null
+          especialidade: string | null
+          estado: string | null
+          id: string
+          nome: string
+          status: string
+          telefone: string | null
+          updated_at: string | null
         }
         Insert: {
-          id?: string
-          procedure_id: string
-          changed_by_id: string
-          changed_by_type: string
-          changed_by_name: string
-          field_name: string
-          old_value?: string | null
-          new_value?: string | null
+          cep?: string | null
+          cidade?: string | null
           created_at?: string | null
+          crm: string
+          data_nascimento?: string | null
+          email: string
+          endereco?: string | null
+          especialidade?: string | null
+          estado?: string | null
+          id: string
+          nome: string
+          status?: string
+          telefone?: string | null
+          updated_at?: string | null
         }
         Update: {
-          id?: string
-          procedure_id?: string
-          changed_by_id?: string
-          changed_by_type?: string
-          changed_by_name?: string
-          field_name?: string
-          old_value?: string | null
-          new_value?: string | null
+          cep?: string | null
+          cidade?: string | null
           created_at?: string | null
+          crm?: string
+          data_nascimento?: string | null
+          email?: string
+          endereco?: string | null
+          especialidade?: string | null
+          estado?: string | null
+          id?: string
+          nome?: string
+          status?: string
+          telefone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      app_errors: {
+        Row: {
+          action: string
+          app_version: string | null
+          created_at: string | null
+          device: string | null
+          error_message: string
+          id: string
+          screen: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          app_version?: string | null
+          created_at?: string | null
+          device?: string | null
+          error_message: string
+          id?: string
+          screen: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          app_version?: string | null
+          created_at?: string | null
+          device?: string | null
+          error_message?: string
+          id?: string
+          screen?: string
+          user_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "procedure_logs_procedure_id_fkey"
+            foreignKeyName: "app_errors_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feedback_links: {
+        Row: {
+          created_at: string | null
+          email_cirurgiao: string
+          expires_at: string
+          id: string
+          procedure_id: string | null
+          responded_at: string | null
+          telefone_cirurgiao: string | null
+          token: string
+        }
+        Insert: {
+          created_at?: string | null
+          email_cirurgiao: string
+          expires_at: string
+          id?: string
+          procedure_id?: string | null
+          responded_at?: string | null
+          telefone_cirurgiao?: string | null
+          token: string
+        }
+        Update: {
+          created_at?: string | null
+          email_cirurgiao?: string
+          expires_at?: string
+          id?: string
+          procedure_id?: string | null
+          responded_at?: string | null
+          telefone_cirurgiao?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_links_procedure_id_fkey"
             columns: ["procedure_id"]
             isOneToOne: false
             referencedRelation: "procedures"
@@ -171,37 +221,352 @@ export type Database = {
           },
         ]
       }
-      notifications: {
+      feedback_responses: {
         Row: {
-          id: string
-          user_id: string
-          title: string
-          message: string
-          type: string
-          is_read: boolean
+          anemia_transfusao: boolean
+          cefaleia: boolean
           created_at: string | null
+          dor_lombar: boolean
+          feedback_link_id: string | null
+          id: string
+          nausea_vomito: boolean
         }
         Insert: {
-          id?: string
-          user_id: string
-          title: string
-          message: string
-          type?: string
-          is_read?: boolean
+          anemia_transfusao: boolean
+          cefaleia: boolean
           created_at?: string | null
+          dor_lombar: boolean
+          feedback_link_id?: string | null
+          id?: string
+          nausea_vomito: boolean
         }
         Update: {
-          id?: string
-          user_id?: string
-          title?: string
-          message?: string
-          type?: string
-          is_read?: boolean
+          anemia_transfusao?: boolean
+          cefaleia?: boolean
           created_at?: string | null
+          dor_lombar?: boolean
+          feedback_link_id?: string | null
+          id?: string
+          nausea_vomito?: boolean
         }
         Relationships: [
           {
+            foreignKeyName: "feedback_responses_feedback_link_id_fkey"
+            columns: ["feedback_link_id"]
+            isOneToOne: false
+            referencedRelation: "feedback_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goals: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_enabled: boolean | null
+          reset_day: number
+          target_value: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          reset_day?: number
+          target_value?: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          reset_day?: number
+          target_value?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goals_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_read: boolean | null
+          message: string
+          procedure_id: string | null
+          title: string
+          type: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          message: string
+          procedure_id?: string | null
+          title: string
+          type?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          message?: string
+          procedure_id?: string | null
+          title?: string
+          type?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ocr_logs: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          id: string
+          parsed: Json | null
+          raw_text: string
+          user_id: string | null
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string | null
+          id?: string
+          parsed?: Json | null
+          raw_text: string
+          user_id?: string | null
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string | null
+          id?: string
+          parsed?: Json | null
+          raw_text?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ocr_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ocr_messages: {
+        Row: {
+          cost_llm: number | null
+          cost_ocr: number | null
+          created_at: string | null
+          doc_type: string | null
+          error_log: string | null
+          id: string
+          media_id: string | null
+          phone: string
+          raw_text: string | null
+          status: string
+          structured_data: Json | null
+        }
+        Insert: {
+          cost_llm?: number | null
+          cost_ocr?: number | null
+          created_at?: string | null
+          doc_type?: string | null
+          error_log?: string | null
+          id?: string
+          media_id?: string | null
+          phone: string
+          raw_text?: string | null
+          status?: string
+          structured_data?: Json | null
+        }
+        Update: {
+          cost_llm?: number | null
+          cost_ocr?: number | null
+          created_at?: string | null
+          doc_type?: string | null
+          error_log?: string | null
+          id?: string
+          media_id?: string | null
+          phone?: string
+          raw_text?: string | null
+          status?: string
+          structured_data?: Json | null
+        }
+        Relationships: []
+      }
+      pagarme_plans: {
+        Row: {
+          amount: number
+          created_at: string | null
+          description: string | null
+          id: string
+          interval: string
+          interval_count: number
+          name: string
+          pagarme_plan_id: string
+          plan_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          interval: string
+          interval_count: number
+          name: string
+          pagarme_plan_id: string
+          plan_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          interval?: string
+          interval_count?: number
+          name?: string
+          pagarme_plan_id?: string
+          plan_type?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      parcelas: {
+        Row: {
+          created_at: string | null
+          data_recebimento: string | null
+          id: string
+          numero_parcela: number
+          procedure_id: string
+          recebida: boolean | null
+          updated_at: string | null
+          valor_parcela: number
+        }
+        Insert: {
+          created_at?: string | null
+          data_recebimento?: string | null
+          id?: string
+          numero_parcela: number
+          procedure_id: string
+          recebida?: boolean | null
+          updated_at?: string | null
+          valor_parcela: number
+        }
+        Update: {
+          created_at?: string | null
+          data_recebimento?: string | null
+          id?: string
+          numero_parcela?: number
+          procedure_id?: string
+          recebida?: boolean | null
+          updated_at?: string | null
+          valor_parcela?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "parcelas_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_transactions: {
+        Row: {
+          amount: number
+          barcode: string | null
+          card_brand: string | null
+          card_last_digits: string | null
+          created_at: string | null
+          id: string
+          installments: number | null
+          pagarme_transaction_id: string
+          paid_at: string | null
+          payment_method: string
+          pix_qr_code: string | null
+          status: string
+          stripe_transaction_id: string | null
+          subscription_id: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          barcode?: string | null
+          card_brand?: string | null
+          card_last_digits?: string | null
+          created_at?: string | null
+          id?: string
+          installments?: number | null
+          pagarme_transaction_id: string
+          paid_at?: string | null
+          payment_method: string
+          pix_qr_code?: string | null
+          status: string
+          stripe_transaction_id?: string | null
+          subscription_id?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          barcode?: string | null
+          card_brand?: string | null
+          card_last_digits?: string | null
+          created_at?: string | null
+          id?: string
+          installments?: number | null
+          pagarme_transaction_id?: string
+          paid_at?: string | null
+          payment_method?: string
+          pix_qr_code?: string | null
+          status?: string
+          stripe_transaction_id?: string | null
+          subscription_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -278,26 +643,133 @@ export type Database = {
           },
         ]
       }
+      procedure_attachments: {
+        Row: {
+          created_at: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          file_url: string
+          id: string
+          procedure_id: string
+          updated_at: string | null
+          uploaded_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          file_url: string
+          id?: string
+          procedure_id: string
+          updated_at?: string | null
+          uploaded_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          file_url?: string
+          id?: string
+          procedure_id?: string
+          updated_at?: string | null
+          uploaded_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "procedure_attachments_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      procedure_logs: {
+        Row: {
+          changed_by_id: string
+          changed_by_name: string
+          changed_by_type: string
+          created_at: string | null
+          field_name: string
+          id: string
+          new_value: string | null
+          old_value: string | null
+          procedure_id: string
+        }
+        Insert: {
+          changed_by_id: string
+          changed_by_name: string
+          changed_by_type: string
+          created_at?: string | null
+          field_name: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          procedure_id: string
+        }
+        Update: {
+          changed_by_id?: string
+          changed_by_name?: string
+          changed_by_type?: string
+          created_at?: string | null
+          field_name?: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          procedure_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "procedure_logs_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       procedures: {
         Row: {
+          acompanhamento_antes: string | null
           anesthesiologist_name: string | null
           carteirinha: string | null
+          codigo_tssu: string | null
           convenio: string | null
           created_at: string | null
           data_cirurgia: string | null
           data_nascimento: string | null
+          descricao_indicacao_cesariana: string | null
+          dor: string | null
           duracao_minutos: number | null
           duration_minutes: number | null
+          email_cirurgiao: string | null
           especialidade_cirurgiao: string | null
+          expected_payment_date: string | null
+          feedback_solicitado: boolean | null
           fichas_anestesicas: Json | null
           forma_pagamento: string | null
+          grau_laceracao: string | null
+          grupo_anestesico: string | null
+          hemorragia_puerperal: string | null
           hora_inicio: string | null
           hora_termino: string | null
+          horario: string | null
           hospital_clinic: string | null
           id: string
+          indicacao_cesariana: string | null
+          laceracao_presente: string | null
+          nausea_vomito: string | null
           nome_cirurgiao: string | null
+          nome_equipe: string | null
           notes: string | null
+          numero_parcelas: number | null
           observacoes_financeiras: string | null
+          observacoes_procedimento: string | null
+          paid_at: string | null
+          parcelas_recebidas: number | null
           patient_age: number | null
           patient_gender: string | null
           patient_name: string | null
@@ -309,32 +781,61 @@ export type Database = {
           procedure_time: string | null
           procedure_type: string
           procedure_value: number
+          retencao_placenta: string | null
           room_number: string | null
+          sangramento: string | null
           secretaria_id: string | null
+          sent_at: string | null
+          show_to_secretary: boolean | null
           surgeon_name: string | null
+          tecnica_anestesica: string | null
+          telefone_cirurgiao: string | null
           tipo_anestesia: string | null
+          tipo_cesariana: string | null
+          tipo_parto: string | null
+          transfusao_realizada: string | null
           updated_at: string | null
+          updated_by: string | null
           user_id: string
         }
         Insert: {
+          acompanhamento_antes?: string | null
           anesthesiologist_name?: string | null
           carteirinha?: string | null
+          codigo_tssu?: string | null
           convenio?: string | null
           created_at?: string | null
           data_cirurgia?: string | null
           data_nascimento?: string | null
+          descricao_indicacao_cesariana?: string | null
+          dor?: string | null
           duracao_minutos?: number | null
           duration_minutes?: number | null
+          email_cirurgiao?: string | null
           especialidade_cirurgiao?: string | null
+          expected_payment_date?: string | null
+          feedback_solicitado?: boolean | null
           fichas_anestesicas?: Json | null
           forma_pagamento?: string | null
+          grau_laceracao?: string | null
+          grupo_anestesico?: string | null
+          hemorragia_puerperal?: string | null
           hora_inicio?: string | null
           hora_termino?: string | null
+          horario?: string | null
           hospital_clinic?: string | null
           id?: string
+          indicacao_cesariana?: string | null
+          laceracao_presente?: string | null
+          nausea_vomito?: string | null
           nome_cirurgiao?: string | null
+          nome_equipe?: string | null
           notes?: string | null
+          numero_parcelas?: number | null
           observacoes_financeiras?: string | null
+          observacoes_procedimento?: string | null
+          paid_at?: string | null
+          parcelas_recebidas?: number | null
           patient_age?: number | null
           patient_gender?: string | null
           patient_name?: string | null
@@ -346,32 +847,61 @@ export type Database = {
           procedure_time?: string | null
           procedure_type: string
           procedure_value: number
+          retencao_placenta?: string | null
           room_number?: string | null
+          sangramento?: string | null
           secretaria_id?: string | null
+          sent_at?: string | null
+          show_to_secretary?: boolean | null
           surgeon_name?: string | null
+          tecnica_anestesica?: string | null
+          telefone_cirurgiao?: string | null
           tipo_anestesia?: string | null
+          tipo_cesariana?: string | null
+          tipo_parto?: string | null
+          transfusao_realizada?: string | null
           updated_at?: string | null
+          updated_by?: string | null
           user_id: string
         }
         Update: {
+          acompanhamento_antes?: string | null
           anesthesiologist_name?: string | null
           carteirinha?: string | null
+          codigo_tssu?: string | null
           convenio?: string | null
           created_at?: string | null
           data_cirurgia?: string | null
           data_nascimento?: string | null
+          descricao_indicacao_cesariana?: string | null
+          dor?: string | null
           duracao_minutos?: number | null
           duration_minutes?: number | null
+          email_cirurgiao?: string | null
           especialidade_cirurgiao?: string | null
+          expected_payment_date?: string | null
+          feedback_solicitado?: boolean | null
           fichas_anestesicas?: Json | null
           forma_pagamento?: string | null
+          grau_laceracao?: string | null
+          grupo_anestesico?: string | null
+          hemorragia_puerperal?: string | null
           hora_inicio?: string | null
           hora_termino?: string | null
+          horario?: string | null
           hospital_clinic?: string | null
           id?: string
+          indicacao_cesariana?: string | null
+          laceracao_presente?: string | null
+          nausea_vomito?: string | null
           nome_cirurgiao?: string | null
+          nome_equipe?: string | null
           notes?: string | null
+          numero_parcelas?: number | null
           observacoes_financeiras?: string | null
+          observacoes_procedimento?: string | null
+          paid_at?: string | null
+          parcelas_recebidas?: number | null
           patient_age?: number | null
           patient_gender?: string | null
           patient_name?: string | null
@@ -383,21 +913,24 @@ export type Database = {
           procedure_time?: string | null
           procedure_type?: string
           procedure_value?: number
+          retencao_placenta?: string | null
           room_number?: string | null
+          sangramento?: string | null
           secretaria_id?: string | null
+          sent_at?: string | null
+          show_to_secretary?: boolean | null
           surgeon_name?: string | null
+          tecnica_anestesica?: string | null
+          telefone_cirurgiao?: string | null
           tipo_anestesia?: string | null
+          tipo_cesariana?: string | null
+          tipo_parto?: string | null
+          transfusao_realizada?: string | null
           updated_at?: string | null
+          updated_by?: string | null
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "procedures_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "procedures_secretaria_id_fkey"
             columns: ["secretaria_id"]
@@ -405,7 +938,35 @@ export type Database = {
             referencedRelation: "secretarias"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "procedures_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      processed_webhooks: {
+        Row: {
+          created_at: string | null
+          event_id: string
+          id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string | null
+          event_id: string
+          id?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string | null
+          event_id?: string
+          id?: string
+          status?: string
+        }
+        Relationships: []
       }
       reports: {
         Row: {
@@ -472,6 +1033,406 @@ export type Database = {
           },
         ]
       }
+      secretaria_invites: {
+        Row: {
+          anestesista_id: string
+          created_at: string | null
+          email: string
+          expires_at: string
+          id: string
+          token: string
+          updated_at: string | null
+          used_at: string | null
+        }
+        Insert: {
+          anestesista_id: string
+          created_at?: string | null
+          email: string
+          expires_at: string
+          id?: string
+          token: string
+          updated_at?: string | null
+          used_at?: string | null
+        }
+        Update: {
+          anestesista_id?: string
+          created_at?: string | null
+          email?: string
+          expires_at?: string
+          id?: string
+          token?: string
+          updated_at?: string | null
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "secretaria_invites_anestesista_id_fkey"
+            columns: ["anestesista_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      secretaria_link_requests: {
+        Row: {
+          anestesista_id: string
+          created_at: string | null
+          id: string
+          notification_id: string | null
+          secretaria_id: string
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          anestesista_id: string
+          created_at?: string | null
+          id?: string
+          notification_id?: string | null
+          secretaria_id: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          anestesista_id?: string
+          created_at?: string | null
+          id?: string
+          notification_id?: string | null
+          secretaria_id?: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "secretaria_link_requests_anestesista_id_fkey"
+            columns: ["anestesista_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "secretaria_link_requests_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "secretaria_link_requests_secretaria_id_fkey"
+            columns: ["secretaria_id"]
+            isOneToOne: false
+            referencedRelation: "secretarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      secretarias: {
+        Row: {
+          cpf: string | null
+          created_at: string | null
+          data_cadastro: string | null
+          email: string
+          id: string
+          nome: string
+          status: string | null
+          telefone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          cpf?: string | null
+          created_at?: string | null
+          data_cadastro?: string | null
+          email: string
+          id?: string
+          nome: string
+          status?: string | null
+          telefone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          cpf?: string | null
+          created_at?: string | null
+          data_cadastro?: string | null
+          email?: string
+          id?: string
+          nome?: string
+          status?: string | null
+          telefone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      shared_links: {
+        Row: {
+          created_at: string | null
+          expires_at: string
+          id: string
+          last_used_at: string | null
+          last_used_ip: string | null
+          permissions: Json | null
+          revoked: boolean | null
+          token: string | null
+          token_hash: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at: string
+          id?: string
+          last_used_at?: string | null
+          last_used_ip?: string | null
+          permissions?: Json | null
+          revoked?: boolean | null
+          token?: string | null
+          token_hash: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          last_used_at?: string | null
+          last_used_ip?: string | null
+          permissions?: Json | null
+          revoked?: boolean | null
+          token?: string | null
+          token_hash?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shared_links_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shifts: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          end_date: string
+          hospital_name: string | null
+          id: string
+          is_generated: boolean | null
+          is_recurring: boolean | null
+          parent_shift_id: string | null
+          payment_date: string | null
+          payment_status: string | null
+          recurrence_end_date: string | null
+          recurrence_type: string | null
+          shift_type: string
+          shift_value: number | null
+          sobreaviso_type: string | null
+          start_date: string
+          title: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          end_date: string
+          hospital_name?: string | null
+          id?: string
+          is_generated?: boolean | null
+          is_recurring?: boolean | null
+          parent_shift_id?: string | null
+          payment_date?: string | null
+          payment_status?: string | null
+          recurrence_end_date?: string | null
+          recurrence_type?: string | null
+          shift_type: string
+          shift_value?: number | null
+          sobreaviso_type?: string | null
+          start_date: string
+          title: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          end_date?: string
+          hospital_name?: string | null
+          id?: string
+          is_generated?: boolean | null
+          is_recurring?: boolean | null
+          parent_shift_id?: string | null
+          payment_date?: string | null
+          payment_status?: string | null
+          recurrence_end_date?: string | null
+          recurrence_type?: string | null
+          shift_type?: string
+          shift_value?: number | null
+          sobreaviso_type?: string | null
+          start_date?: string
+          title?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shifts_parent_shift_id_fkey"
+            columns: ["parent_shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shifts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscriptions: {
+        Row: {
+          amount: number
+          cancel_at_period_end: boolean | null
+          cancelled_at: string | null
+          created_at: string | null
+          current_period_end: string | null
+          current_period_start: string | null
+          days_used: number | null
+          id: string
+          pagarme_customer_id: string | null
+          pagarme_payment_link_id: string | null
+          pagarme_subscription_id: string | null
+          pending_plan_change_at: string | null
+          pending_plan_type: string | null
+          plan_type: string
+          refund_eligible: boolean | null
+          refund_processed_at: string | null
+          refund_requested: boolean | null
+          status: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          cancel_at_period_end?: boolean | null
+          cancelled_at?: string | null
+          created_at?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          days_used?: number | null
+          id?: string
+          pagarme_customer_id?: string | null
+          pagarme_payment_link_id?: string | null
+          pagarme_subscription_id?: string | null
+          pending_plan_change_at?: string | null
+          pending_plan_type?: string | null
+          plan_type: string
+          refund_eligible?: boolean | null
+          refund_processed_at?: string | null
+          refund_requested?: boolean | null
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          cancel_at_period_end?: boolean | null
+          cancelled_at?: string | null
+          created_at?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          days_used?: number | null
+          id?: string
+          pagarme_customer_id?: string | null
+          pagarme_payment_link_id?: string | null
+          pagarme_subscription_id?: string | null
+          pending_plan_change_at?: string | null
+          pending_plan_type?: string | null
+          plan_type?: string
+          refund_eligible?: boolean | null
+          refund_processed_at?: string | null
+          refund_requested?: boolean | null
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      system_stats: {
+        Row: {
+          active_medicos: number | null
+          active_secretarias: number | null
+          active_subscriptions: number | null
+          active_users: number | null
+          created_at: string | null
+          id: string
+          last_updated: string | null
+          paying_users: number | null
+          pending_subscriptions: number | null
+          procedures_this_month: number | null
+          procedures_this_year: number | null
+          total_medicos: number | null
+          total_procedures: number | null
+          total_secretarias: number | null
+          total_subscriptions: number | null
+          total_users: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          active_medicos?: number | null
+          active_secretarias?: number | null
+          active_subscriptions?: number | null
+          active_users?: number | null
+          created_at?: string | null
+          id?: string
+          last_updated?: string | null
+          paying_users?: number | null
+          pending_subscriptions?: number | null
+          procedures_this_month?: number | null
+          procedures_this_year?: number | null
+          total_medicos?: number | null
+          total_procedures?: number | null
+          total_secretarias?: number | null
+          total_subscriptions?: number | null
+          total_users?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          active_medicos?: number | null
+          active_secretarias?: number | null
+          active_subscriptions?: number | null
+          active_users?: number | null
+          created_at?: string | null
+          id?: string
+          last_updated?: string | null
+          paying_users?: number | null
+          pending_subscriptions?: number | null
+          procedures_this_month?: number | null
+          procedures_this_year?: number | null
+          total_medicos?: number | null
+          total_procedures?: number | null
+          total_secretarias?: number | null
+          total_subscriptions?: number | null
+          total_users?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       user_settings: {
         Row: {
           auto_backup: boolean | null
@@ -537,101 +1498,23 @@ export type Database = {
           },
         ]
       }
-      shifts: {
-        Row: {
-          id: string
-          user_id: string
-          title: string
-          start_date: string
-          end_date: string
-          shift_type: string
-          hospital_name: string | null
-          description: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          title: string
-          start_date: string
-          end_date: string
-          shift_type: string
-          hospital_name?: string | null
-          description?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          title?: string
-          start_date?: string
-          end_date?: string
-          shift_type?: string
-          hospital_name?: string | null
-          description?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "shifts_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      goals: {
-        Row: {
-          id: string
-          user_id: string
-          target_value: number
-          reset_day: number
-          is_enabled: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          target_value?: number
-          reset_day?: number
-          is_enabled?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          target_value?: number
-          reset_day?: number
-          is_enabled?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "goals_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       users: {
         Row: {
           avatar_url: string | null
-          created_at: string | null
-          crm: string | null
           cpf: string | null
+          created_at: string | null
+          created_by_admin: boolean | null
+          crm: string | null
           email: string
+          free_months: number | null
+          gender: string | null
           id: string
+          is_system_admin: boolean | null
           last_login_at: string | null
           name: string
-          password_hash: string
+          password_hash: string | null
           phone: string | null
+          role: string | null
           specialty: string
           subscription_plan: string | null
           subscription_status: string | null
@@ -640,15 +1523,20 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
-          created_at?: string | null
-          crm?: string | null
           cpf?: string | null
+          created_at?: string | null
+          created_by_admin?: boolean | null
+          crm?: string | null
           email: string
+          free_months?: number | null
+          gender?: string | null
           id?: string
+          is_system_admin?: boolean | null
           last_login_at?: string | null
           name: string
-          password_hash: string
+          password_hash?: string | null
           phone?: string | null
+          role?: string | null
           specialty?: string
           subscription_plan?: string | null
           subscription_status?: string | null
@@ -657,15 +1545,20 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
-          created_at?: string | null
-          crm?: string | null
           cpf?: string | null
+          created_at?: string | null
+          created_by_admin?: boolean | null
+          crm?: string | null
           email?: string
+          free_months?: number | null
+          gender?: string | null
           id?: string
+          is_system_admin?: boolean | null
           last_login_at?: string | null
           name?: string
-          password_hash?: string
+          password_hash?: string | null
           phone?: string | null
+          role?: string | null
           specialty?: string
           subscription_plan?: string | null
           subscription_status?: string | null
@@ -674,255 +1567,184 @@ export type Database = {
         }
         Relationships: []
       }
-      feedback_links: {
+      webhook_logs: {
         Row: {
-          id: string
-          procedure_id: string
-          email_cirurgiao: string
-          telefone_cirurgiao: string | null
-          token: string
-          expires_at: string
-          responded_at: string | null
           created_at: string | null
-          updated_at: string | null
+          error_msg: string | null
+          id: string
+          payload: Json | null
         }
         Insert: {
-          id?: string
-          procedure_id: string
-          email_cirurgiao: string
-          telefone_cirurgiao?: string | null
-          token: string
-          expires_at: string
-          responded_at?: string | null
           created_at?: string | null
-          updated_at?: string | null
+          error_msg?: string | null
+          id?: string
+          payload?: Json | null
         }
         Update: {
-          id?: string
-          procedure_id?: string
-          email_cirurgiao?: string
-          telefone_cirurgiao?: string | null
-          token?: string
-          expires_at?: string
-          responded_at?: string | null
           created_at?: string | null
+          error_msg?: string | null
+          id?: string
+          payload?: Json | null
+        }
+        Relationships: []
+      }
+      whatsapp_accounts: {
+        Row: {
+          created_at: string | null
+          id: string
+          phone_number: string
+          updated_at: string | null
+          user_id: string
+          verification_code: string | null
+          verification_expires_at: string | null
+          verified: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          phone_number: string
           updated_at?: string | null
+          user_id: string
+          verification_code?: string | null
+          verification_expires_at?: string | null
+          verified?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          phone_number?: string
+          updated_at?: string | null
+          user_id?: string
+          verification_code?: string | null
+          verification_expires_at?: string | null
+          verified?: boolean | null
         }
         Relationships: [
           {
-            foreignKeyName: "feedback_links_procedure_id_fkey"
+            foreignKeyName: "whatsapp_accounts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_extractions: {
+        Row: {
+          confirmed_at: string | null
+          created_at: string | null
+          expires_at: string | null
+          extracted_fields: Json | null
+          field_confidences: Json | null
+          id: string
+          image_storage_path: string | null
+          message_id: string | null
+          missing_required: string[] | null
+          ocr_confidence: number | null
+          overall_confidence: number | null
+          procedure_id: string | null
+          raw_ocr_text: string | null
+          status: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          confirmed_at?: string | null
+          created_at?: string | null
+          expires_at?: string | null
+          extracted_fields?: Json | null
+          field_confidences?: Json | null
+          id?: string
+          image_storage_path?: string | null
+          message_id?: string | null
+          missing_required?: string[] | null
+          ocr_confidence?: number | null
+          overall_confidence?: number | null
+          procedure_id?: string | null
+          raw_ocr_text?: string | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          confirmed_at?: string | null
+          created_at?: string | null
+          expires_at?: string | null
+          extracted_fields?: Json | null
+          field_confidences?: Json | null
+          id?: string
+          image_storage_path?: string | null
+          message_id?: string | null
+          missing_required?: string[] | null
+          ocr_confidence?: number | null
+          overall_confidence?: number | null
+          procedure_id?: string | null
+          raw_ocr_text?: string | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_extractions_procedure_id_fkey"
             columns: ["procedure_id"]
             isOneToOne: false
             referencedRelation: "procedures"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
-      feedback_responses: {
+      whatsapp_messages: {
         Row: {
-          id: string
-          feedback_link_id: string
-          nausea_vomito: boolean
-          cefaleia: boolean
-          dor_lombar: boolean
-          anemia_transfusao: boolean
           created_at: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          id?: string
-          feedback_link_id: string
-          nausea_vomito?: boolean
-          cefaleia?: boolean
-          dor_lombar?: boolean
-          anemia_transfusao?: boolean
-          created_at?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          id?: string
-          feedback_link_id?: string
-          nausea_vomito?: boolean
-          cefaleia?: boolean
-          dor_lombar?: boolean
-          anemia_transfusao?: boolean
-          created_at?: string | null
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "feedback_responses_feedback_link_id_fkey"
-            columns: ["feedback_link_id"]
-            isOneToOne: false
-            referencedRelation: "feedback_links"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
-      subscriptions: {
-        Row: {
+          direction: string | null
+          error_message: string | null
           id: string
-          user_id: string
-          plan_type: 'monthly' | 'quarterly' | 'annual'
-          amount: number
-          status: 'pending' | 'active' | 'cancelled' | 'expired' | 'suspended'
-          stripe_subscription_id: string | null
-          stripe_customer_id: string | null
-          current_period_start: string
-          current_period_end: string
-          cancel_at_period_end: boolean
-          cancelled_at: string | null
-          created_at: string
-          updated_at: string
+          media_id: string | null
+          media_url: string | null
+          message_type: string
+          phone_number: string
+          status: string | null
+          text_content: string | null
+          user_id: string | null
+          wamid: string
         }
         Insert: {
+          created_at?: string | null
+          direction?: string | null
+          error_message?: string | null
           id?: string
-          user_id: string
-          plan_type: 'monthly' | 'quarterly' | 'annual'
-          amount: number
-          status?: 'pending' | 'active' | 'cancelled' | 'expired' | 'suspended'
-          pagarme_subscription_id?: string | null
-          pagarme_customer_id?: string | null
-          current_period_start?: string
-          current_period_end?: string
-          cancel_at_period_end?: boolean
-          cancelled_at?: string | null
-          created_at?: string
-          updated_at?: string
+          media_id?: string | null
+          media_url?: string | null
+          message_type: string
+          phone_number: string
+          status?: string | null
+          text_content?: string | null
+          user_id?: string | null
+          wamid: string
         }
         Update: {
+          created_at?: string | null
+          direction?: string | null
+          error_message?: string | null
           id?: string
-          user_id?: string
-          plan_type?: 'monthly' | 'quarterly' | 'annual'
-          amount?: number
-          status?: 'pending' | 'active' | 'cancelled' | 'expired' | 'suspended'
-          pagarme_subscription_id?: string | null
-          pagarme_customer_id?: string | null
-          current_period_start?: string
-          current_period_end?: string
-          cancel_at_period_end?: boolean
-          cancelled_at?: string | null
-          created_at?: string
-          updated_at?: string
+          media_id?: string | null
+          media_url?: string | null
+          message_type?: string
+          phone_number?: string
+          status?: string | null
+          text_content?: string | null
+          user_id?: string | null
+          wamid?: string
         }
         Relationships: [
           {
-            foreignKeyName: "subscriptions_user_id_fkey"
+            foreignKeyName: "whatsapp_messages_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
-      payment_transactions: {
-        Row: {
-          id: string
-          subscription_id: string | null
-          user_id: string
-          stripe_transaction_id: string
-          amount: number
-          status: 'pending' | 'paid' | 'refused' | 'refunded' | 'cancelled'
-          payment_method: 'credit_card' | 'boleto' | 'pix'
-          card_last_digits: string | null
-          card_brand: string | null
-          installments: number
-          barcode: string | null
-          pix_qr_code: string | null
-          paid_at: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          subscription_id?: string | null
-          user_id: string
-          stripe_transaction_id: string
-          amount: number
-          status?: 'pending' | 'paid' | 'refused' | 'refunded' | 'cancelled'
-          payment_method: 'credit_card' | 'boleto' | 'pix'
-          card_last_digits?: string | null
-          card_brand?: string | null
-          installments?: number
-          barcode?: string | null
-          pix_qr_code?: string | null
-          paid_at?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          subscription_id?: string | null
-          user_id?: string
-          pagarme_transaction_id?: string
-          amount?: number
-          status?: 'pending' | 'paid' | 'refused' | 'refunded' | 'cancelled'
-          payment_method?: 'credit_card' | 'boleto' | 'pix'
-          card_last_digits?: string | null
-          card_brand?: string | null
-          installments?: number
-          barcode?: string | null
-          pix_qr_code?: string | null
-          paid_at?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "payment_transactions_subscription_id_fkey"
-            columns: ["subscription_id"]
-            isOneToOne: false
-            referencedRelation: "subscriptions"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "payment_transactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
-      app_errors: {
-        Row: {
-          id: string
-          user_id: string | null
-          screen: string
-          action: string
-          error_message: string
-          device: string
-          app_version: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id?: string | null
-          screen: string
-          action: string
-          error_message: string
-          device?: string
-          app_version?: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string | null
-          screen?: string
-          action?: string
-          error_message?: string
-          device?: string
-          app_version?: string
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "app_errors_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          }
         ]
       }
     }
@@ -930,13 +1752,57 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_system_stats: { Args: never; Returns: undefined }
       generate_monthly_report: {
         Args: { report_month: string; user_uuid: string }
         Returns: Json
       }
-      get_user_stats: {
-        Args: { user_uuid: string }
+      get_secretaria_id_by_email: {
+        Args: { check_email: string }
+        Returns: string
+      }
+      get_system_stats: {
+        Args: never
+        Returns: {
+          active_medicos: number
+          active_secretarias: number
+          active_subscriptions: number
+          active_users: number
+          last_updated: string
+          paying_users: number
+          pending_subscriptions: number
+          procedures_this_month: number
+          procedures_this_year: number
+          total_medicos: number
+          total_procedures: number
+          total_secretarias: number
+          total_subscriptions: number
+          total_users: number
+        }[]
+      }
+      get_user_stats: { Args: { user_uuid: string }; Returns: Json }
+      login_user: {
+        Args: { p_email: string; p_password: string }
         Returns: Json
+      }
+      register_user: {
+        Args: {
+          p_crm?: string
+          p_email: string
+          p_name: string
+          p_password: string
+          p_specialty?: string
+        }
+        Returns: Json
+      }
+      send_feedback_email: {
+        Args: {
+          anesthesiologist_name: string
+          procedure_id: string
+          to_email: string
+          token: string
+        }
+        Returns: undefined
       }
     }
     Enums: {

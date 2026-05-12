@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
-import { isSecretaria } from './user-utils'
-import logger from './logger'
+
+import { logger } from './logger'
 
 export interface Subscription {
   id: string
@@ -30,11 +30,7 @@ export async function hasActiveSubscription(userId: string): Promise<boolean> {
       return false
     }
 
-    // Secretárias não precisam de assinatura
-    const isSec = await isSecretaria(userId)
-    if (isSec) {
-      return true
-    }
+
 
     // Tentar usar API route primeiro (bypass RLS) com timeout
     try {

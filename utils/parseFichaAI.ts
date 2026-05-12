@@ -107,62 +107,31 @@ Retorne APENAS um JSON válido no seguinte formato, sem markdown, sem explicaç�
  * Parseia texto do OCR usando OpenAI GPT-4o-mini
  */
 export async function parseFichaWithAI(textoOCR: string): Promise<FichaParsed | null> {
-  // Verificar se API key está configurada
   if (!process.env.OPENAI_API_KEY) {
-    console.warn('[AI Parse] OPENAI_API_KEY não configurada, pulando parse com IA');
+    console.warn('[AI Parse] OPENAI_API_KEY não configurada');
     return null;
   }
 
   try {
     const { OpenAI } = await import('openai');
-    
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const prompt = createPrompt(textoOCR);
-
-    console.log('[AI Parse] Chamando OpenAI GPT-4o-mini...');
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        {
-          role: 'system',
-          content: 'Você é um assistente especializado em extrair dados estruturados de documentos médicos brasileiros. Sempre retorne JSON válido sem markdown.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
+        { role: 'system', content: 'Você é um assistente especializado em documentos médicos.' },
+        { role: 'user', content: prompt }
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.1, // Baixa temperatura para respostas mais consistentes
-      max_tokens: 1000,
-    }, {
-      timeout: 30000, // 30 segundos timeout
+      temperature: 0.1,
     });
 
     const content = response.choices[0]?.message?.content;
-    
-    if (!content) {
-      console.warn('[AI Parse] Resposta vazia da OpenAI');
-      return null;
-    }
+    if (!content) return null;
 
-    // Parsear JSON da resposta
-    let parsed: any;
-    try {
-      // Remover markdown code blocks se houver
-      const jsonContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      parsed = JSON.parse(jsonContent);
-    } catch (parseError) {
-      console.error('[AI Parse] Erro ao parsear JSON da resposta:', parseError);
-      return null;
-    }
-
-    // Validar e normalizar resposta
-    const result: FichaParsed = {
+    const parsed = JSON.parse(content);
+    return {
       nome: parsed.nome || '',
       nascimento: parsed.nascimento || '',
       entrada: parsed.entrada || parsed.dataProcedimento || '',
@@ -179,26 +148,111 @@ export async function parseFichaWithAI(textoOCR: string): Promise<FichaParsed | 
       hospital: parsed.hospital || '',
       horario: parsed.horario || '',
     };
-
-    // Contar campos preenchidos
-    const camposPreenchidos = Object.values(result).filter(v => v && v.trim()).length;
-    console.log(`[AI Parse] Parseado com sucesso: ${camposPreenchidos} campos preenchidos`);
-
-    return result;
-
-  } catch (error: any) {
-    console.error('[AI Parse] Erro ao processar com OpenAI:', {
-      message: error.message,
-      code: error.code,
-      status: error.status,
-    });
-
-    // Se for erro de quota ou rate limit, não tentar novamente
-    if (error.status === 429 || error.code === 'rate_limit_exceeded') {
-      console.warn('[AI Parse] Rate limit excedido, usando parse tradicional');
-    }
-
+  } catch (error) {
+    console.error('[AI Parse] Erro:', error);
     return null;
   }
 }
 
+/**
+ * Parseia imagem da ficha usando OpenAI GPT-4o-mini Vision
+ * Recebe a imagem em Base64 e retorna dados estruturados
+ */
+export async function parseFichaWithVision(base64Image: string): Promise<FichaParsed | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn('[AI Vision] OPENAI_API_KEY não configurada');
+    return null;
+  }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `Você é um perito em faturamento médico e OCR de fichas anestésicas brasileiras.
+Sua tarefa é extrair dados de etiquetas hospitalares e fichas de anestesia com precisão de 100%.
+
+REGRAS DE VALIDAÇÃO:
+1. PACIENTE: Procure por "Nome", "Paciente" ou campos próximos a códigos de barras de identificação.
+2. PROCEDIMENTO: Valide se o texto é uma cirurgia ou técnica médica. Ignore medicações isoladas. Use um destes se possível: ${TIPOS_PROCEDIMENTO.join(', ')}.
+3. DATA: Converta para DD/MM/YYYY. Se não encontrar, use a data atual.
+4. CIRURGIÃO: Procure por nomes precedidos de "Dr.", "Dra." ou no campo "Cirurgião".
+5. HOSPITAL: Identifique o nome da instituição pelo cabeçalho ou logotipos.
+6. CONVÊNIO: Procure por nomes de seguradoras ou planos de saúde.
+7. TÉCNICA: Identifique a técnica anestésica. Use uma destas se possível: ${TECNICAS_ANESTESICAS.join(', ')}.
+
+RETORNE APENAS UM JSON COM ESTAS CHAVES:
+{
+  "nome": "string",
+  "nascimento": "string",
+  "dataProcedimento": "string",
+  "hospital": "string",
+  "nomeCirurgiao": "string",
+  "convenio": "string",
+  "carteirinha": "string",
+  "tipoProcedimento": "string",
+  "tecnica": "string",
+  "sexo": "M" | "F",
+  "horario": "string"
+}`
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Analise esta imagem médica com rigor. Se um campo não for encontrado, deixe-o vazio. Verifique se os dados fazem sentido semanticamente.' },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`,
+                },
+              },
+            ],
+          },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`OpenAI API Error: ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content;
+    if (!content) return null;
+
+    const parsed = JSON.parse(content);
+
+    return {
+      nome: parsed.nome || '',
+      nascimento: parsed.nascimento || '',
+      entrada: parsed.dataProcedimento || '',
+      dataProcedimento: parsed.dataProcedimento || '',
+      procedimento: parsed.tipoProcedimento || '',
+      tipoProcedimento: parsed.tipoProcedimento || '',
+      tecnica: parsed.tecnica || '',
+      sexo: (parsed.sexo === 'M' || parsed.sexo === 'F') ? parsed.sexo : '',
+      convenio: parsed.convenio || '',
+      carteirinha: parsed.carteirinha || '',
+      cirurgiao: parsed.nomeCirurgiao || '',
+      nomeCirurgiao: parsed.nomeCirurgiao || '',
+      especialidadeCirurgiao: '',
+      hospital: parsed.hospital || '',
+      horario: parsed.horario || '',
+    };
+
+  } catch (error) {
+    console.error('[AI Vision] Erro:', error);
+    return null;
+  }
+}

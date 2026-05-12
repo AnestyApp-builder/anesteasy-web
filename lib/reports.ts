@@ -27,6 +27,24 @@ interface ConvenioStat {
   avgDurationExcludingMinutes: number
 }
 
+interface HospitalStat {
+  hospital: string
+  count: number
+  totalValue: number
+}
+
+interface ProcedureTypeStat {
+  type: string
+  count: number
+  totalValue: number
+}
+
+interface MonthlyStat {
+  month: string // format 'YYYY-MM'
+  count: number
+  totalValue: number
+}
+
 export interface ReportData {
   procedures: Procedure[]
   shifts?: Shift[]
@@ -44,6 +62,9 @@ export interface ReportData {
   feedbackStats: FeedbackStats
   obstetricStats: ObstetricStats
   convenioStats: ConvenioStat[]
+  hospitalStats: HospitalStat[]
+  procedureTypeStats: ProcedureTypeStat[]
+  monthlyStats: MonthlyStat[]
   period: {
     start: string
     end: string
@@ -212,6 +233,58 @@ function computeObstetricAndConvenioStats(procedures: Procedure[]): {
   }
 }
 
+function computeAdvancedStats(procedures: Procedure[]): {
+  hospitalStats: HospitalStat[]
+  procedureTypeStats: ProcedureTypeStat[]
+  monthlyStats: MonthlyStat[]
+} {
+  const hospitalMap = new Map<string, { count: number; totalValue: number }>()
+  const typeMap = new Map<string, { count: number; totalValue: number }>()
+  const monthMap = new Map<string, { count: number; totalValue: number }>()
+
+  for (const p of procedures) {
+    // Hospital
+    const hospital = (p.hospital_clinic || 'Não informado').trim()
+    const hStat = hospitalMap.get(hospital) || { count: 0, totalValue: 0 }
+    hStat.count += 1
+    hStat.totalValue += p.procedure_value || 0
+    hospitalMap.set(hospital, hStat)
+
+    // Tipo de Procedimento
+    const type = (p.procedure_type || 'Outros').trim()
+    const tStat = typeMap.get(type) || { count: 0, totalValue: 0 }
+    tStat.count += 1
+    tStat.totalValue += p.procedure_value || 0
+    typeMap.set(type, tStat)
+
+    // Mensal
+    if (p.procedure_date) {
+      const date = new Date(p.procedure_date)
+      if (!isNaN(date.getTime())) {
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        const mStat = monthMap.get(monthKey) || { count: 0, totalValue: 0 }
+        mStat.count += 1
+        mStat.totalValue += p.procedure_value || 0
+        monthMap.set(monthKey, mStat)
+      }
+    }
+  }
+
+  const hospitalStats: HospitalStat[] = Array.from(hospitalMap.entries())
+    .map(([hospital, agg]) => ({ hospital, ...agg }))
+    .sort((a, b) => b.count - a.count)
+
+  const procedureTypeStats: ProcedureTypeStat[] = Array.from(typeMap.entries())
+    .map(([type, agg]) => ({ type, ...agg }))
+    .sort((a, b) => b.count - a.count)
+
+  const monthlyStats: MonthlyStat[] = Array.from(monthMap.entries())
+    .map(([month, agg]) => ({ month, ...agg }))
+    .sort((a, b) => a.month.localeCompare(b.month))
+
+  return { hospitalStats, procedureTypeStats, monthlyStats }
+}
+
 export const reportService = {
   // Gerar dados do relatório
   async generateReportData(userId: string, startDate?: string, endDate?: string): Promise<ReportData> {
@@ -245,6 +318,7 @@ export const reportService = {
 
       const feedbackStats = await computeFeedbackStats(procedures)
       const { obstetricStats, convenioStats } = computeObstetricAndConvenioStats(procedures)
+      const { hospitalStats, procedureTypeStats, monthlyStats } = computeAdvancedStats(procedures)
 
       return {
         procedures,
@@ -253,6 +327,9 @@ export const reportService = {
         feedbackStats,
         obstetricStats,
         convenioStats,
+        hospitalStats,
+        procedureTypeStats,
+        monthlyStats,
         doctorName: userResult?.data?.name || undefined,
         doctorGender: (userResult?.data as any)?.gender ?? null,
         period: {
@@ -336,45 +413,48 @@ export const reportService = {
         <head>
           <title>Relatório de Procedimentos</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
-            .ae-report { max-width: 1000px; margin: 0 auto; }
+            body { font-family: Arial, sans-serif; margin: 0; padding: 24px; color: #0f172a; position: relative; }
+            .ae-watermark {
+              position: fixed;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%) rotate(-45deg);
+              font-size: 80px;
+              font-weight: 900;
+              color: rgba(20, 184, 166, 0.05);
+              z-index: -10;
+              white-space: nowrap;
+              pointer-events: none;
+            }
+            .ae-report { max-width: 1000px; margin: 0 auto; position: relative; z-index: 1; }
             .ae-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #14b8a6; padding-bottom: 12px; margin-bottom: 24px; }
             .ae-header-left { display: flex; align-items: center; gap: 12px; }
             .ae-logo-circle { width: 40px; height: 40px; border-radius: 999px; background: linear-gradient(135deg, #0f766e, #14b8a6); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 18px; }
             .ae-title { margin: 0; font-size: 20px; font-weight: 700; color: #0f172a; }
             .ae-subtitle { margin: 2px 0 0; font-size: 12px; color: #64748b; }
-            .ae-header-right { text-align: right; font-size: 12px; color: #475569; }
-            .ae-section-title { font-size: 14px; font-weight: 600; color: #0f172a; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.08em; }
-            .ae-summary { margin-bottom: 12px; }
-            .ae-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-            .ae-summary-card { border-radius: 8px; border: 1px solid #e2e8f0; padding: 8px 10px; background: #f8fafc; }
-            .ae-summary-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; }
+            .ae-header-right { text-align: right; font-size: 11px; color: #475569; }
+            .ae-section-title { font-size: 13px; font-weight: 700; color: #0f172a; margin: 20px 0 10px; text-transform: uppercase; border-left: 3px solid #14b8a6; padding-left: 8px; }
+            .ae-summary { margin-bottom: 15px; }
+            .ae-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+            .ae-summary-card { border-radius: 8px; border: 1px solid #e2e8f0; padding: 10px; background: #f8fafc; }
+            .ae-summary-label { font-size: 10px; text-transform: uppercase; font-weight: 600; color: #64748b; }
             .ae-summary-value { display: block; margin-top: 4px; font-size: 16px; font-weight: 700; }
-            .ae-summary-hint { display: block; margin-top: 2px; font-size: 11px; color: #94a3b8; }
-            .ae-text-success { color: #16a34a; }
-            .ae-text-warning { color: #ca8a04; }
-            .ae-table-section { margin-top: 16px; }
-            .ae-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 11px; }
-            .ae-table th, .ae-table td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
-            .ae-table th { background-color: #f1f5f9; font-weight: 600; font-size: 11px; color: #475569; }
-            .ae-table tbody tr:nth-child(even) { background-color: #f8fafc; }
-            .ae-status { padding: 2px 6px; border-radius: 999px; font-size: 10px; font-weight: 600; }
-            .ae-status-paid { background-color: #dcfce7; color: #166534; }
-            .ae-status-pending { background-color: #fef9c3; color: #854d0e; }
-            .ae-status-cancelled { background-color: #fee2e2; color: #991b1b; }
-            .ae-empty { text-align: center; padding: 16px; color: #64748b; font-size: 12px; }
-            .ae-footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; text-align: center; }
-            .ae-footer-muted { margin-top: 2px; }
-            .ae-feedback-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-            .ae-feedback-card { border-radius: 8px; border: 1px solid #e2e8f0; padding: 8px 10px; background: #ffffff; }
-            .ae-feedback-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; }
-            .ae-feedback-value { display: block; margin-top: 4px; font-size: 16px; font-weight: 700; }
-            .ae-feedback-hint { display: block; margin-top: 2px; font-size: 11px; color: #94a3b8; }
-            .ae-feedback-comment { margin-top: 10px; font-size: 11px; color: #475569; line-height: 1.4; }
-            .ae-convenio-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-            .ae-convenio-card { border-radius: 8px; border: 1px solid #e2e8f0; padding: 6px 8px; background: #f8fafc; font-size: 11px; }
-            .ae-convenio-name { font-weight: 600; color: #0f172a; display: block; margin-bottom: 2px; }
-            .ae-convenio-meta { color: #64748b; }
+            .ae-summary-hint { display: block; margin-top: 2px; font-size: 9px; color: #94a3b8; }
+            .ae-stat-container { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+            .ae-stat-row { display: flex; align-items: center; margin-bottom: 8px; font-size: 11px; }
+            .ae-stat-label { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .ae-stat-bar-container { flex: 2; height: 8px; background: #f1f5f9; border-radius: 4px; margin: 0 10px; overflow: hidden; }
+            .ae-stat-bar { height: 100%; background: #14b8a6; border-radius: 4px; }
+            .ae-stat-bar.bg-teal-secondary { background: #0d9488; }
+            .ae-stat-value { width: 100px; text-align: right; font-weight: 600; font-size: 10px; }
+            .ae-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 10px; }
+            .ae-table th, .ae-table td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+            .ae-table th { background-color: #f1f5f9; font-weight: 600; color: #475569; }
+            .ae-status { padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+            .ae-status-paid { background: #dcfce7; color: #166534; }
+            .ae-status-pending { background: #fef9c3; color: #854d0e; }
+            .ae-text-success { color: #059669; }
+            .ae-footer { margin-top: 30px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 9px; color: #94a3b8; text-align: center; }
           </style>
         </head>
         <body>
@@ -389,7 +469,7 @@ export const reportService = {
 
   // Gerar HTML do relatório com template profissional e identidade AnestEasy
   generateReportHTML(reportData: ReportData): string {
-    const { procedures, period, feedbackStats, obstetricStats, convenioStats } = reportData
+    const { procedures, period, feedbackStats, obstetricStats, convenioStats, hospitalStats, procedureTypeStats, monthlyStats } = reportData
     
     // Estatísticas calculadas apenas com os procedimentos do período
     const filteredStats = {
@@ -458,12 +538,42 @@ export const reportService = {
           </p>
         `
 
+    const hospitalSection = hospitalStats.map(h => `
+      <div class="ae-stat-row">
+        <div class="ae-stat-label">${h.hospital}</div>
+        <div class="ae-stat-bar-container">
+          <div class="ae-stat-bar" style="width: ${(h.count / filteredStats.total * 100) || 0}%"></div>
+        </div>
+        <div class="ae-stat-value">${h.count} (${formatCurrency(h.totalValue)})</div>
+      </div>
+    `).join('')
+
+    const procedureTypeSection = procedureTypeStats.map(t => `
+      <div class="ae-stat-row">
+        <div class="ae-stat-label">${t.type}</div>
+        <div class="ae-stat-bar-container">
+          <div class="ae-stat-bar bg-teal-secondary" style="width: ${(t.count / filteredStats.total * 100) || 0}%"></div>
+        </div>
+        <div class="ae-stat-value">${t.count} (${formatCurrency(t.totalValue)})</div>
+      </div>
+    `).join('')
+
+    const monthlyEvolutionSection = monthlyStats.map(m => `
+      <tr>
+        <td>${m.month}</td>
+        <td>${m.count}</td>
+        <td>${formatCurrency(m.totalValue)}</td>
+        <td>${formatCurrency(m.count > 0 ? m.totalValue / m.count : 0)}</td>
+      </tr>
+    `).join('')
+
     const doctorTitle =
       reportData.doctorName
         ? `${reportData.doctorGender === 'F' ? 'Dra.' : 'Dr.'} ${reportData.doctorName}`
         : ''
 
     return `
+      <div class="ae-watermark">ANESTEASY</div>
       <div class="ae-report">
         <header class="ae-header">
           <div class="ae-header-left">
@@ -472,7 +582,7 @@ export const reportService = {
             </div>
             <div>
               <h1 class="ae-title">AnestEasy</h1>
-              <p class="ae-subtitle">Relatório de Procedimentos e Desempenho</p>
+              <p class="ae-subtitle">Relatório Consolidado de Desempenho Anestésico</p>
             </div>
           </div>
           <div class="ae-header-right">
@@ -483,113 +593,91 @@ export const reportService = {
         </header>
 
         <section class="ae-summary">
-          <h2 class="ae-section-title">1. Desempenho Financeiro</h2>
+          <h2 class="ae-section-title">1. Visão Geral Financeira</h2>
           <div class="ae-summary-grid">
             <div class="ae-summary-card">
               <span class="ae-summary-label">Procedimentos</span>
               <span class="ae-summary-value">${filteredStats.total}</span>
-              <span class="ae-summary-hint">Total no período</span>
+              <span class="ae-summary-hint">Volume total</span>
             </div>
             <div class="ae-summary-card">
-              <span class="ae-summary-label">Concluídos</span>
-              <span class="ae-summary-value ae-text-success">${filteredStats.completed}</span>
-              <span class="ae-summary-hint">Pagos</span>
-            </div>
-            <div class="ae-summary-card">
-              <span class="ae-summary-label">Pendentes</span>
-              <span class="ae-summary-value ae-text-warning">${filteredStats.pending}</span>
-              <span class="ae-summary-hint">A receber</span>
-            </div>
-            <div class="ae-summary-card">
-              <span class="ae-summary-label">Receita Total</span>
+              <span class="ae-summary-label">Receita Estimada</span>
               <span class="ae-summary-value">${formatCurrency(filteredStats.totalValue)}</span>
-              <span class="ae-summary-hint">Com base nos procedimentos cadastrados</span>
-            </div>
-            <div class="ae-summary-card">
-              <span class="ae-summary-label">Taxa de Recebimento</span>
-              <span class="ae-summary-value ae-text-success">${receiptRate}%</span>
-              <span class="ae-summary-hint">Receita já recebida sobre o total</span>
-            </div>
-            <div class="ae-summary-card">
-              <span class="ae-summary-label">Pendência Financeira</span>
-              <span class="ae-summary-value ae-text-warning">${pendingRate}%</span>
-              <span class="ae-summary-hint">Valor ainda não recebido</span>
+              <span class="ae-summary-hint">Base de cadastro</span>
             </div>
             <div class="ae-summary-card">
               <span class="ae-summary-label">Ticket Médio</span>
               <span class="ae-summary-value">${formatCurrency(ticketMedio)}</span>
-              <span class="ae-summary-hint">Valor médio por procedimento</span>
+              <span class="ae-summary-hint">Valor por caso</span>
             </div>
             <div class="ae-summary-card">
-              <span class="ae-summary-label">
-                Tempo médio — todos os procedimentos
-              </span>
-              <span class="ae-summary-value">${avgGeralText}</span>
-            </div>
-            <div class="ae-summary-card">
-              <span class="ae-summary-label">
-                Tempo médio — partos vaginais
-              </span>
-              <span class="ae-summary-value">${avgVaginalText}</span>
+              <span class="ae-summary-label">Recebidos</span>
+              <span class="ae-summary-value ae-text-success">${receiptRate}%</span>
+              <span class="ae-summary-hint">${formatCurrency(filteredStats.completedValue)}</span>
             </div>
           </div>
         </section>
 
-        <section class="ae-summary">
-          <h2 class="ae-section-title">2. Feedback e Qualidade Profissional</h2>
-          <div class="ae-feedback-grid">
-            <div class="ae-feedback-card">
-              <span class="ae-feedback-label">Feedbacks Enviados</span>
-              <span class="ae-feedback-value">${feedbackStats.totalLinks}</span>
-              <span class="ae-feedback-hint">Convites de feedback enviados aos cirurgiões</span>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <section class="ae-summary">
+            <h2 class="ae-section-title">2. Distribuição por Hospital</h2>
+            <div class="ae-stat-container">
+              ${hospitalSection || '<p class="ae-empty">Nenhum dado disponível</p>'}
             </div>
+          </section>
+
+          <section class="ae-summary">
+            <h2 class="ae-section-title">3. Mix de Procedimentos</h2>
+            <div class="ae-stat-container">
+              ${procedureTypeSection || '<p class="ae-empty">Nenhum dado disponível</p>'}
+            </div>
+          </section>
+        </div>
+
+        <section class="ae-summary">
+          <h2 class="ae-section-title">4. Evolução Mensal no Período</h2>
+          <table class="ae-table">
+            <thead>
+              <tr>
+                <th>Mês/Ano</th>
+                <th>Volume</th>
+                <th>Receita Total</th>
+                <th>Ticket Médio</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${monthlyEvolutionSection || '<tr><td colspan="4" class="ae-empty">Nenhum dado disponível</td></tr>'}
+            </tbody>
+          </table>
+        </section>
+
+        <section class="ae-summary">
+          <h2 class="ae-section-title">5. Qualidade e Feedback</h2>
+          <div class="ae-feedback-grid">
             <div class="ae-feedback-card">
               <span class="ae-feedback-label">Taxa de Resposta</span>
               <span class="ae-feedback-value">${feedbackStats.responseRate}%</span>
-              <span class="ae-feedback-hint">Feedbacks respondidos no período</span>
             </div>
             <div class="ae-feedback-card">
-              <span class="ae-feedback-label">Náusea/Vômito</span>
-              <span class="ae-feedback-value">${feedbackStats.nauseaRate}%</span>
-              <span class="ae-feedback-hint">Procedimentos com náusea/vômito reportados</span>
+              <span class="ae-feedback-label">Complicações</span>
+              <span class="ae-feedback-value">${feedbackStats.nauseaRate + feedbackStats.cefaleiaRate}%</span>
+              <span class="ae-feedback-hint">Índice Geral</span>
             </div>
             <div class="ae-feedback-card">
-              <span class="ae-feedback-label">Cefaleia</span>
-              <span class="ae-feedback-value">${feedbackStats.cefaleiaRate}%</span>
-              <span class="ae-feedback-hint">Procedimentos com cefaleia reportada</span>
+              <span class="ae-feedback-label">Tempo Médio</span>
+              <span class="ae-feedback-value">${avgGeralText}</span>
             </div>
-            <div class="ae-feedback-card">
-              <span class="ae-feedback-label">Dor Lombar</span>
-              <span class="ae-feedback-value">${feedbackStats.dorLombarRate}%</span>
-              <span class="ae-feedback-hint">Procedimentos com dor lombar reportada</span>
-            </div>
-            <div class="ae-feedback-card">
-              <span class="ae-feedback-label">Anemia/Transfusão</span>
-              <span class="ae-feedback-value">${feedbackStats.anemiaTransfusaoRate}%</span>
-              <span class="ae-feedback-hint">Casos com necessidade de transfusão</span>
-            </div>
-          </div>
-          <p class="ae-feedback-comment">
-            Este bloco resume, a partir dos feedbacks dos cirurgiões, como foi a qualidade assistencial no período. 
-            Taxas mais baixas de intercorrências e uma boa taxa de resposta indicam um padrão consistente de segurança 
-            e comunicação, reforçando a percepção de qualidade do trabalho anestésico.
-          </p>
-        </section>
-
-        <section class="ae-summary">
-          <h2 class="ae-section-title">3. Distribuição por Convênio</h2>
-          <div class="ae-convenio-grid">
-            ${convenioSection}
           </div>
         </section>
 
         <section class="ae-table-section">
-          <h2 class="ae-section-title">Procedimentos Detalhados</h2>
+          <h2 class="ae-section-title">6. Detalhamento de Procedimentos</h2>
           <table class="ae-table">
             <thead>
               <tr>
                 <th>Paciente</th>
-                <th>Procedimento</th>
+                <th>Tipo</th>
+                <th>Hospital</th>
                 <th>Data</th>
                 <th>Valor</th>
                 <th>Status</th>
@@ -599,35 +687,24 @@ export const reportService = {
               ${procedures.length > 0 ? procedures.map(procedure => `
                 <tr>
                   <td>${procedure.patient_name || 'N/A'}</td>
-                  <td>${procedure.procedure_type || procedure.procedure_name || 'N/A'}</td>
+                  <td>${procedure.procedure_type || 'N/A'}</td>
+                  <td>${procedure.hospital_clinic || 'N/A'}</td>
                   <td>${formatDate(procedure.procedure_date)}</td>
                   <td>${formatCurrency(procedure.procedure_value || 0)}</td>
                   <td>
-                    ${
-                      procedure.payment_status === 'paid'
-                        ? '<span class="ae-status ae-status-paid">Concluído</span>'
-                        : procedure.payment_status === 'pending'
-                        ? '<span class="ae-status ae-status-pending">Pendente</span>'
-                        : procedure.payment_status === 'cancelled'
-                        ? '<span class="ae-status ae-status-cancelled">Cancelado</span>'
-                        : '<span class="ae-status">—</span>'
-                    }
+                    <span class="ae-status ae-status-${procedure.payment_status || 'pending'}">
+                      ${procedure.payment_status === 'paid' ? 'Pago' : 'Pendente'}
+                    </span>
                   </td>
                 </tr>
-              `).join('') : `
-                <tr>
-                  <td colspan="5" class="ae-empty">
-                    Nenhum procedimento encontrado no período selecionado.
-                  </td>
-                </tr>
-              `}
+              `).join('') : '<tr><td colspan="6" class="ae-empty">Nenhum registro encontrado</td></tr>'}
             </tbody>
           </table>
         </section>
 
         <footer class="ae-footer">
-          <p>Relatório gerado pelo <strong>AnestEasy</strong> — Sistema de Gestão para Anestesiologistas.</p>
-          <p class="ae-footer-muted">Uso exclusivo profissional. As informações contidas neste documento são confidenciais.</p>
+          <p>Relatório gerado pelo <strong>AnestEasy</strong> — Inteligência em Gestão Anestésica.</p>
+          <p class="ae-footer-muted">Documento para fins de gestão profissional. Confidencialidade garantida.</p>
         </footer>
       </div>
     `

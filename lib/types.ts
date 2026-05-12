@@ -20,19 +20,23 @@ export interface ProcedureInsert {
   patient_name: string
   patient_age?: number
   data_nascimento?: string | null
+  patient_gender?: 'M' | 'F' | 'Other' | ''
   convenio?: string
   carteirinha?: string
   
   // Campos da equipe
   anesthesiologist_name?: string
   nome_cirurgiao?: string
+  surgeon_name?: string
   especialidade_cirurgiao?: string
   nome_equipe?: string
   hospital_clinic?: string
   
   // Campos de horário e duração
   horario?: string
+  procedure_time?: string
   duracao_minutos?: number
+  duration_minutes?: number
   
   // Campos do procedimento (não-obstétrico)
   sangramento?: 'Sim' | 'Não'
@@ -53,13 +57,13 @@ export interface ProcedureInsert {
   transfusao_realizada?: 'Sim' | 'Não'
   
   // Campos financeiros
-  payment_status?: 'pending' | 'paid' | 'cancelled'
+  payment_status?: 'pending' | 'paid' | 'cancelled' | 'sent'
   payment_date?: string
   forma_pagamento?: string
+  payment_method?: string
   numero_parcelas?: number
   parcelas_recebidas?: number
   observacoes_financeiras?: string
-  secretaria_id?: string
   user_id?: string
 
   // Campos de anestesia
@@ -71,4 +75,8 @@ export interface ProcedureInsert {
   feedback_solicitado?: boolean
   email_cirurgiao?: string
   telefone_cirurgiao?: string
+  sent_at?: string
+  paid_at?: string
+  expected_payment_date?: string
+  show_to_secretary?: boolean
 }

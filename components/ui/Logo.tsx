@@ -47,8 +47,9 @@ export function Logo({ size = 'md', showText = true, className = '', textColor =
         }}
       >
         <img 
-          src="/icon.svg" 
+          src="/logo-anesteasy.png" 
           alt="AnestEasy Logo"
+          className="block"
           style={{ 
             width: '100%',
             height: '100%',

@@ -1,3 +1,4 @@
+import 'server-only'
 /**
  * API Route para upload de arquivos de procedimento
  * Solução server-side para contornar problemas de CORS/XHR no mobile

@@ -82,7 +82,9 @@ export async function logError(params: LogErrorParams): Promise<boolean> {
       return false
     }
 
-    console.log('✅ [logError] Erro registrado com sucesso:', { screen, action })
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('✅ [logError] Erro registrado com sucesso:', { screen, action })
+    }
     return true
   } catch (error) {
     // Não queremos que erros no sistema de log quebrem a aplicação

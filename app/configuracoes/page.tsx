@@ -1,11 +1,11 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { 
-  Settings, 
-  User, 
-  Shield, 
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Settings,
+  User,
+  Shield,
   Palette,
   Database,
   Check,
@@ -25,340 +25,212 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  Loader2
-} from 'lucide-react'
-import { Layout } from '@/components/layout/Layout'
-import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Modal } from '@/components/ui/Modal'
-import { useAuth } from '@/contexts/AuthContext'
-import { useSecretaria } from '@/contexts/SecretariaContext'
-import { supabase } from '@/lib/supabase'
+  Loader2,
+  ExternalLink,
+  Eye,
+  EyeOff,
+} from "lucide-react";
+import { Layout } from "@/components/layout/Layout";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { WhatsAppSettings } from "@/components/settings/WhatsAppSettings";
 
 function ConfiguracoesContent() {
-  const { user, updateUser, deleteAccount, isLoading, isAuthenticated } = useAuth()
-  const { secretaria, linkSecretaria, unlinkSecretaria, isLoading: secretariaLoading } = useSecretaria()
-  const router = useRouter()
+  const { user, updateUser, deleteAccount, isLoading, isAuthenticated } =
+    useAuth();
+  const router = useRouter();
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    crm: '',
-    specialty: '',
-    phone: '',
-    gender: ''
-  })
-  const [secretariaEmail, setSecretariaEmail] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
-  const [isLinkingSecretaria, setIsLinkingSecretaria] = useState(false)
-  const [showSecretariaForm, setShowSecretariaForm] = useState(false)
-  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [showInviteModal, setShowInviteModal] = useState(false)
-  const [inviteLink, setInviteLink] = useState('')
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [linkCopied, setLinkCopied] = useState(false)
-  const [deleteConfirmation, setDeleteConfirmation] = useState('')
-  const [pendingRequest, setPendingRequest] = useState<{
-    id: string
-    secretaria_id?: string
-    secretaria_email: string
-    secretaria_nome?: string
-    created_at: string
-    type: 'link_request' | 'invite'
-  } | null>(null)
-  const [isLoadingPendingRequest, setIsLoadingPendingRequest] = useState(true)
-  const [showPasswordModal, setShowPasswordModal] = useState(false)
+    name: "",
+    email: "",
+    crm: "",
+    specialty: "",
+    phone: "",
+    gender: "",
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  })
-  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
-  
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
   // Estados para gerenciamento de assinatura
-  const [subscription, setSubscription] = useState<any>(null)
-  const [subscriptionLoading, setSubscriptionLoading] = useState(true)
-  const [isCancelling, setIsCancelling] = useState(false)
-  const [showChangePlanModal, setShowChangePlanModal] = useState(false)
-  const [isChangingPlan, setIsChangingPlan] = useState(false)
-  const [showRefundModal, setShowRefundModal] = useState(false)
-  const [isProcessingRefund, setIsProcessingRefund] = useState(false)
-  const [refundEligibility, setRefundEligibility] = useState<{eligible: boolean, daysUsed: number, reason?: string} | null>(null)
-  const [showCancelModal, setShowCancelModal] = useState(false)
-  const [cancelImmediately, setCancelImmediately] = useState(false)
+  const [subscription, setSubscription] = useState<any>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [showChangePlanModal, setShowChangePlanModal] = useState(false);
+  const [isChangingPlan, setIsChangingPlan] = useState(false);
+  const [showRefundModal, setShowRefundModal] = useState(false);
+  const [isProcessingRefund, setIsProcessingRefund] = useState(false);
+  const [refundEligibility, setRefundEligibility] = useState<{
+    eligible: boolean;
+    daysUsed: number;
+    reason?: string;
+  } | null>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelImmediately, setCancelImmediately] = useState(false);
+
+  // Estados para Link da Secretária
+  const [secretaryLink, setSecretaryLink] = useState<string | null>(null);
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [linkLoading, setLinkLoading] = useState(true);
+  const [showCopySuccess, setShowCopySuccess] = useState(false);
+  const [activeLinkInfo, setActiveLinkInfo] = useState<{ id: string; expires_at: string; token?: string } | null>(null);
+  const [isLinkVisible, setIsLinkVisible] = useState(false);
 
   // Verificar autenticação e redirecionar se necessário
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push('/login')
-      return
+      router.push("/login");
+      return;
     }
 
-    // Verificar se é secretária e redirecionar (secretárias não devem acessar configurações de anestesistas)
-    if (user && !isLoading) {
-      const checkIfSecretaria = async () => {
-        try {
-          const { isSecretaria } = await import('@/lib/user-utils')
-          const isSec = await isSecretaria(user.id)
-          
-          if (isSec) {
-            // Secretária tentando acessar configurações de anestesista - bloquear acesso
-            router.push('/secretaria/dashboard')
-          }
-        } catch (error) {
-        }
-      }
-
-      checkIfSecretaria()
-    }
-  }, [isLoading, isAuthenticated, user, router])
+  }, [isLoading, isAuthenticated, router]);
 
   // Carregar dados do usuário
   useEffect(() => {
     if (user) {
       setFormData({
-        name: user.name || '',
-        email: user.email || '',
-        crm: user.crm || '',
-        specialty: user.specialty || '',
-        phone: user.phone || '',
-        gender: user.gender || ''
-      })
+        name: user.name || "",
+        email: user.email || "",
+        crm: user.crm || "",
+        specialty: user.specialty || "",
+        phone: user.phone || "",
+        gender: user.gender || "",
+      });
     }
-  }, [user])
+  }, [user]);
 
   // Carregar assinatura do usuário
   useEffect(() => {
     const loadSubscription = async () => {
       if (!user) {
-        setSubscriptionLoading(false)
-        return
+        setSubscriptionLoading(false);
+        return;
       }
 
       try {
-        setSubscriptionLoading(true)
-        const { supabase } = await import('@/lib/supabase')
-        const { data: { session } } = await supabase.auth.getSession()
-        
+        setSubscriptionLoading(true);
+        const { supabase } = await import("@/lib/supabase");
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
         if (!session?.access_token) {
-          setSubscriptionLoading(false)
-          return
+          setSubscriptionLoading(false);
+          return;
         }
 
-        const response = await fetch('/api/stripe/subscription', {
-          method: 'GET',
+        const response = await fetch("/api/stripe/subscription", {
+          method: "GET",
           headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        })
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
 
         if (response.ok) {
-          const data = await response.json()
-          setSubscription(data.subscription)
-          
+          const data = await response.json();
+          setSubscription(data.subscription);
+
           // Verificar elegibilidade para reembolso se tiver assinatura
           if (data.subscription && data.subscription.id) {
-            const { checkRefundEligibility } = await import('@/lib/subscription-access')
-            const eligibility = await checkRefundEligibility(data.subscription.id)
-            setRefundEligibility(eligibility)
+            const { checkRefundEligibility } =
+              await import("@/lib/subscription-access");
+            const eligibility = await checkRefundEligibility(
+              data.subscription.id,
+            );
+            setRefundEligibility(eligibility);
           }
         } else if (response.status === 404) {
-          setSubscription(null)
+          setSubscription(null);
         }
       } catch (error) {
       } finally {
-        setSubscriptionLoading(false)
+        setSubscriptionLoading(false);
       }
-    }
+    };
 
-    loadSubscription()
-  }, [user])
+    loadSubscription();
+  }, [user]);
 
-  // Carregar solicitações pendentes de vinculação
+  // Carregar link da secretária
   useEffect(() => {
-    const loadPendingRequests = async () => {
-      if (!user) {
-        setPendingRequest(null)
-        setIsLoadingPendingRequest(false)
-        return
-      }
-
-      if (secretaria) {
-        // Se já tem secretária vinculada, não precisa verificar pendências
-        setPendingRequest(null)
-        setIsLoadingPendingRequest(false)
-        return
-      }
-
-      setIsLoadingPendingRequest(true)
-
-      // Timeout de segurança para evitar carregamento infinito
-      const timeoutId = setTimeout(() => {
-        setIsLoadingPendingRequest(false)
-      }, 10000) // 10 segundos
-
+    const loadSecretaryLink = async () => {
+      if (!user) return;
       try {
-        // Primeiro buscar solicitação de vinculação (secretária existente)
-        const { data: requestsData, error: requestsError } = await supabase
-          .from('secretaria_link_requests')
-          .select('id, secretaria_id, created_at')
-          .eq('anestesista_id', user.id)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false })
-          .limit(1)
-
-        if (requestsData && requestsData.length > 0) {
-          const request = requestsData[0]
-
-          // Buscar dados da secretária
-          const { data: secretariaData, error: secretariaError } = await supabase
-            .from('secretarias')
-            .select('id, email, nome')
-            .eq('id', request.secretaria_id)
-            .single()
-
-          if (secretariaError) {
-            // Mesmo com erro, vamos tentar usar os dados que temos
-            setPendingRequest({
-              id: request.id,
-              secretaria_id: request.secretaria_id,
-              secretaria_email: 'Email não disponível',
-              secretaria_nome: 'Nome não disponível',
-              created_at: request.created_at || '',
-              type: 'link_request'
-            })
-            setIsLoadingPendingRequest(false)
-            return
-          }
-
-          if (secretariaData) {
-            setPendingRequest({
-              id: request.id,
-              secretaria_id: request.secretaria_id,
-              secretaria_email: secretariaData.email || '',
-              secretaria_nome: secretariaData.nome || '',
-              created_at: request.created_at || '',
-              type: 'link_request'
-            })
-            
-            setIsLoadingPendingRequest(false)
-            return
-          } else {
-            // Mesmo sem dados completos, mostrar a solicitação
-            setPendingRequest({
-              id: request.id,
-              secretaria_id: request.secretaria_id,
-              secretaria_email: 'Email não disponível',
-              secretaria_nome: 'Nome não disponível',
-              created_at: request.created_at || '',
-              type: 'link_request'
-            })
-            setIsLoadingPendingRequest(false)
-            return
+        setLinkLoading(true);
+        const response = await fetch('/api/secretary/link');
+        const data = await response.json();
+        if (data.activeLink) {
+          setActiveLinkInfo({ 
+            id: data.id, 
+            expires_at: data.expires_at,
+            token: data.token 
+          });
+          // Se tiver token, já podemos montar o link
+          if (data.token) {
+            const origin = window.location.origin;
+            setSecretaryLink(`${origin}/secretaria/${data.token}`);
           }
         }
-
-        // Se não encontrou solicitação, buscar convites pendentes (secretária nova)
-        // Primeiro verificar qual é o auth.uid() atual
-        const { data: { user: authUser } } = await supabase.auth.getUser()
-        const authUserId = authUser?.id
-        
-        // Usar authUserId se disponível, senão usar user.id
-        const userIdToSearch = authUserId || user.id
-        
-        const { data: invitesData, error: invitesError } = await supabase
-          .from('secretaria_invites')
-          .select('id, email, created_at, anestesista_id')
-          .eq('anestesista_id', userIdToSearch)
-          .is('used_at', null)
-          .gt('expires_at', new Date().toISOString())
-          .order('created_at', { ascending: false })
-          .limit(5)
-
-        if (invitesData && invitesData.length > 0) {
-          const invite = invitesData[0]
-
-          setPendingRequest({
-            id: invite.id,
-            secretaria_email: invite.email || '',
-            created_at: invite.created_at || '',
-            type: 'invite'
-          })
-          
-          setIsLoadingPendingRequest(false)
-          return
-        }
-
-        setPendingRequest(null)
-      } catch (error) {
-        setPendingRequest(null)
+      } catch (err) {
+        console.error('Erro ao carregar link da secretária:', err);
       } finally {
-        clearTimeout(timeoutId) // Limpar timeout quando a função terminar
-        setIsLoadingPendingRequest(false)
+        setLinkLoading(false);
       }
+    };
+    loadSecretaryLink();
+  }, [user]);
+
+  const handleGenerateLink = async () => {
+    if (!confirm('Deseja gerar um novo link? O link anterior (se existir) será invalidado imediatamente.')) {
+      return;
     }
 
-    loadPendingRequests()
-
-    // Escutar mudanças em tempo real
-    if (user && !secretaria) {
-      const channel = supabase
-        .channel(`link_requests:${user.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'secretaria_link_requests',
-            filter: `anestesista_id=eq.${user.id}`
-          },
-          () => {
-            loadPendingRequests()
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'secretaria_invites',
-            filter: `anestesista_id=eq.${user.id}`
-          },
-          () => {
-            loadPendingRequests()
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'anestesista_secretaria',
-            filter: `anestesista_id=eq.${user.id}`
-          },
-          () => {
-            // Quando vinculação for criada, limpar pendência
-            setPendingRequest(null)
-            // Recarregar secretária do contexto
-            if (secretariaLoading === false) {
-              // O contexto vai atualizar automaticamente
-            }
-          }
-        )
-        .subscribe()
-
-      return () => {
-        supabase.removeChannel(channel)
+    setIsGeneratingLink(true);
+    try {
+      const response = await fetch('/api/secretary/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          permissions: { can_update_status: true, view_values: true } 
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setSecretaryLink(data.url);
+        setFeedbackMessage({ type: 'success', message: 'Novo link gerado com sucesso!' });
+      } else {
+        throw new Error(data.error || 'Erro ao gerar link');
       }
+    } catch (err: any) {
+      setFeedbackMessage({ type: 'error', message: err.message });
+    } finally {
+      setIsGeneratingLink(false);
+      setTimeout(() => setFeedbackMessage(null), 5000);
     }
-  }, [user, secretaria, secretariaLoading])
-  
-  // Debug: Log quando pendingRequest mudar
-  useEffect(() => {
-  }, [pendingRequest])
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setShowCopySuccess(true);
+    setTimeout(() => setShowCopySuccess(false), 3000);
+  };
+
 
   // Mostrar loading enquanto verifica autenticação
   if (isLoading) {
@@ -369,609 +241,517 @@ function ConfiguracoesContent() {
           <p className="text-gray-600">Verificando autenticação...</p>
         </div>
       </div>
-    )
+    );
   }
 
   // Não renderizar se não estiver autenticado (será redirecionado)
   if (!isAuthenticated) {
-    return null
+    return null;
   }
 
   // Função para atualizar campo
   const updateField = (field: string, value: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [field]: value
-    }))
-  }
+      [field]: value,
+    }));
+  };
 
   // Função para salvar alterações
   const saveProfile = async () => {
     if (!user) {
-      setFeedbackMessage({ type: 'error', message: 'Erro: Usuário não encontrado. Faça login novamente.' })
-      setTimeout(() => setFeedbackMessage(null), 5000)
-      return
+      setFeedbackMessage({
+        type: "error",
+        message: "Erro: Usuário não encontrado. Faça login novamente.",
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
+      return;
     }
 
-    setIsSaving(true)
-    setFeedbackMessage(null)
+    setIsSaving(true);
+    setFeedbackMessage(null);
 
     try {
-      const success = await updateUser(formData)
-      
+      const success = await updateUser(formData);
+
       if (success) {
-        setFeedbackMessage({ type: 'success', message: 'Perfil atualizado com sucesso!' })
-        setTimeout(() => setFeedbackMessage(null), 3000)
+        setFeedbackMessage({
+          type: "success",
+          message: "Perfil atualizado com sucesso!",
+        });
+        setTimeout(() => setFeedbackMessage(null), 3000);
       } else {
-        setFeedbackMessage({ type: 'error', message: 'Erro ao atualizar perfil. Verifique o console para mais detalhes.' })
-        setTimeout(() => setFeedbackMessage(null), 5000)
+        setFeedbackMessage({
+          type: "error",
+          message:
+            "Erro ao atualizar perfil. Verifique o console para mais detalhes.",
+        });
+        setTimeout(() => setFeedbackMessage(null), 5000);
       }
     } catch (error) {
-      setFeedbackMessage({ type: 'error', message: `Erro ao salvar alterações: ${error instanceof Error ? error.message : 'Erro desconhecido'}` })
-      setTimeout(() => setFeedbackMessage(null), 5000)
+      setFeedbackMessage({
+        type: "error",
+        message: `Erro ao salvar alterações: ${error instanceof Error ? error.message : "Erro desconhecido"}`,
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }
+  };
 
-  // Função para vincular secretária por email
-  const handleLinkSecretaria = async () => {
-    if (!secretariaEmail.trim()) {
-      setFeedbackMessage({ type: 'error', message: 'Email é obrigatório.' })
-      setTimeout(() => setFeedbackMessage(null), 3000)
-      return
-    }
-
-    // Validar formato de email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(secretariaEmail.trim())) {
-      setFeedbackMessage({ type: 'error', message: 'Email inválido.' })
-      setTimeout(() => setFeedbackMessage(null), 3000)
-      return
-    }
-
-    setIsLinkingSecretaria(true)
-    setFeedbackMessage(null)
-
-    try {
-      // Obter token de autenticação
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        setFeedbackMessage({ type: 'error', message: 'Sessão expirada. Faça login novamente.' })
-        setTimeout(() => {
-          router.push('/login')
-        }, 2000)
-        return
-      }
-
-      // Verificar se o email é anestesista
-      const { data: existingAnestesista } = await supabase
-        .from('users')
-        .select('email')
-        .eq('email', secretariaEmail.trim().toLowerCase())
-        .maybeSingle()
-
-      if (existingAnestesista) {
-        setFeedbackMessage({ 
-          type: 'error', 
-          message: 'Este email já está cadastrado como anestesista. Um email de anestesista não pode ser usado como secretária.' 
-        })
-        setTimeout(() => setFeedbackMessage(null), 5000)
-        setIsLinkingSecretaria(false)
-        return
-      }
-
-      // Verificar se o email é secretária
-      const { data: existingSecretaria } = await supabase
-        .from('secretarias')
-        .select('id, email, nome')
-        .eq('email', secretariaEmail.trim().toLowerCase())
-        .maybeSingle()
-
-      if (existingSecretaria) {
-        // Secretária existe - criar solicitação de vinculação
-        const response = await fetch('/api/secretaria/generate-invite', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-          },
-          body: JSON.stringify({
-            email: secretariaEmail.trim()
-          })
-        })
-
-        const data = await response.json()
-
-        if (data.success && data.exists) {
-          setFeedbackMessage({ 
-            type: 'success', 
-            message: `Solicitação de vinculação enviada para ${data.secretaria.email}. Aguarde a confirmação da secretária.` 
-          })
-          setSecretariaEmail('')
-          setShowSecretariaForm(false)
-          
-          // Recarregar solicitações pendentes manualmente
-          if (user && !secretaria) {
-            try {
-              // Buscar solicitações de vinculação
-              const { data: requestsData } = await supabase
-                .from('secretaria_link_requests')
-                .select('id, secretaria_id, created_at')
-                .eq('anestesista_id', user.id)
-                .eq('status', 'pending')
-                .order('created_at', { ascending: false })
-                .limit(1)
-
-              if (requestsData && requestsData.length > 0) {
-                const request = requestsData[0]
-                const { data: secretariaData } = await supabase
-                  .from('secretarias')
-                  .select('id, email, nome')
-                  .eq('id', request.secretaria_id)
-                  .single()
-
-                if (secretariaData) {
-                  setPendingRequest({
-                    id: request.id,
-                    secretaria_id: request.secretaria_id,
-                    secretaria_email: secretariaData.email || '',
-                    secretaria_nome: secretariaData.nome || '',
-                    created_at: request.created_at || '',
-                    type: 'link_request'
-                  })
-                }
-              }
-            } catch (error) {
-            }
-          }
-        } else {
-          setFeedbackMessage({ type: 'error', message: data.error || 'Erro ao criar solicitação de vinculação.' })
-        }
-        setTimeout(() => setFeedbackMessage(null), 6000)
-      } else {
-        // Email não existe em nenhuma tabela
-        setFeedbackMessage({ 
-          type: 'error', 
-          message: 'Não existe secretária cadastrada com este email. Verifique o email e tente novamente.' 
-        })
-        setTimeout(() => setFeedbackMessage(null), 5000)
-      }
-    } catch (error) {
-      setFeedbackMessage({ type: 'error', message: 'Erro ao vincular secretária. Tente novamente.' })
-      setTimeout(() => setFeedbackMessage(null), 5000)
-    } finally {
-      setIsLinkingSecretaria(false)
-    }
-  }
-
-  // Função para copiar link
-  const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(inviteLink)
-      setLinkCopied(true)
-      setTimeout(() => setLinkCopied(false), 2000)
-    } catch (error) {
-    }
-  }
-
-  // Função para desvincular secretaria
-  const handleUnlinkSecretaria = async () => {
-    if (!secretaria) return
-
-    setIsLinkingSecretaria(true)
-    setFeedbackMessage(null)
-
-    try {
-      const success = await unlinkSecretaria()
-      
-      if (success) {
-        setFeedbackMessage({ type: 'success', message: 'Secretaria desvinculada com sucesso!' })
-        setTimeout(() => setFeedbackMessage(null), 3000)
-      } else {
-        setFeedbackMessage({ type: 'error', message: 'Erro ao desvincular secretaria. Tente novamente.' })
-        setTimeout(() => setFeedbackMessage(null), 5000)
-      }
-    } catch (error) {
-      
-      setFeedbackMessage({ type: 'error', message: 'Erro ao desvincular secretaria.' })
-      setTimeout(() => setFeedbackMessage(null), 5000)
-    } finally {
-      setIsLinkingSecretaria(false)
-    }
-  }
 
   // Função para alterar senha
   const handleChangePassword = async () => {
-    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-      setFeedbackMessage({ type: 'error', message: 'Preencha todos os campos.' })
-      setTimeout(() => setFeedbackMessage(null), 3000)
-      return
+    if (
+      !passwordForm.currentPassword ||
+      !passwordForm.newPassword ||
+      !passwordForm.confirmPassword
+    ) {
+      setFeedbackMessage({
+        type: "error",
+        message: "Preencha todos os campos.",
+      });
+      setTimeout(() => setFeedbackMessage(null), 3000);
+      return;
     }
 
     if (passwordForm.newPassword.length < 6) {
-      setFeedbackMessage({ type: 'error', message: 'A nova senha deve ter pelo menos 6 caracteres.' })
-      setTimeout(() => setFeedbackMessage(null), 3000)
-      return
+      setFeedbackMessage({
+        type: "error",
+        message: "A nova senha deve ter pelo menos 6 caracteres.",
+      });
+      setTimeout(() => setFeedbackMessage(null), 3000);
+      return;
     }
 
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setFeedbackMessage({ type: 'error', message: 'As senhas não coincidem.' })
-      setTimeout(() => setFeedbackMessage(null), 3000)
-      return
+      setFeedbackMessage({
+        type: "error",
+        message: "As senhas não coincidem.",
+      });
+      setTimeout(() => setFeedbackMessage(null), 3000);
+      return;
     }
 
-    setIsUpdatingPassword(true)
-    setFeedbackMessage(null)
+    setIsUpdatingPassword(true);
+    setFeedbackMessage(null);
 
     try {
       // Importar authService dinamicamente para evitar problemas de SSR
-      const { authService } = await import('@/lib/auth')
-      
+      const { authService } = await import("@/lib/auth");
+
       const result = await authService.updatePassword(
         passwordForm.currentPassword,
-        passwordForm.newPassword
-      )
-      
+        passwordForm.newPassword,
+      );
+
       if (result.success) {
-        setFeedbackMessage({ type: 'success', message: 'Senha alterada com sucesso!' })
-        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
-        setShowPasswordModal(false)
-        setTimeout(() => setFeedbackMessage(null), 3000)
+        setFeedbackMessage({
+          type: "success",
+          message: "Senha alterada com sucesso!",
+        });
+        setPasswordForm({
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+        });
+        setShowPasswordModal(false);
+        setTimeout(() => setFeedbackMessage(null), 3000);
       } else {
-        setFeedbackMessage({ type: 'error', message: result.message || 'Erro ao alterar senha.' })
-        setTimeout(() => setFeedbackMessage(null), 5000)
+        setFeedbackMessage({
+          type: "error",
+          message: result.message || "Erro ao alterar senha.",
+        });
+        setTimeout(() => setFeedbackMessage(null), 5000);
       }
     } catch (error) {
-      setFeedbackMessage({ 
-        type: 'error', 
-        message: `Erro interno ao alterar senha: ${error instanceof Error ? error.message : 'Erro desconhecido'}` 
-      })
-      setTimeout(() => setFeedbackMessage(null), 5000)
+      setFeedbackMessage({
+        type: "error",
+        message: `Erro interno ao alterar senha: ${error instanceof Error ? error.message : "Erro desconhecido"}`,
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
     } finally {
-      setIsUpdatingPassword(false)
+      setIsUpdatingPassword(false);
     }
-  }
+  };
 
   // Funções de gerenciamento de assinatura
   const handleChangePlan = async (newPlanType: string) => {
-    if (!subscription) return
+    if (!subscription) return;
 
     try {
-      setIsChangingPlan(true)
-      setFeedbackMessage(null)
+      setIsChangingPlan(true);
+      setFeedbackMessage(null);
 
-      const { supabase } = await import('@/lib/supabase')
-      const { data: { session } } = await supabase.auth.getSession()
-      
+      const { supabase } = await import("@/lib/supabase");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (!session?.access_token) {
-        setFeedbackMessage({ type: 'error', message: 'Sessão expirada. Por favor, faça login novamente.' })
-        setTimeout(() => setFeedbackMessage(null), 3000)
-        return
+        setFeedbackMessage({
+          type: "error",
+          message: "Sessão expirada. Por favor, faça login novamente.",
+        });
+        setTimeout(() => setFeedbackMessage(null), 3000);
+        return;
       }
 
-      const response = await fetch('/api/stripe/subscription/change-plan', {
-        method: 'POST',
+      const response = await fetch("/api/stripe/subscription/change-plan", {
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           subscription_id: subscription.stripe_subscription_id,
-          new_plan_type: newPlanType
-        })
-      })
+          new_plan_type: newPlanType,
+        }),
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Erro ao agendar mudança de plano')
+        throw new Error(data.error || "Erro ao agendar mudança de plano");
       }
 
-      setFeedbackMessage({ type: 'success', message: data.message || 'Mudança de plano agendada com sucesso!' })
-      setTimeout(() => setFeedbackMessage(null), 5000)
-      setShowChangePlanModal(false)
+      setFeedbackMessage({
+        type: "success",
+        message: data.message || "Mudança de plano agendada com sucesso!",
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
+      setShowChangePlanModal(false);
 
       // Recarregar assinatura
-      const reloadResponse = await fetch('/api/stripe/subscription', {
-        method: 'GET',
+      const reloadResponse = await fetch("/api/stripe/subscription", {
+        method: "GET",
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
       if (reloadResponse.ok) {
-        const reloadData = await reloadResponse.json()
-        setSubscription(reloadData.subscription)
+        const reloadData = await reloadResponse.json();
+        setSubscription(reloadData.subscription);
       }
-
     } catch (err: any) {
-      setFeedbackMessage({ 
-        type: 'error', 
-        message: err.message || 'Erro ao agendar mudança de plano' 
-      })
-      setTimeout(() => setFeedbackMessage(null), 5000)
+      setFeedbackMessage({
+        type: "error",
+        message: err.message || "Erro ao agendar mudança de plano",
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
     } finally {
-      setIsChangingPlan(false)
+      setIsChangingPlan(false);
     }
-  }
+  };
 
   const handleRequestRefund = async () => {
-    if (!subscription) return
+    if (!subscription) return;
 
     if (!refundEligibility?.eligible) {
-      setFeedbackMessage({ 
-        type: 'error', 
-        message: refundEligibility?.reason || 'Você não é elegível para reembolso (mínimo de 8 dias de uso)' 
-      })
-      setTimeout(() => setFeedbackMessage(null), 5000)
-      return
+      setFeedbackMessage({
+        type: "error",
+        message:
+          refundEligibility?.reason ||
+          "Você não é elegível para reembolso (mínimo de 8 dias de uso)",
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
+      return;
     }
 
-    if (!confirm(`Tem certeza que deseja solicitar reembolso? Você utilizou a plataforma por ${refundEligibility.daysUsed} dias. O valor será reembolsado e sua assinatura será cancelada.`)) {
-      return
+    if (
+      !confirm(
+        `Tem certeza que deseja solicitar reembolso? Você utilizou a plataforma por ${refundEligibility.daysUsed} dias. O valor será reembolsado e sua assinatura será cancelada.`,
+      )
+    ) {
+      return;
     }
 
     try {
-      setIsProcessingRefund(true)
-      setFeedbackMessage(null)
+      setIsProcessingRefund(true);
+      setFeedbackMessage(null);
 
-      const { supabase } = await import('@/lib/supabase')
-      const { data: { session } } = await supabase.auth.getSession()
-      
+      const { supabase } = await import("@/lib/supabase");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (!session?.access_token) {
-        setFeedbackMessage({ type: 'error', message: 'Sessão expirada. Por favor, faça login novamente.' })
-        setTimeout(() => setFeedbackMessage(null), 3000)
-        return
+        setFeedbackMessage({
+          type: "error",
+          message: "Sessão expirada. Por favor, faça login novamente.",
+        });
+        setTimeout(() => setFeedbackMessage(null), 3000);
+        return;
       }
 
-      const response = await fetch('/api/stripe/subscription/refund', {
-        method: 'POST',
+      const response = await fetch("/api/stripe/subscription/refund", {
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          subscription_id: subscription.stripe_subscription_id
-        })
-      })
+          subscription_id: subscription.stripe_subscription_id,
+        }),
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Erro ao processar reembolso')
+        throw new Error(data.error || "Erro ao processar reembolso");
       }
 
-      setFeedbackMessage({ type: 'success', message: data.message || 'Reembolso processado com sucesso!' })
-      setTimeout(() => setFeedbackMessage(null), 8000)
-      setShowRefundModal(false)
+      setFeedbackMessage({
+        type: "success",
+        message: data.message || "Reembolso processado com sucesso!",
+      });
+      setTimeout(() => setFeedbackMessage(null), 8000);
+      setShowRefundModal(false);
 
       // Recarregar assinatura
-      const reloadResponse = await fetch('/api/stripe/subscription', {
-        method: 'GET',
+      const reloadResponse = await fetch("/api/stripe/subscription", {
+        method: "GET",
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
       if (reloadResponse.ok) {
-        const reloadData = await reloadResponse.json()
-        setSubscription(reloadData.subscription)
+        const reloadData = await reloadResponse.json();
+        setSubscription(reloadData.subscription);
       }
-
     } catch (err: any) {
-      setFeedbackMessage({ 
-        type: 'error', 
-        message: err.message || 'Erro ao processar reembolso' 
-      })
-      setTimeout(() => setFeedbackMessage(null), 5000)
+      setFeedbackMessage({
+        type: "error",
+        message: err.message || "Erro ao processar reembolso",
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
     } finally {
-      setIsProcessingRefund(false)
+      setIsProcessingRefund(false);
     }
-  }
+  };
 
   const getAvailablePlansForChange = () => {
-    if (!subscription) return []
-    
-    const currentPlanIndex = ['monthly', 'quarterly', 'annual'].indexOf(subscription.plan_type)
-    const allPlans = ['monthly', 'quarterly', 'annual']
-    
-    return allPlans.filter((plan, index) => index !== currentPlanIndex)
-  }
+    if (!subscription) return [];
+
+    const currentPlanIndex = ["monthly", "quarterly", "annual"].indexOf(
+      subscription.plan_type,
+    );
+    const allPlans = ["monthly", "quarterly", "annual"];
+
+    return allPlans.filter((plan, index) => index !== currentPlanIndex);
+  };
 
   const PLAN_NAMES: Record<string, string> = {
-    monthly: 'Plano Mensal',
-    quarterly: 'Plano Trimestral',
-    annual: 'Plano Anual'
-  }
+    monthly: "Plano Mensal",
+    quarterly: "Plano Trimestral",
+    annual: "Plano Anual",
+  };
 
   const PLAN_PRICES: Record<string, number> = {
-    monthly: 79.00,
-    quarterly: 225.00,
-    annual: 850.00
-  }
+    monthly: 79.0,
+    quarterly: 225.0,
+    annual: 850.0,
+  };
 
   const handleCancelSubscription = async (immediately: boolean = false) => {
-    if (!subscription) return
+    if (!subscription) return;
 
     // Verificar se já está cancelada
-    if (subscription.status === 'cancelled' || subscription.status === 'expired') {
-      setFeedbackMessage({ 
-        type: 'error', 
-        message: 'Esta assinatura já foi cancelada.' 
-      })
-      setTimeout(() => setFeedbackMessage(null), 3000)
-      return
+    if (
+      subscription.status === "cancelled" ||
+      subscription.status === "expired"
+    ) {
+      setFeedbackMessage({
+        type: "error",
+        message: "Esta assinatura já foi cancelada.",
+      });
+      setTimeout(() => setFeedbackMessage(null), 3000);
+      return;
     }
 
     // Abrir modal de confirmação
-    setCancelImmediately(immediately)
-    setShowCancelModal(true)
-  }
+    setCancelImmediately(immediately);
+    setShowCancelModal(true);
+  };
 
   const confirmCancelSubscription = async () => {
-    if (!subscription) return
+    if (!subscription) return;
 
-    setShowCancelModal(false)
+    setShowCancelModal(false);
 
     try {
-      setIsCancelling(true)
-      setFeedbackMessage(null)
+      setIsCancelling(true);
+      setFeedbackMessage(null);
 
-      const { supabase } = await import('@/lib/supabase')
-      const { data: { session } } = await supabase.auth.getSession()
-      
+      const { supabase } = await import("@/lib/supabase");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (!session?.access_token) {
-        setFeedbackMessage({ type: 'error', message: 'Sessão expirada. Por favor, faça login novamente.' })
-        setTimeout(() => setFeedbackMessage(null), 3000)
-        return
+        setFeedbackMessage({
+          type: "error",
+          message: "Sessão expirada. Por favor, faça login novamente.",
+        });
+        setTimeout(() => setFeedbackMessage(null), 3000);
+        return;
       }
 
-      const response = await fetch('/api/stripe/subscription/cancel', {
-        method: 'POST',
+      const response = await fetch("/api/stripe/subscription/cancel", {
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           subscription_id: subscription.stripe_subscription_id,
-          cancel_immediately: cancelImmediately
-        })
-      })
+          cancel_immediately: cancelImmediately,
+        }),
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (!response.ok) {
         // Verificar se o erro é porque já está cancelada
-        const errorMessage = data.error || 'Erro ao cancelar assinatura'
-        if (errorMessage.toLowerCase().includes('canceled') || errorMessage.toLowerCase().includes('cancelada')) {
+        const errorMessage = data.error || "Erro ao cancelar assinatura";
+        if (
+          errorMessage.toLowerCase().includes("canceled") ||
+          errorMessage.toLowerCase().includes("cancelada")
+        ) {
           // Assinatura já estava cancelada, apenas atualizar dados
-          const reloadResponse = await fetch('/api/stripe/subscription', {
-            method: 'GET',
+          const reloadResponse = await fetch("/api/stripe/subscription", {
+            method: "GET",
             headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            }
-          })
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
           if (reloadResponse.ok) {
-            const reloadData = await reloadResponse.json()
-            setSubscription(reloadData.subscription)
+            const reloadData = await reloadResponse.json();
+            setSubscription(reloadData.subscription);
           }
-          setFeedbackMessage({ 
-            type: 'success', 
-            message: 'Esta assinatura já estava cancelada.' 
-          })
-          setTimeout(() => setFeedbackMessage(null), 5000)
-          return
+          setFeedbackMessage({
+            type: "success",
+            message: "Esta assinatura já estava cancelada.",
+          });
+          setTimeout(() => setFeedbackMessage(null), 5000);
+          return;
         }
-        throw new Error(errorMessage)
+        throw new Error(errorMessage);
       }
 
       // Mostrar mensagem de sucesso
       if (data.success) {
-        setFeedbackMessage({ 
-          type: 'success', 
-          message: data.message || (cancelImmediately 
-            ? 'Assinatura cancelada com sucesso. Você perdeu o acesso imediatamente.'
-            : 'Assinatura será cancelada ao fim do período atual. Você manterá o acesso até então.')
-        })
-        setTimeout(() => setFeedbackMessage(null), 5000)
+        setFeedbackMessage({
+          type: "success",
+          message:
+            data.message ||
+            (cancelImmediately
+              ? "Assinatura cancelada com sucesso. Você perdeu o acesso imediatamente."
+              : "Assinatura será cancelada ao fim do período atual. Você manterá o acesso até então."),
+        });
+        setTimeout(() => setFeedbackMessage(null), 5000);
       }
 
       // Recarregar assinatura
-      const reloadResponse = await fetch('/api/stripe/subscription', {
-        method: 'GET',
+      const reloadResponse = await fetch("/api/stripe/subscription", {
+        method: "GET",
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
       if (reloadResponse.ok) {
-        const reloadData = await reloadResponse.json()
-        setSubscription(reloadData.subscription)
+        const reloadData = await reloadResponse.json();
+        setSubscription(reloadData.subscription);
       }
-
     } catch (err: any) {
-      const errorMessage = err.message || 'Erro ao cancelar assinatura'
+      const errorMessage = err.message || "Erro ao cancelar assinatura";
       // Verificar se o erro é porque já está cancelada
-      if (errorMessage.toLowerCase().includes('canceled') || errorMessage.toLowerCase().includes('cancelada')) {
-        setFeedbackMessage({ 
-          type: 'error', 
-          message: 'Esta assinatura já está cancelada.' 
-        })
+      if (
+        errorMessage.toLowerCase().includes("canceled") ||
+        errorMessage.toLowerCase().includes("cancelada")
+      ) {
+        setFeedbackMessage({
+          type: "error",
+          message: "Esta assinatura já está cancelada.",
+        });
         // Recarregar para atualizar status
-        const { supabase } = await import('@/lib/supabase')
-        const { data: { session } } = await supabase.auth.getSession()
+        const { supabase } = await import("@/lib/supabase");
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (session?.access_token) {
-          const reloadResponse = await fetch('/api/stripe/subscription', {
-            method: 'GET',
+          const reloadResponse = await fetch("/api/stripe/subscription", {
+            method: "GET",
             headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            }
-          })
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
           if (reloadResponse.ok) {
-            const reloadData = await reloadResponse.json()
-            setSubscription(reloadData.subscription)
+            const reloadData = await reloadResponse.json();
+            setSubscription(reloadData.subscription);
           }
         }
       } else {
-        setFeedbackMessage({ 
-          type: 'error', 
-          message: errorMessage
-        })
+        setFeedbackMessage({
+          type: "error",
+          message: errorMessage,
+        });
       }
-      setTimeout(() => setFeedbackMessage(null), 5000)
+      setTimeout(() => setFeedbackMessage(null), 5000);
     } finally {
-      setIsCancelling(false)
+      setIsCancelling(false);
     }
-  }
-
+  };
 
   // Função para excluir conta
   const handleDeleteAccount = async () => {
-    if (deleteConfirmation !== 'EXCLUIR') {
-      setFeedbackMessage({ type: 'error', message: 'Digite "EXCLUIR" para confirmar a exclusão.' })
-      setTimeout(() => setFeedbackMessage(null), 5000)
-      return
+    if (deleteConfirmation !== "EXCLUIR") {
+      setFeedbackMessage({
+        type: "error",
+        message: 'Digite "EXCLUIR" para confirmar a exclusão.',
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
+      return;
     }
 
-    setIsDeleting(true)
-    setFeedbackMessage(null)
+    setIsDeleting(true);
+    setFeedbackMessage(null);
 
     try {
-      
-      const success = await deleteAccount()
-      
+      const success = await deleteAccount();
+
       if (success) {
-        
-        setFeedbackMessage({ 
-          type: 'success', 
-          message: 'Conta excluída com sucesso! Todos os dados foram removidos.' 
-        })
-        setShowDeleteModal(false)
-        setDeleteConfirmation('')
-        
+        setFeedbackMessage({
+          type: "success",
+          message:
+            "Conta excluída com sucesso! Todos os dados foram removidos.",
+        });
+        setShowDeleteModal(false);
+        setDeleteConfirmation("");
+
         // Aguardar um pouco antes de redirecionar para mostrar a mensagem
         setTimeout(() => {
           // O redirecionamento será feito automaticamente pelo contexto
-        }, 2000)
+        }, 2000);
       } else {
-        
-        setFeedbackMessage({ 
-          type: 'error', 
-          message: 'Erro ao excluir conta. Verifique o console para mais detalhes.' 
-        })
-        setTimeout(() => setFeedbackMessage(null), 8000)
+        setFeedbackMessage({
+          type: "error",
+          message:
+            "Erro ao excluir conta. Verifique o console para mais detalhes.",
+        });
+        setTimeout(() => setFeedbackMessage(null), 8000);
       }
     } catch (error) {
-      
-      setFeedbackMessage({ 
-        type: 'error', 
-        message: 'Erro interno ao excluir conta. Verifique o console para mais detalhes.' 
-      })
-      setTimeout(() => setFeedbackMessage(null), 8000)
+      setFeedbackMessage({
+        type: "error",
+        message:
+          "Erro interno ao excluir conta. Verifique o console para mais detalhes.",
+      });
+      setTimeout(() => setFeedbackMessage(null), 8000);
     } finally {
-      setIsDeleting(false)
+      setIsDeleting(false);
     }
-  }
+  };
   return (
     <Layout>
       <div className="space-y-8">
@@ -979,18 +759,22 @@ function ConfiguracoesContent() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Configurações</h1>
-            <p className="text-gray-600 mt-1">Gerencie suas preferências e configurações</p>
+            <p className="text-gray-600 mt-1">
+              Gerencie suas preferências e configurações
+            </p>
           </div>
         </div>
 
         {/* Feedback Message */}
         {feedbackMessage && (
-          <div className={`p-4 rounded-lg flex items-center ${
-            feedbackMessage.type === 'success' 
-              ? 'bg-green-50 text-green-800 border border-green-200' 
-              : 'bg-red-50 text-red-800 border border-red-200'
-          }`}>
-            {feedbackMessage.type === 'success' ? (
+          <div
+            className={`p-4 rounded-lg flex items-center ${
+              feedbackMessage.type === "success"
+                ? "bg-green-50 text-green-800 border border-green-200"
+                : "bg-red-50 text-red-800 border border-red-200"
+            }`}
+          >
+            {feedbackMessage.type === "success" ? (
               <Check className="w-5 h-5 mr-2" />
             ) : (
               <AlertCircle className="w-5 h-5 mr-2" />
@@ -1001,239 +785,6 @@ function ConfiguracoesContent() {
 
         {/* Settings Sections */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Secretaria Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Users className="w-5 h-5 mr-2" />
-                Secretaria
-              </CardTitle>
-            </CardHeader>
-            <div className="p-6 space-y-4">
-              {isLoadingPendingRequest && !secretaria ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto mb-4"></div>
-                  <p className="text-sm text-gray-600">Verificando solicitações pendentes...</p>
-                </div>
-              ) : secretaria ? (
-                <div className="space-y-4">
-                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-medium text-green-800">{secretaria.nome}</h3>
-                        <div className="flex items-center text-sm text-green-600 mt-1">
-                          <Mail className="w-4 h-4 mr-1" />
-                          {secretaria.email}
-                        </div>
-                        {secretaria.telefone && (
-                          <div className="flex items-center text-sm text-green-600 mt-1">
-                            <Phone className="w-4 h-4 mr-1" />
-                            {secretaria.telefone}
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleUnlinkSecretaria}
-                        disabled={isLinkingSecretaria}
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    Sua secretaria pode acessar e editar seus procedimentos. 
-                    Você receberá notificações quando ela fizer alterações.
-                  </p>
-                </div>
-              ) : pendingRequest ? (
-                <div className="space-y-4">
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0">
-                        <Clock className="w-5 h-5 text-yellow-600 mt-0.5" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium text-yellow-900 mb-1">
-                          {pendingRequest.type === 'invite' 
-                            ? 'Aguardando cadastro da secretária' 
-                            : 'Aguardando confirmação da secretária'}
-                        </h3>
-                        <div className="space-y-1 mt-2">
-                          <div className="flex items-center text-sm text-yellow-800">
-                            <Mail className="w-4 h-4 mr-1" />
-                            {pendingRequest.secretaria_email}
-                          </div>
-                          {pendingRequest.secretaria_nome && (
-                            <div className="flex items-center text-sm text-yellow-800">
-                              <Users className="w-4 h-4 mr-1" />
-                              {pendingRequest.secretaria_nome}
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-xs text-yellow-700 mt-3">
-                          {pendingRequest.type === 'invite' 
-                            ? 'Um link de cadastro foi gerado para esta secretária. Ela precisa acessar o link e criar sua conta para que a vinculação seja concluída.' 
-                            : 'Uma solicitação de vinculação foi enviada para esta secretária. Ela precisa aceitar no dashboard dela para que a vinculação seja concluída.'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button
-                      onClick={async () => {
-                        // Forçar recarregamento completo
-                        setIsLoadingPendingRequest(true)
-                        try {
-                          if (user && !secretaria) {
-                            // Buscar solicitações de vinculação
-                            const { data: requestsData } = await supabase
-                              .from('secretaria_link_requests')
-                              .select('id, secretaria_id, created_at')
-                              .eq('anestesista_id', user.id)
-                              .eq('status', 'pending')
-                              .order('created_at', { ascending: false })
-                              .limit(1)
-
-                            if (requestsData && requestsData.length > 0) {
-                              const request = requestsData[0]
-                              const { data: secretariaData } = await supabase
-                                .from('secretarias')
-                                .select('id, email, nome')
-                                .eq('id', request.secretaria_id)
-                                .single()
-
-                              if (secretariaData) {
-                                setPendingRequest({
-                                  id: request.id,
-                                  secretaria_id: request.secretaria_id,
-                                  secretaria_email: secretariaData.email || '',
-                                  secretaria_nome: secretariaData.nome || '',
-                                  created_at: request.created_at || '',
-                                  type: 'link_request'
-                                })
-                                setIsLoadingPendingRequest(false)
-                                return
-                              }
-                            }
-
-                            // Buscar convites pendentes
-                            const { data: invitesData } = await supabase
-                              .from('secretaria_invites')
-                              .select('id, email, created_at')
-                              .eq('anestesista_id', user.id)
-                              .is('used_at', null)
-                              .gt('expires_at', new Date().toISOString())
-                              .order('created_at', { ascending: false })
-                              .limit(1)
-
-                            if (invitesData && invitesData.length > 0) {
-                              const invite = invitesData[0]
-                              setPendingRequest({
-                                id: invite.id,
-                                secretaria_email: invite.email || '',
-                                created_at: invite.created_at || '',
-                                type: 'invite'
-                              })
-                            } else {
-                              setPendingRequest(null)
-                            }
-                          }
-                        } catch (error) {
-                          setPendingRequest(null)
-                        } finally {
-                          setIsLoadingPendingRequest(false)
-                        }
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      onClick={() => setShowSecretariaForm(true)}
-                      variant="outline"
-                      className="flex-1"
-                    >
-                      Enviar Nova Solicitação
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="text-center py-8">
-                    <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma secretaria vinculada</h3>
-                    <p className="text-gray-600 mb-4">
-                      Vincule uma secretaria para que ela possa ajudar com seus procedimentos.
-                    </p>
-                    <Button
-                      onClick={() => setShowSecretariaForm(true)}
-                      className="w-full"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Vincular Secretaria
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {showSecretariaForm && (
-                <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium">Vincular Secretaria</h4>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setShowSecretariaForm(false)
-                        setSecretariaEmail('')
-                      }}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  
-                  <Input
-                    label="Email da Secretaria *"
-                    value={secretariaEmail}
-                    onChange={(e) => setSecretariaEmail(e.target.value)}
-                    type="email"
-                    placeholder="secretaria@exemplo.com"
-                    icon={<Mail className="w-5 h-5" />}
-                  />
-                  
-                  <div className="flex space-x-2">
-                    <Button
-                      onClick={handleLinkSecretaria}
-                      disabled={isLinkingSecretaria || !secretariaEmail.trim()}
-                      className="flex-1"
-                    >
-                      {isLinkingSecretaria ? 'Enviando solicitação...' : 'Vincular Secretaria'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setShowSecretariaForm(false)
-                        setSecretariaEmail('')
-                      }}
-                      className="flex-1"
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                  
-                  <p className="text-xs text-gray-600">
-                    Digite o email da secretária que deseja vincular. 
-                    Se ela já estiver cadastrada, receberá uma notificação para aceitar a vinculação.
-                  </p>
-                </div>
-              )}
-            </div>
-          </Card>
           {/* Profile Settings */}
           <Card>
             <CardHeader>
@@ -1243,42 +794,44 @@ function ConfiguracoesContent() {
               </CardTitle>
             </CardHeader>
             <div className="p-6 space-y-4">
-              <Input 
-                label="Nome completo" 
+              <Input
+                label="Nome completo"
                 value={formData.name}
-                onChange={(e) => updateField('name', e.target.value)}
+                onChange={(e) => updateField("name", e.target.value)}
                 placeholder="Digite seu nome completo"
               />
-              <Input 
-                label="Email" 
+              <Input
+                label="Email"
                 value={formData.email}
-                onChange={(e) => updateField('email', e.target.value)}
+                onChange={(e) => updateField("email", e.target.value)}
                 type="email"
                 placeholder="Digite seu email"
               />
-              <Input 
-                label="CRM" 
+              <Input
+                label="CRM"
                 value={formData.crm}
-                onChange={(e) => updateField('crm', e.target.value)}
+                onChange={(e) => updateField("crm", e.target.value)}
                 placeholder="Digite seu CRM"
               />
-              <Input 
-                label="Especialidade" 
+              <Input
+                label="Especialidade"
                 value={formData.specialty}
-                onChange={(e) => updateField('specialty', e.target.value)}
+                onChange={(e) => updateField("specialty", e.target.value)}
                 placeholder="Digite sua especialidade"
               />
-              <Input 
-                label="Telefone" 
+              <Input
+                label="Telefone"
                 value={formData.phone}
-                onChange={(e) => updateField('phone', e.target.value)}
+                onChange={(e) => updateField("phone", e.target.value)}
                 placeholder="Digite seu telefone"
               />
               <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-600">Sexo</label>
+                <label className="text-sm font-medium text-gray-600">
+                  Sexo
+                </label>
                 <select
                   value={formData.gender}
-                  onChange={(e) => updateField('gender', e.target.value)}
+                  onChange={(e) => updateField("gender", e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                 >
                   <option value="">Selecione seu sexo</option>
@@ -1287,12 +840,12 @@ function ConfiguracoesContent() {
                   <option value="Other">Outro</option>
                 </select>
               </div>
-              <Button 
+              <Button
                 onClick={saveProfile}
                 disabled={isSaving}
                 className="w-full"
               >
-                {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+                {isSaving ? "Salvando..." : "Salvar Alterações"}
               </Button>
             </div>
           </Card>
@@ -1306,8 +859,8 @@ function ConfiguracoesContent() {
               </CardTitle>
             </CardHeader>
             <div className="p-6 space-y-4">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full"
                 onClick={() => setShowPasswordModal(true)}
               >
@@ -1328,7 +881,9 @@ function ConfiguracoesContent() {
               {subscriptionLoading ? (
                 <div className="text-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-primary-500 mx-auto mb-2" />
-                  <p className="text-sm text-gray-600">Carregando informações da assinatura...</p>
+                  <p className="text-sm text-gray-600">
+                    Carregando informações da assinatura...
+                  </p>
                 </div>
               ) : !subscription ? (
                 <div className="text-center py-6">
@@ -1337,10 +892,11 @@ function ConfiguracoesContent() {
                     Nenhuma assinatura ativa
                   </p>
                   <p className="text-xs text-gray-600 mb-4">
-                    Assine um plano para continuar usando todas as funcionalidades.
+                    Assine um plano para continuar usando todas as
+                    funcionalidades.
                   </p>
                   <Button
-                    onClick={() => router.push('/planos')}
+                    onClick={() => router.push("/planos")}
                     className="w-full"
                   >
                     Ver Planos Disponíveis
@@ -1352,131 +908,166 @@ function ConfiguracoesContent() {
                   <div className="bg-gradient-to-r from-primary-50 to-white rounded-lg p-4 border border-primary-200">
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-sm text-gray-600 mb-1">Plano Atual</p>
+                        <p className="text-sm text-gray-600 mb-1">
+                          Plano Atual
+                        </p>
                         <p className="text-lg font-semibold text-gray-900">
-                          {subscription.plan_type === 'monthly' && 'Plano Mensal'}
-                          {subscription.plan_type === 'quarterly' && 'Plano Trimestral'}
-                          {subscription.plan_type === 'annual' && 'Plano Anual'}
+                          {subscription.plan_type === "monthly" &&
+                            "Plano Mensal"}
+                          {subscription.plan_type === "quarterly" &&
+                            "Plano Trimestral"}
+                          {subscription.plan_type === "annual" && "Plano Anual"}
                         </p>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        subscription.status === 'active' 
-                          ? 'bg-green-100 text-green-800 border border-green-200'
-                          : subscription.status === 'pending'
-                          ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                          : subscription.status === 'failed'
-                          ? 'bg-red-100 text-red-800 border border-red-200'
-                          : 'bg-gray-100 text-gray-800 border border-gray-200'
-                      }`}>
-                        {subscription.status === 'active' && 'Ativa'}
-                        {subscription.status === 'pending' && 'Pendente'}
-                        {subscription.status === 'failed' && 'Falha no Pagamento'}
-                        {subscription.status === 'cancelled' && 'Cancelada'}
-                        {subscription.status === 'expired' && 'Expirada'}
-                        {subscription.status === 'suspended' && 'Suspensa'}
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          subscription.status === "active"
+                            ? "bg-green-100 text-green-800 border border-green-200"
+                            : subscription.status === "pending"
+                              ? "bg-yellow-100 text-yellow-800 border border-yellow-200"
+                              : subscription.status === "failed"
+                                ? "bg-red-100 text-red-800 border border-red-200"
+                                : "bg-gray-100 text-gray-800 border border-gray-200"
+                        }`}
+                      >
+                        {subscription.status === "active" && "Ativa"}
+                        {subscription.status === "pending" && "Pendente"}
+                        {subscription.status === "failed" &&
+                          "Falha no Pagamento"}
+                        {subscription.status === "cancelled" && "Cancelada"}
+                        {subscription.status === "expired" && "Expirada"}
+                        {subscription.status === "suspended" && "Suspensa"}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-4 mt-4">
                       <div>
                         <p className="text-xs text-gray-600 mb-1">Valor</p>
                         <p className="text-sm font-semibold text-gray-900">
-                          {new Intl.NumberFormat('pt-BR', { 
-                            style: 'currency', 
-                            currency: 'BRL' 
+                          {new Intl.NumberFormat("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
                           }).format(subscription.amount || 0)}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-600 mb-1">Próxima Renovação</p>
+                        <p className="text-xs text-gray-600 mb-1">
+                          Próxima Renovação
+                        </p>
                         <p className="text-sm font-semibold text-gray-900">
-                          {subscription.current_period_end 
-                            ? new Date(subscription.current_period_end).toLocaleDateString('pt-BR')
-                            : 'N/A'}
+                          {subscription.current_period_end
+                            ? new Date(
+                                subscription.current_period_end,
+                              ).toLocaleDateString("pt-BR")
+                            : "N/A"}
                         </p>
                       </div>
                     </div>
-                    {subscription.current_period_end && subscription.status === 'active' && (
-                      <div className="mt-3 pt-3 border-t border-primary-200">
-                        <p className="text-xs text-primary-700">
-                          {(() => {
-                            const renewalDate = new Date(subscription.current_period_end)
-                            const today = new Date()
-                            const daysUntilRenewal = Math.ceil((renewalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-                            if (daysUntilRenewal > 0) {
-                              return `Renovação automática em ${daysUntilRenewal} ${daysUntilRenewal === 1 ? 'dia' : 'dias'}`
-                            } else if (daysUntilRenewal === 0) {
-                              return 'Renovação automática hoje'
-                            } else {
-                              return 'Período vencido'
-                            }
-                          })()}
-                        </p>
-                      </div>
-                    )}
+                    {subscription.current_period_end &&
+                      subscription.status === "active" && (
+                        <div className="mt-3 pt-3 border-t border-primary-200">
+                          <p className="text-xs text-primary-700">
+                            {(() => {
+                              const renewalDate = new Date(
+                                subscription.current_period_end,
+                              );
+                              const today = new Date();
+                              const daysUntilRenewal = Math.ceil(
+                                (renewalDate.getTime() - today.getTime()) /
+                                  (1000 * 60 * 60 * 24),
+                              );
+                              if (daysUntilRenewal > 0) {
+                                return `Renovação automática em ${daysUntilRenewal} ${daysUntilRenewal === 1 ? "dia" : "dias"}`;
+                              } else if (daysUntilRenewal === 0) {
+                                return "Renovação automática hoje";
+                              } else {
+                                return "Período vencido";
+                              }
+                            })()}
+                          </p>
+                        </div>
+                      )}
                   </div>
 
                   {/* Informações sobre mudança de plano pendente */}
-                  {subscription.pending_plan_type && subscription.pending_plan_change_at && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex items-start">
-                        <Clock className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold text-blue-800 mb-1">
-                            Mudança de Plano Agendada
-                          </p>
-                          <p className="text-xs text-blue-700 mb-2">
-                            Seu plano será alterado para <strong>{PLAN_NAMES[subscription.pending_plan_type]}</strong> em{' '}
-                            {new Date(subscription.pending_plan_change_at).toLocaleDateString('pt-BR')}.
-                            Você continuará com o plano atual até então.
-                          </p>
+                  {subscription.pending_plan_type &&
+                    subscription.pending_plan_change_at && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex items-start">
+                          <Clock className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold text-blue-800 mb-1">
+                              Mudança de Plano Agendada
+                            </p>
+                            <p className="text-xs text-blue-700 mb-2">
+                              Seu plano será alterado para{" "}
+                              <strong>
+                                {PLAN_NAMES[subscription.pending_plan_type]}
+                              </strong>{" "}
+                              em{" "}
+                              {new Date(
+                                subscription.pending_plan_change_at,
+                              ).toLocaleDateString("pt-BR")}
+                              . Você continuará com o plano atual até então.
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
                   {/* Ações */}
-                  {subscription.status === 'active' && (
+                  {subscription.status === "active" && (
                     <div className="space-y-2">
                       <Button
                         onClick={() => setShowChangePlanModal(true)}
                         disabled={isChangingPlan}
                         className="w-full bg-primary-600 hover:bg-primary-700"
                       >
-                        {isChangingPlan ? 'Agendando...' : 'Trocar Plano'}
+                        {isChangingPlan ? "Agendando..." : "Trocar Plano"}
                       </Button>
-                      {refundEligibility?.eligible && !subscription.refund_processed_at && (
-                        <Button
-                          variant="outline"
-                          onClick={() => setShowRefundModal(true)}
-                          disabled={isProcessingRefund}
-                          className="w-full border-orange-300 text-orange-600 hover:bg-orange-50"
-                        >
-                          {isProcessingRefund ? 'Processando...' : 'Solicitar Reembolso'}
-                        </Button>
-                      )}
+                      {refundEligibility?.eligible &&
+                        !subscription.refund_processed_at && (
+                          <Button
+                            variant="outline"
+                            onClick={() => setShowRefundModal(true)}
+                            disabled={isProcessingRefund}
+                            className="w-full border-orange-300 text-orange-600 hover:bg-orange-50"
+                          >
+                            {isProcessingRefund
+                              ? "Processando..."
+                              : "Solicitar Reembolso"}
+                          </Button>
+                        )}
                       <Button
                         variant="outline"
                         onClick={() => handleCancelSubscription(false)}
-                        disabled={isCancelling || subscription.status === 'cancelled' || subscription.status === 'expired'}
+                        disabled={
+                          isCancelling ||
+                          subscription.status === "cancelled" ||
+                          subscription.status === "expired"
+                        }
                         className="w-full border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isCancelling ? 'Cancelando...' : 'Cancelar Assinatura'}
+                        {isCancelling ? "Cancelando..." : "Cancelar Assinatura"}
                       </Button>
                     </div>
                   )}
 
-                  {(subscription.status === 'cancelled' || subscription.status === 'expired') && (
+                  {(subscription.status === "cancelled" ||
+                    subscription.status === "expired") && (
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                       <p className="text-sm font-semibold text-gray-900 mb-2">
                         Assinatura Cancelada
                       </p>
                       {subscription.cancelled_at && (
                         <p className="text-xs text-gray-600 mb-3">
-                          Cancelada em {new Date(subscription.cancelled_at).toLocaleDateString('pt-BR')}
+                          Cancelada em{" "}
+                          {new Date(
+                            subscription.cancelled_at,
+                          ).toLocaleDateString("pt-BR")}
                         </p>
                       )}
                       <Button
-                        onClick={() => router.push('/planos')}
+                        onClick={() => router.push("/planos")}
                         className="w-full bg-primary-600 hover:bg-primary-700"
                       >
                         Assinar Novo Plano
@@ -1484,7 +1075,7 @@ function ConfiguracoesContent() {
                     </div>
                   )}
 
-                  {subscription.status === 'failed' && (
+                  {subscription.status === "failed" && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                       <div className="flex items-start">
                         <AlertTriangle className="w-5 h-5 text-red-600 mr-2 mt-0.5" />
@@ -1493,11 +1084,12 @@ function ConfiguracoesContent() {
                             Falha no Pagamento
                           </p>
                           <p className="text-xs text-red-700 mb-3">
-                            Houve um problema com o pagamento da sua assinatura. Atualize seus dados de pagamento.
+                            Houve um problema com o pagamento da sua assinatura.
+                            Atualize seus dados de pagamento.
                           </p>
                           <Button
                             size="sm"
-                            onClick={() => router.push('/planos')}
+                            onClick={() => router.push("/planos")}
                             className="bg-red-600 hover:bg-red-700"
                           >
                             Atualizar Pagamento
@@ -1520,8 +1112,8 @@ function ConfiguracoesContent() {
               </CardTitle>
             </CardHeader>
             <div className="p-6 space-y-4">
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 className="w-full"
                 onClick={() => setShowDeleteModal(true)}
               >
@@ -1530,6 +1122,135 @@ function ConfiguracoesContent() {
               </Button>
             </div>
           </Card>
+
+          {/* Secretary Access Link */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Users className="w-5 h-5 mr-2" />
+                Acesso da Secretária (Link Seguro)
+              </CardTitle>
+            </CardHeader>
+            <div className="p-6">
+              <div className="bg-teal-50 border border-teal-100 rounded-2xl p-6 mb-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-teal-600 shadow-sm border border-teal-100">
+                    <Shield className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-bold text-teal-900 mb-1">Como funciona o link seguro?</h4>
+                    <p className="text-xs text-teal-700 leading-relaxed">
+                      Gere um link exclusivo para sua secretária. Ela poderá visualizar seus procedimentos pendentes e atualizar o status de pagamento (Enviado/Pago) sem precisar de uma conta ou senha. Você pode invalidar o link a qualquer momento clicando em "Regenerar".
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {secretaryLink ? (
+                <div className="space-y-4">
+                  <div className="relative">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Seu Link de Acesso</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-4 font-mono text-xs text-gray-600 truncate flex items-center justify-between">
+                        <span className="truncate">
+                          {isLinkVisible ? secretaryLink : "••••••••••••••••••••••••••••••••••••••••"}
+                        </span>
+                        <button 
+                          onClick={() => setIsLinkVisible(!isLinkVisible)}
+                          className="ml-2 text-gray-400 hover:text-teal-600 transition-colors"
+                          title={isLinkVisible ? "Ocultar link" : "Mostrar link"}
+                        >
+                          {isLinkVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <Button 
+                        onClick={() => copyToClipboard(secretaryLink)}
+                        variant="outline"
+                        className="shrink-0 h-full py-4 rounded-xl"
+                      >
+                        {showCopySuccess ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                    {showCopySuccess && <p className="text-[10px] text-green-600 mt-1 font-medium">Link copiado para a área de transferência!</p>}
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button 
+                      onClick={() => window.open(secretaryLink, '_blank')}
+                      variant="outline"
+                      className="flex-1 h-12 rounded-xl"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Testar Link
+                    </Button>
+                    <Button 
+                      onClick={handleGenerateLink}
+                      disabled={isGeneratingLink}
+                      className="flex-1 bg-teal-600 hover:bg-teal-700 h-12 rounded-xl"
+                    >
+                      <RefreshCw className={`w-4 h-4 mr-2 ${isGeneratingLink ? 'animate-spin' : ''}`} />
+                      Regenerar Link
+                    </Button>
+                  </div>
+                </div>
+              ) : activeLinkInfo ? (
+                <div className="space-y-4 text-center">
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start gap-3 text-left">
+                    <Clock className="w-5 h-5 text-amber-600 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-900">Link Ativo Detectado</p>
+                      <p className="text-xs text-amber-700 leading-relaxed">
+                        Você possui um link de acesso ativo que expira em {new Date(activeLinkInfo.expires_at).toLocaleDateString('pt-BR')}.
+                        Caso não tenha salvo, você pode regenerar um novo abaixo ou aguardar o carregamento.
+                      </p>
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={handleGenerateLink}
+                    disabled={isGeneratingLink}
+                    className="w-full bg-teal-600 hover:bg-teal-700 h-12 rounded-xl font-bold shadow-lg shadow-teal-100"
+                  >
+                    {isGeneratingLink ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Gerando Novo Link...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-5 h-5 mr-2" />
+                        Gerar Novo Link (Substituir Anterior)
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-sm text-gray-500 mb-6">Você ainda não gerou um link de acesso para sua secretária.</p>
+                  <Button 
+                    onClick={handleGenerateLink}
+                    disabled={isGeneratingLink}
+                    className="bg-teal-600 hover:bg-teal-700 h-12 px-8 rounded-xl font-bold shadow-lg shadow-teal-100"
+                  >
+                    {isGeneratingLink ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Gerando Link...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-5 h-5 mr-2" />
+                        Gerar Link Seguro
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </Card>
+          
+          <div className="lg:col-span-2">
+            <WhatsAppSettings />
+          </div>
         </div>
       </div>
 
@@ -1542,8 +1263,13 @@ function ConfiguracoesContent() {
         >
           <div className="space-y-4">
             <p className="text-gray-600 text-sm">
-              Você continuará com seu plano atual até o fim do período ({subscription.current_period_end ? new Date(subscription.current_period_end).toLocaleDateString('pt-BR') : 'fim do período'}). 
-              A mudança será aplicada automaticamente na próxima renovação.
+              Você continuará com seu plano atual até o fim do período (
+              {subscription.current_period_end
+                ? new Date(subscription.current_period_end).toLocaleDateString(
+                    "pt-BR",
+                  )
+                : "fim do período"}
+              ). A mudança será aplicada automaticamente na próxima renovação.
             </p>
             <div className="space-y-3">
               {getAvailablePlansForChange().map((planType) => (
@@ -1559,15 +1285,15 @@ function ConfiguracoesContent() {
                         {PLAN_NAMES[planType]}
                       </p>
                       <p className="text-sm text-gray-600">
-                        {planType === 'monthly' && 'Renovação mensal'}
-                        {planType === 'quarterly' && 'Renovação trimestral'}
-                        {planType === 'annual' && 'Renovação anual'}
+                        {planType === "monthly" && "Renovação mensal"}
+                        {planType === "quarterly" && "Renovação trimestral"}
+                        {planType === "annual" && "Renovação anual"}
                       </p>
                     </div>
                     <p className="text-lg font-bold text-primary-600">
-                      {new Intl.NumberFormat('pt-BR', { 
-                        style: 'currency', 
-                        currency: 'BRL' 
+                      {new Intl.NumberFormat("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
                       }).format(PLAN_PRICES[planType] || 0)}
                     </p>
                   </div>
@@ -1593,14 +1319,16 @@ function ConfiguracoesContent() {
                     <strong>Você é elegível para reembolso!</strong>
                   </p>
                   <p className="text-xs text-green-700">
-                    Você utilizou a plataforma por <strong>{refundEligibility.daysUsed} dias</strong> (menos de 8 dias).
-                    O valor completo da assinatura será reembolsado.
+                    Você utilizou a plataforma por{" "}
+                    <strong>{refundEligibility.daysUsed} dias</strong> (menos de
+                    8 dias). O valor completo da assinatura será reembolsado.
                   </p>
                 </div>
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <p className="text-xs text-yellow-800">
-                    <strong>⚠️ Atenção:</strong> Após o reembolso, sua assinatura será cancelada e você perderá o acesso à plataforma.
-                    O reembolso será processado em até 5 dias úteis.
+                    <strong>⚠️ Atenção:</strong> Após o reembolso, sua
+                    assinatura será cancelada e você perderá o acesso à
+                    plataforma. O reembolso será processado em até 5 dias úteis.
                   </p>
                 </div>
                 <div className="flex space-x-3">
@@ -1617,7 +1345,9 @@ function ConfiguracoesContent() {
                     disabled={isProcessingRefund}
                     className="flex-1 bg-orange-600 hover:bg-orange-700"
                   >
-                    {isProcessingRefund ? 'Processando...' : 'Confirmar Reembolso'}
+                    {isProcessingRefund
+                      ? "Processando..."
+                      : "Confirmar Reembolso"}
                   </Button>
                 </div>
               </>
@@ -1628,7 +1358,8 @@ function ConfiguracoesContent() {
                     <strong>Reembolso não disponível</strong>
                   </p>
                   <p className="text-xs text-red-700">
-                    {refundEligibility?.reason || 'Você utilizou a plataforma por mais de 8 dias. Reembolsos são permitidos apenas para usuários com menos de 8 dias de uso.'}
+                    {refundEligibility?.reason ||
+                      "Você utilizou a plataforma por mais de 8 dias. Reembolsos são permitidos apenas para usuários com menos de 8 dias de uso."}
                   </p>
                 </div>
                 <Button
@@ -1655,36 +1386,55 @@ function ConfiguracoesContent() {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setShowPasswordModal(false)
-                  setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+                  setShowPasswordModal(false);
+                  setPasswordForm({
+                    currentPassword: "",
+                    newPassword: "",
+                    confirmPassword: "",
+                  });
                 }}
               >
                 <X className="w-4 h-4" />
               </Button>
             </div>
-            
+
             <div className="space-y-4">
               <Input
                 label="Senha Atual"
                 type="password"
                 value={passwordForm.currentPassword}
-                onChange={(e) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                onChange={(e) =>
+                  setPasswordForm((prev) => ({
+                    ...prev,
+                    currentPassword: e.target.value,
+                  }))
+                }
                 placeholder="Digite sua senha atual"
               />
-              
+
               <Input
                 label="Nova Senha"
                 type="password"
                 value={passwordForm.newPassword}
-                onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                onChange={(e) =>
+                  setPasswordForm((prev) => ({
+                    ...prev,
+                    newPassword: e.target.value,
+                  }))
+                }
                 placeholder="Digite sua nova senha (mín. 6 caracteres)"
               />
-              
+
               <Input
                 label="Confirmar Nova Senha"
                 type="password"
                 value={passwordForm.confirmPassword}
-                onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                onChange={(e) =>
+                  setPasswordForm((prev) => ({
+                    ...prev,
+                    confirmPassword: e.target.value,
+                  }))
+                }
                 placeholder="Confirme sua nova senha"
               />
             </div>
@@ -1693,8 +1443,12 @@ function ConfiguracoesContent() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowPasswordModal(false)
-                  setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+                  setShowPasswordModal(false);
+                  setPasswordForm({
+                    currentPassword: "",
+                    newPassword: "",
+                    confirmPassword: "",
+                  });
                 }}
                 className="flex-1"
                 disabled={isUpdatingPassword}
@@ -1703,10 +1457,15 @@ function ConfiguracoesContent() {
               </Button>
               <Button
                 onClick={handleChangePassword}
-                disabled={isUpdatingPassword || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+                disabled={
+                  isUpdatingPassword ||
+                  !passwordForm.currentPassword ||
+                  !passwordForm.newPassword ||
+                  !passwordForm.confirmPassword
+                }
                 className="flex-1"
               >
-                {isUpdatingPassword ? 'Alterando...' : 'Alterar Senha'}
+                {isUpdatingPassword ? "Alterando..." : "Alterar Senha"}
               </Button>
             </div>
           </div>
@@ -1722,20 +1481,20 @@ function ConfiguracoesContent() {
                 <Trash2 className="w-6 h-6 text-red-600" />
               </div>
             </div>
-            
+
             <div className="text-center mb-6">
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Excluir Conta
               </h3>
               <p className="text-sm text-gray-600 mb-4">
-                Esta ação é <strong>irreversível</strong>. Todos os seus dados serão permanentemente excluídos, incluindo:
+                Esta ação é <strong>irreversível</strong>. Todos os seus dados
+                serão permanentemente excluídos, incluindo:
               </p>
               <ul className="text-sm text-gray-600 text-left mb-4 space-y-1">
                 <li>• Todos os procedimentos cadastrados</li>
                 <li>• Dados financeiros e pagamentos</li>
                 <li>• Relatórios e estatísticas</li>
                 <li>• Configurações e preferências</li>
-                <li>• Vínculos com secretarias</li>
                 <li>• Feedback de cirurgiões</li>
               </ul>
               <p className="text-sm text-gray-600 mb-4">
@@ -1757,8 +1516,8 @@ function ConfiguracoesContent() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowDeleteModal(false)
-                  setDeleteConfirmation('')
+                  setShowDeleteModal(false);
+                  setDeleteConfirmation("");
                 }}
                 className="flex-1"
                 disabled={isDeleting}
@@ -1768,99 +1527,15 @@ function ConfiguracoesContent() {
               <Button
                 variant="destructive"
                 onClick={handleDeleteAccount}
-                disabled={isDeleting || deleteConfirmation !== 'EXCLUIR'}
+                disabled={isDeleting || deleteConfirmation !== "EXCLUIR"}
                 className="flex-1"
               >
-                {isDeleting ? 'Excluindo...' : 'Excluir Conta'}
+                {isDeleting ? "Excluindo..." : "Excluir Conta"}
               </Button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Modal de Link de Convite */}
-      <Modal
-        isOpen={showInviteModal}
-        onClose={() => {
-          setShowInviteModal(false)
-          setInviteLink('')
-          setInviteEmail('')
-          setLinkCopied(false)
-        }}
-        title="Link de Cadastro Gerado"
-        size="lg"
-      >
-        <div className="space-y-6">
-          <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
-            <div className="flex items-start space-x-3">
-              <CheckCircle2 className="w-5 h-5 text-teal-600 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-teal-900">
-                  Link gerado com sucesso!
-                </p>
-                <p className="text-xs text-teal-700 mt-1">
-                  Copie o link abaixo e envie para <strong>{inviteEmail}</strong> para que ela possa criar sua conta de secretária.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Link de Cadastro
-            </label>
-            <div className="flex space-x-2">
-              <div className="flex-1 bg-gray-50 border border-gray-300 rounded-lg p-3 break-all">
-                <code className="text-sm text-gray-800">{inviteLink}</code>
-              </div>
-              <Button
-                onClick={handleCopyLink}
-                variant={linkCopied ? "outline" : "default"}
-                className="shrink-0"
-              >
-                {linkCopied ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Copiado!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4 mr-2" />
-                    Copiar
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-xs text-blue-800">
-              <strong>📋 Instruções:</strong>
-            </p>
-            <ol className="text-xs text-blue-700 mt-2 space-y-1 list-decimal list-inside">
-              <li>Copie o link acima</li>
-              <li>Envie o link para a secretária por email ou WhatsApp</li>
-              <li>A secretária acessará o link e preencherá o cadastro</li>
-              <li>Após confirmar o email, ela terá acesso ao dashboard</li>
-              <li>O link expira em 7 dias</li>
-            </ol>
-          </div>
-
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowInviteModal(false)
-                setInviteLink('')
-                setInviteEmail('')
-                setLinkCopied(false)
-              }}
-            >
-              Fechar
-            </Button>
-          </div>
-        </div>
-      </Modal>
       {/* Modal de Confirmação de Cancelamento */}
       <Modal
         isOpen={showCancelModal}
@@ -1872,19 +1547,24 @@ function ConfiguracoesContent() {
           <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full">
             <AlertTriangle className="w-8 h-8 text-red-600" />
           </div>
-          
+
           <div className="text-center">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {cancelImmediately ? 'Cancelar Assinatura Imediatamente' : 'Cancelar Assinatura'}
+              {cancelImmediately
+                ? "Cancelar Assinatura Imediatamente"
+                : "Cancelar Assinatura"}
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              {cancelImmediately 
-                ? 'Tem certeza que deseja cancelar sua assinatura imediatamente? Você perderá o acesso imediatamente e não poderá mais usar o sistema.'
-                : 'Tem certeza que deseja cancelar sua assinatura? Ela será cancelada ao fim do período atual e você manterá o acesso até então.'}
+              {cancelImmediately
+                ? "Tem certeza que deseja cancelar sua assinatura imediatamente? Você perderá o acesso imediatamente e não poderá mais usar o sistema."
+                : "Tem certeza que deseja cancelar sua assinatura? Ela será cancelada ao fim do período atual e você manterá o acesso até então."}
             </p>
             {!cancelImmediately && subscription?.current_period_end && (
               <p className="text-xs text-gray-500 mb-4">
-                Você manterá o acesso até {new Date(subscription.current_period_end).toLocaleDateString('pt-BR')}
+                Você manterá o acesso até{" "}
+                {new Date(subscription.current_period_end).toLocaleDateString(
+                  "pt-BR",
+                )}
               </p>
             )}
           </div>
@@ -1902,13 +1582,13 @@ function ConfiguracoesContent() {
               className="flex-1 bg-red-600 hover:bg-red-700 text-white"
               disabled={isCancelling}
             >
-              {isCancelling ? 'Cancelando...' : 'Sim, cancelar assinatura'}
+              {isCancelling ? "Cancelando..." : "Sim, cancelar assinatura"}
             </Button>
           </div>
         </div>
       </Modal>
     </Layout>
-  )
+  );
 }
 
 export default function Configuracoes() {
@@ -1916,5 +1596,5 @@ export default function Configuracoes() {
     <ProtectedRoute>
       <ConfiguracoesContent />
     </ProtectedRoute>
-  )
+  );
 }

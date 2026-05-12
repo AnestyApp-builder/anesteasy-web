@@ -1,3 +1,4 @@
+import 'server-only'
 /**
  * API Route para criar attachment de procedimento
  * Solução server-side para contornar problemas de sessão/RLS no mobile

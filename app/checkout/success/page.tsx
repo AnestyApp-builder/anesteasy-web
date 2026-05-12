@@ -3,10 +3,10 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { CheckCircle, Loader2, ArrowRight } from 'lucide-react'
-import { Layout } from '@/components/layout/Layout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import Link from 'next/link'
+import { Layout } from '@/components/layout/Layout'
 
 function CheckoutSuccessPageContent() {
   const searchParams = useSearchParams()
@@ -135,58 +135,55 @@ function CheckoutSuccessPageContent() {
 
   if (loading) {
     return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
-          <div className="text-center">
-            <Loader2 className="w-12 h-12 animate-spin text-primary-500 mx-auto mb-4" />
-            <p className="text-gray-600">Verificando pagamento...</p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-primary-500 mx-auto mb-4" />
+          <p className="text-gray-600">Verificando pagamento...</p>
         </div>
-      </Layout>
+      </div>
     )
   }
 
   return (
-    <Layout>
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-12 px-4">
-        <div className="max-w-2xl mx-auto">
-          <Card className="p-8 shadow-lg">
-            <div className="text-center mb-8">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-12 h-12 text-green-600" />
-              </div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                Pagamento Confirmado!
-              </h1>
-              <p className="text-gray-600">
-                Sua assinatura do {planName} foi ativada com sucesso.
-              </p>
+    <div className="bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-6 sm:py-8 lg:py-10 px-0 rounded-2xl">
+      <div className="max-w-2xl mx-auto">
+        <Card className="p-8 shadow-lg">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-12 h-12 text-green-600" />
             </div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              Pagamento Confirmado!
+            </h1>
+            <p className="text-gray-600">
+              Sua assinatura do {planName} foi ativada com sucesso.
+            </p>
+          </div>
 
-            <CardContent className="space-y-6">
-              {/* Informações do Plano */}
-              {plan && (
-                <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-primary-900 mb-2">
-                    Plano Ativo
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-lg font-bold text-primary-800">{planName}</p>
-                      <p className="text-sm text-primary-600">
-                        {plan === 'monthly' && 'Renovação mensal'}
-                        {plan === 'quarterly' && 'Renovação trimestral'}
-                        {plan === 'annual' && 'Renovação anual'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-primary-600">
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(planPrice)}
-                      </p>
-                    </div>
+          <CardContent className="space-y-6">
+            {/* Informações do Plano */}
+            {plan && (
+              <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
+                <p className="text-sm font-semibold text-primary-900 mb-2">
+                  Plano Ativo
+                </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-lg font-bold text-primary-800">{planName}</p>
+                    <p className="text-sm text-primary-600">
+                      {plan === 'monthly' && 'Renovação mensal'}
+                      {plan === 'quarterly' && 'Renovação trimestral'}
+                      {plan === 'annual' && 'Renovação anual'}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-primary-600">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(planPrice)}
+                    </p>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
               {/* Status - Só mostrar se não for active (para não confundir) */}
               {status !== 'active' && (
@@ -231,32 +228,31 @@ function CheckoutSuccessPageContent() {
                 </Link>
               </div>
 
-              <div className="text-center text-sm text-gray-500 pt-4 border-t">
-                <p>
-                  Dúvidas? Entre em contato com nosso suporte através do email.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            <div className="text-center text-sm text-gray-500 pt-4 border-t">
+              <p>
+                Dúvidas? Entre em contato com nosso suporte através do email.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    </Layout>
+    </div>
   )
 }
 
 export default function CheckoutSuccessPage() {
   return (
     <Suspense fallback={
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
-            <p className="text-gray-600">Carregando...</p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
+          <p className="text-gray-600">Carregando...</p>
         </div>
-      </Layout>
+      </div>
     }>
-      <CheckoutSuccessPageContent />
+      <Layout>
+        <CheckoutSuccessPageContent />
+      </Layout>
     </Suspense>
   )
 }

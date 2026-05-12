@@ -96,3 +96,10 @@ keys/
 !package.json
 !package-lock.json
 !tsconfig.json
+# Local build artifacts
+*.tsbuildinfo
+.claude/
+.env.vercel
+.env.vercel.local
+scripts/utils/deploy-vars.ps1
+google_vision_creds.json
