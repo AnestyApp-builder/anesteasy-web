@@ -8,20 +8,34 @@ export const financialService = {
    * Obtém procedimentos não enviados para cobrança (pendentes)
    * Agora retornamos todos os pendentes recentes (menos de 30 dias)
    */
-  async getPendingProcedures(userId: string) {
+  async getPendingProcedures(userId: string, groupId?: string) {
     const thresholdDate = new Date();
     thresholdDate.setDate(thresholdDate.getDate() - BUSINESS_RULES.LATE_PAYMENT_THRESHOLD_DAYS);
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('procedures')
       .select('*')
-      .eq('user_id', userId)
       .eq('payment_status', 'pending')
       .gte('created_at', thresholdDate.toISOString())
       .order('created_at', { ascending: false });
 
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    } else {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
-      console.error('Error fetching pending procedures:', error);
+      console.error('Error fetching pending procedures:', {
+        userId,
+        groupId,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
       return [];
     }
 
@@ -31,20 +45,34 @@ export const financialService = {
   /**
    * Obtém procedimentos com atraso grave (> 30 dias e não enviado/pago)
    */
-  async getLatePayments(userId: string) {
+  async getLatePayments(userId: string, groupId?: string) {
     const thresholdDate = new Date();
     thresholdDate.setDate(thresholdDate.getDate() - BUSINESS_RULES.LATE_PAYMENT_THRESHOLD_DAYS);
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('procedures')
       .select('*')
-      .eq('user_id', userId)
       .eq('payment_status', 'pending')
       .lt('created_at', thresholdDate.toISOString())
       .order('created_at', { ascending: true });
 
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    } else {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
-      console.error('Error fetching late payments:', error);
+      console.error('Error fetching late payments:', {
+        userId,
+        groupId,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
       return [];
     }
 
@@ -54,7 +82,7 @@ export const financialService = {
   /**
    * Obtém procedimentos próximos do vencimento (5 dias)
    */
-  async getNearPayments(userId: string) {
+  async getNearPayments(userId: string, groupId?: string) {
     const today = new Date();
     const nearThreshold = new Date();
     nearThreshold.setDate(today.getDate() + BUSINESS_RULES.NEAR_PAYMENT_DAYS);
@@ -62,17 +90,31 @@ export const financialService = {
     const todayStr = today.toISOString().split('T')[0];
     const thresholdStr = nearThreshold.toISOString().split('T')[0];
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('procedures')
       .select('*')
-      .eq('user_id', userId)
       .neq('payment_status', 'paid')
       .gte('expected_payment_date', todayStr)
       .lte('expected_payment_date', thresholdStr)
       .order('expected_payment_date', { ascending: true });
 
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    } else {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
-      console.error('Error fetching near payments:', error);
+      console.error('Error fetching near payments:', {
+        userId,
+        groupId,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
       return [];
     }
 
@@ -82,11 +124,16 @@ export const financialService = {
   /**
    * Gera o resumo financeiro completo
    */
-  async getFinancialSummary(userId: string, period: 'weekly' | 'monthly' | 'custom' = 'monthly', customRange?: { start: string, end: string }): Promise<FinancialSummary> {
+  async getFinancialSummary(userId: string, period: 'weekly' | 'monthly' | 'custom' = 'monthly', customRange?: { start: string, end: string }, groupId?: string): Promise<FinancialSummary> {
     let query = supabase
       .from('procedures')
-      .select('procedure_value, payment_status, created_at, paid_at, expected_payment_date')
-      .eq('user_id', userId);
+      .select('procedure_value, payment_status, created_at, paid_at, expected_payment_date, group_id')
+    
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    } else {
+      query = query.eq('user_id', userId);
+    }
 
     if (period === 'weekly') {
       const lastWeek = new Date();
@@ -103,6 +150,16 @@ export const financialService = {
     const { data, error } = await query;
 
     if (error || !data) {
+      if (error) {
+        console.error('Error fetching financial summary:', {
+          userId,
+          groupId,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+      }
       return {
         totalProduced: 0,
         totalReceived: 0,

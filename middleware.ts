@@ -111,7 +111,7 @@ async function getUserFromJwt(request: NextRequest): Promise<MiddlewareUser> {
 
 function routeGuards(request: NextRequest, pathname: string, user: MiddlewareUser): NextResponse | null {
   const isAdminRoute =
-    pathname.startsWith('/admin/') || pathname === '/super-admin-login-x872k20'
+    pathname.startsWith('/admin/')
 
   const isProtectedRoute =
     pathname.startsWith('/dashboard') ||
@@ -188,6 +188,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api/whatsapp/webhook|monitoring|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api/whatsapp/webhook|api/healthz|monitoring|_next/static|_next/image|favicon.ico|robots\\.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

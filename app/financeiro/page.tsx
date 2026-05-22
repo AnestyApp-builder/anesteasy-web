@@ -600,11 +600,17 @@ function FinanceiroContent() {
                     </div>
                     <div className="text-sm text-blue-700">Meta</div>
                   </div>
-                  <div className="text-center p-3 bg-orange-50 rounded-lg">
-                    <div className="text-xl sm:text-2xl font-bold text-orange-600 break-all">
-                      {formatCurrency(Math.max(0, monthlyGoal.targetValue - currentProgress.currentValue))}
+                  <div className={`text-center p-3 rounded-lg ${currentProgress.currentValue >= monthlyGoal.targetValue ? 'bg-green-50' : 'bg-orange-50'}`}>
+                    <div className={`text-xl sm:text-2xl font-bold break-all ${currentProgress.currentValue >= monthlyGoal.targetValue ? 'text-green-600' : 'text-orange-600'}`}>
+                      {currentProgress.currentValue >= monthlyGoal.targetValue ? (
+                        `+ ${formatCurrency(currentProgress.currentValue - monthlyGoal.targetValue)}`
+                      ) : (
+                        formatCurrency(monthlyGoal.targetValue - currentProgress.currentValue)
+                      )}
                     </div>
-                    <div className="text-sm text-orange-700">Restante</div>
+                    <div className={`text-sm ${currentProgress.currentValue >= monthlyGoal.targetValue ? 'text-green-700 font-medium' : 'text-orange-700'}`}>
+                      {currentProgress.currentValue >= monthlyGoal.targetValue ? 'Superado' : 'Restante'}
+                    </div>
                   </div>
                   <div className="text-center p-3 bg-purple-50 rounded-lg">
                     <div className="text-xl sm:text-2xl font-bold text-purple-600">

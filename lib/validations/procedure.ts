@@ -72,6 +72,12 @@ export const procedureSchema = z.object({
 
   // Visibilidade
   show_to_secretary: z.boolean().optional().default(true),
+
+  // Grupo PRO
+  group_id: z.string().uuid().optional().nullable(),
+  anesthesiologist_user_id: z.string().uuid().optional().nullable(),
+  billing_entity_type: z.enum(['cnpj_anestesista', 'cnpj_grupo', '']).optional().nullable().or(z.literal('')),
+  anesthesiologist_role: z.enum(['principal', 'auxiliar', '']).optional().nullable().or(z.literal('')),
 })
 
 // Tipo derivado do Schema (mantém o TS em sincronia com a validação)

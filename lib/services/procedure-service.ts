@@ -37,9 +37,17 @@ export const procedureService = {
 
     const cleanData = validatedData.data;
 
+    // Convert empty strings to null for database insertion to prevent check constraint violations
+    const dbData = { ...cleanData } as Record<string, any>;
+    for (const key of Object.keys(dbData)) {
+      if (dbData[key] === '') {
+        dbData[key] = null;
+      }
+    }
+
     // 2. Campos para criptografar (LGPD)
     const sensitiveFields = ['patient_name', 'patient_id', 'notes', 'procedure_name'];
-    const encryptedData = { ...cleanData };
+    const encryptedData = { ...dbData };
 
     for (const field of sensitiveFields) {
       if ((encryptedData as any)[field]) {

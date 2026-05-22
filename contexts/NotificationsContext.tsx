@@ -68,6 +68,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
+        .eq('is_read', false)
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -92,7 +93,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Marcar notificação como lida
+  // Marcar notificação como lida (remove da lista, pois lista só exibe não lidas)
   const markNotificationAsRead = React.useCallback(async (notificationId: string): Promise<void> => {
     try {
       const { error } = await supabase
@@ -101,16 +102,17 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         .eq('id', notificationId)
 
       if (!error) {
-        setNotifications(prev =>
-          prev.map(n => (n.id === notificationId ? { ...n, is_read: true } : n))
-        )
+        // Remover da lista local imediatamente
+        setNotifications(prev => prev.filter(n => n.id !== notificationId))
+        // Invalidar cache para o próximo refresh buscar dados frescos
+        notificationsCache = null
       }
     } catch (error) {
       console.error('Erro ao marcar notificação como lida:', error)
     }
   }, [])
 
-  // Marcar todas como lidas
+  // Marcar todas como lidas (limpa a lista inteira)
   const markAllNotificationsAsRead = React.useCallback(async (): Promise<void> => {
     try {
       const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id)
@@ -122,7 +124,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         .in('id', unreadIds)
 
       if (!error) {
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+        // Limpar lista local imediatamente
+        setNotifications([])
+        // Invalidar cache
+        notificationsCache = null
       }
     } catch (error) {
       console.error('Erro ao marcar todas notificações como lidas:', error)

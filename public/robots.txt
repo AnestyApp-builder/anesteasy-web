@@ -1,0 +1,16 @@
+# AnestEasy - robots.txt
+# Permite crawlers indexarem o site, mas bloqueia áreas privadas
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /procedimentos/
+Disallow: /pacientes/
+Disallow: /financeiro/
+Disallow: /configuracoes/
+Disallow: /ajuda/
+
+# Sitemap (descomentar quando existir)
+# Sitemap: https://anesteasy.com.br/sitemap.xml

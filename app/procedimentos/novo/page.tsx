@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import React, { useState, useEffect, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   Save, 
   ArrowLeft, 
@@ -81,7 +81,7 @@ interface FormData {
   hospital: string
   patientGender: 'M' | 'F' | 'Other' | ''
   horario: string
-  duracaoMinutos: string
+  duracaoHoras: string
   
   // 2. Dados do Procedimento
   // Campos para procedimentos não-obstétricos
@@ -127,6 +127,12 @@ interface FormData {
   
   // 5. OCR
   show_to_secretary: boolean
+  
+  // 6. Grupo
+  group_id: string
+  anesthesiologist_user_id?: string
+  billing_entity_type?: 'cnpj_anestesista' | 'cnpj_grupo' | ''
+  anesthesiologist_role?: 'principal' | 'auxiliar' | ''
 }
 
 
@@ -225,7 +231,7 @@ function NovoProcedimentoContent() {
     hospital: '',
     patientGender: '',
     horario: '',
-    duracaoMinutos: '',
+    duracaoHoras: '',
     // Campos para procedimentos não-obstétricos
     sangramento: '',
     nauseaVomito: '',
@@ -256,6 +262,10 @@ function NovoProcedimentoContent() {
     observacoes: '',
     fichas: [],
     show_to_secretary: true,
+    group_id: '',
+    anesthesiologist_user_id: '',
+    billing_entity_type: '',
+    anesthesiologist_role: '',
   })
   
   const [loading, setLoading] = useState(false)
@@ -281,6 +291,71 @@ function NovoProcedimentoContent() {
   const [anestesiasFiltradas, setAnestesiasFiltradas] = useState(TIPOS_ANESTESIA)
   const [buscaAnestesia, setBuscaAnestesia] = useState('')
   const [showOcrInfo, setShowOcrInfo] = useState(false)
+  const [groups, setGroups] = useState<any[]>([])
+  const [groupMembers, setGroupMembers] = useState<any[]>([])
+  const [loadingGroupMembers, setLoadingGroupMembers] = useState(false)
+
+  const searchParams = useSearchParams()
+  const urlGroupId = searchParams.get('groupId')
+
+  useEffect(() => {
+    if (user) {
+      import('@/lib/groups').then(m => m.getUserGroups().then(setGroups))
+      if (urlGroupId) {
+        setFormData(prev => ({
+          ...prev,
+          group_id: urlGroupId
+        }))
+      }
+    }
+  }, [user, urlGroupId])
+
+  useEffect(() => {
+    if (formData.group_id) {
+      setLoadingGroupMembers(true)
+      import('@/lib/groups').then(m => {
+        m.getGroupDetails(formData.group_id)
+          .then(details => {
+            const activeMembers = (details.group_members || [])
+              .filter((mem: any) => mem.status === 'active' && mem.users)
+              .map((mem: any) => ({
+                id: mem.users.id,
+                name: mem.users.name || 'Sem Nome',
+                crm: mem.users.crm || ''
+              }))
+            
+            setGroupMembers(activeMembers)
+            
+            // Define o anestesista executor padrão se não houver um selecionado
+            setFormData(prev => {
+              const currentInMembers = activeMembers.find((mem: any) => mem.id === prev.anesthesiologist_user_id)
+              const defaultExecutor = currentInMembers 
+                ? prev.anesthesiologist_user_id 
+                : (activeMembers.find((mem: any) => mem.id === user?.id)?.id || (activeMembers[0]?.id || ''))
+              
+              return {
+                ...prev,
+                anesthesiologist_user_id: defaultExecutor,
+                billing_entity_type: prev.billing_entity_type || 'cnpj_anestesista'
+              }
+            })
+          })
+          .catch(err => {
+            console.error('Erro ao carregar membros do grupo:', err)
+          })
+          .finally(() => {
+            setLoadingGroupMembers(false)
+          })
+      })
+    } else {
+      setGroupMembers([])
+      setFormData(prev => ({
+        ...prev,
+        anesthesiologist_user_id: '',
+        billing_entity_type: ''
+      }))
+    }
+  }, [formData.group_id, user])
 
 
 
@@ -388,7 +463,11 @@ function NovoProcedimentoContent() {
   const handleSuccessModalClose = () => {
     setShowSuccessModal(false)
     setSuccessData(null)
-    router.push('/procedimentos')
+    if (urlGroupId) {
+      router.push(`/grupos/${urlGroupId}`)
+    } else {
+      router.push('/procedimentos')
+    }
   }
 
   // Função para filtrar anestesias baseado na busca
@@ -903,7 +982,7 @@ function NovoProcedimentoContent() {
       hospital: 'Hospital Santa Maria',
       patientGender: 'F',
       horario: '14:30',
-      duracaoMinutos: '120',
+      duracaoHoras: '2',
       
       // 2. Dados do Procedimento (não-obstétrico)
       sangramento: 'Não',
@@ -1748,14 +1827,26 @@ function NovoProcedimentoContent() {
       if (formData.especialidadeCirurgiao) procedureData.especialidade_cirurgiao = formData.especialidadeCirurgiao
       if (formData.nomeEquipe) procedureData.nome_equipe = formData.nomeEquipe
       if (formData.hospital) procedureData.hospital_clinic = formData.hospital
+      if (formData.group_id) {
+        procedureData.group_id = formData.group_id
+        if (formData.anesthesiologist_user_id) {
+          procedureData.anesthesiologist_user_id = formData.anesthesiologist_user_id
+        }
+        if (formData.billing_entity_type) {
+          procedureData.billing_entity_type = formData.billing_entity_type
+        }
+        if (formData.anesthesiologist_role) {
+          procedureData.anesthesiologist_role = formData.anesthesiologist_role
+        }
+      }
       
       if (formData.horario) {
         procedureData.horario = formData.horario
         procedureData.procedure_time = formData.horario
       }
       
-      if (formData.duracaoMinutos) {
-        const duracao = parseInt(formData.duracaoMinutos)
+      if (formData.duracaoHoras) {
+        const duracao = Math.round(parseFloat(formData.duracaoHoras) * 60)
         procedureData.duracao_minutos = duracao
         procedureData.duration_minutes = duracao
       }
@@ -2204,7 +2295,7 @@ function NovoProcedimentoContent() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center space-x-4">
-                <Link href="/procedimentos">
+                <Link href={urlGroupId ? `/grupos/${urlGroupId}` : "/procedimentos"}>
                   <Button variant="ghost" size="sm" className="text-sm">
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Voltar
@@ -2544,19 +2635,82 @@ function NovoProcedimentoContent() {
                 )}
               </div>
 
-              <Input
-                label="Nome da Equipe"
-                placeholder="Nome da equipe médica"
-                icon={<Users className="w-5 h-5" />}
-                value={formData.nomeEquipe}
-                onChange={(e) => updateFormData('nomeEquipe', e.target.value)}
-              />
-              <Input
-                label="Grupo Anestésico"
-                placeholder="Nenhum (ou digite o nome do grupo)"
-                value={formData.grupoAnestesico}
-                onChange={(e) => updateFormData('grupoAnestesico', e.target.value ?? '')}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Input
+                  label="Nome da Equipe"
+                  placeholder="Nome da equipe médica"
+                  icon={<Users className="w-5 h-5" />}
+                  value={formData.nomeEquipe}
+                  onChange={(e) => updateFormData('nomeEquipe', e.target.value)}
+                />
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 flex items-center">
+                    <Users className="w-4 h-4 mr-1 text-teal-600" />
+                    Vincular ao Grupo
+                  </label>
+                  <select
+                    className="w-full px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
+                    value={formData.group_id}
+                    onChange={(e) => updateFormData('group_id', e.target.value)}
+                  >
+                    <option value="">Nenhum (Agenda Particular)</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {formData.group_id && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-5 bg-teal-50/40 border border-teal-100 rounded-xl">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 flex items-center">
+                      <User className="w-4 h-4 mr-1.5 text-teal-600" />
+                      Anestesista (Grupo)
+                    </label>
+                    <select
+                      className="w-full px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
+                      value={formData.anesthesiologist_user_id}
+                      onChange={(e) => updateFormData('anesthesiologist_user_id', e.target.value)}
+                      disabled={loadingGroupMembers}
+                    >
+                      {loadingGroupMembers ? (
+                        <option value="">Carregando médicos do grupo...</option>
+                      ) : (
+                        <>
+                          <option value="">Selecione o anestesista...</option>
+                          {groupMembers.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} {m.crm ? `(CRM: ${m.crm})` : ''}
+                            </option>
+                          ))}
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 flex items-center">
+                      <Building className="w-4 h-4 mr-1.5 text-teal-600" />
+                      Entidade de Faturamento
+                    </label>
+                    <select
+                      className="w-full px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
+                      value={formData.billing_entity_type}
+                      onChange={(e) => updateFormData('billing_entity_type', e.target.value)}
+                    >
+                      <option value="">Em aberto</option>
+                      <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
+                      <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+
                   <Input
                     label="Nome do Cirurgião"
                     placeholder="Nome do cirurgião responsável"
@@ -2573,30 +2727,7 @@ function NovoProcedimentoContent() {
                   />
             </div>
  
-            {/* Visibilidade para Secretária */}
-            <div className="pt-2">
-              <div 
-                className="flex items-center gap-3 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 cursor-pointer hover:bg-emerald-50 transition-colors"
-                onClick={() => updateFormData('show_to_secretary', !formData.show_to_secretary)}
-              >
-                <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
-                  formData.show_to_secretary 
-                    ? 'bg-emerald-600 border-emerald-600' 
-                    : 'bg-white border-gray-300'
-                }`}>
-                  {formData.show_to_secretary && (
-                    <Check className="w-4 h-4 text-white" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <Eye className="w-4 h-4 text-emerald-600" />
-                    <p className="text-sm font-semibold text-emerald-900">Visível no Link Seguro (Secretária)</p>
-                  </div>
-                  <p className="text-xs text-emerald-700">Se desmarcado, este procedimento não aparecerá no portal da secretária.</p>
-                </div>
-              </div>
-            </div>
+
 
             {/* Horário e Duração */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2613,8 +2744,8 @@ function NovoProcedimentoContent() {
                 placeholder="Ex: 2 ou 2.5 (em horas)"
                 type="number"
                 icon={<Clock className="w-5 h-5" />}
-                value={formData.duracaoMinutos}
-                onChange={(e) => updateFormData('duracaoMinutos', e.target.value)}
+                value={formData.duracaoHoras}
+                onChange={(e) => updateFormData('duracaoHoras', e.target.value)}
                 min="0"
                 step="0.5"
               />
@@ -3454,30 +3585,7 @@ function NovoProcedimentoContent() {
                   </div>
                 )}
 
-                {/* Visibilidade para Secretária */}
-                <div className="pt-2">
-                  <div 
-                    className="flex items-center gap-3 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 cursor-pointer hover:bg-emerald-50 transition-colors"
-                    onClick={() => updateFormData('show_to_secretary', !formData.show_to_secretary)}
-                  >
-                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
-                      formData.show_to_secretary 
-                        ? 'bg-emerald-600 border-emerald-600' 
-                        : 'bg-white border-gray-300'
-                    }`}>
-                      {formData.show_to_secretary && (
-                        <Check className="w-4 h-4 text-white" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Eye className="w-4 h-4 text-emerald-600" />
-                        <p className="text-sm font-semibold text-emerald-900">Visível para Secretária</p>
-                      </div>
-                      <p className="text-xs text-emerald-700">Se desmarcado, este procedimento não aparecerá no link seguro da secretária.</p>
-                    </div>
-                  </div>
-                </div>
+
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AdminProtectedRoute } from '@/components/auth/AdminProtectedRoute'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { 
@@ -11,15 +10,14 @@ import {
   FileText,
   RefreshCw,
   TrendingUp,
-  Shield,
-  LogOut,
   Activity,
   Clock,
   Gift,
   CreditCard,
   XCircle,
   Bug,
-  TestTube
+  TestTube,
+  Hospital
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -32,7 +30,11 @@ interface DashboardStats {
   activeUsers: number
   totalAnestesistas: number
   totalProcedures: number
+  proceduresLast24h: number
+  proceduresLast30Days: number
   proceduresThisMonth: number
+  topHospitals: Array<{ name: string; count: number }>
+  topSurgeons: Array<{ name: string; count: number }>
   recentLogins: Array<{
     id: string
     email: string
@@ -76,7 +78,11 @@ export default function AdminDashboard() {
         activeUsers: statsData.activeUsers || 0,
         totalAnestesistas: statsData.totalAnestesistas || 0,
         totalProcedures: statsData.totalProcedures || 0,
+        proceduresLast24h: statsData.proceduresLast24h || 0,
+        proceduresLast30Days: statsData.proceduresLast30Days || 0,
         proceduresThisMonth: statsData.proceduresThisMonth || 0,
+        topHospitals: statsData.topHospitals || [],
+        topSurgeons: statsData.topSurgeons || [],
         recentLogins: statsData.recentLogins || [],
         registerClicks: statsData.registerClicks || 0,
         freeTrialUsers: Number(statsData.freeTrialUsers) || 0,
@@ -96,19 +102,7 @@ export default function AdminDashboard() {
     setIsRefreshing(false)
   }
 
-  const handleLogout = async (e?: React.MouseEvent) => {
-    e?.preventDefault()
-    if (isLoggingOut) return
-    setIsLoggingOut(true)
-    try {
-      await supabase.auth.signOut()
-      window.location.href = '/'
-    } catch (error) {
-      window.location.href = '/'
-    } finally {
-      setIsLoggingOut(false)
-    }
-  }
+
 
   const handleGenerateTestError = async () => {
     if (isGeneratingError) return
@@ -138,24 +132,21 @@ export default function AdminDashboard() {
   }, [])
 
   return (
-    <AdminProtectedRoute>
-      <div className="min-h-screen bg-slate-50">
-        <div className="bg-white border-b shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <Shield className="w-8 h-8 text-red-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Painel Administrativo</h1>
+      <div className="min-h-screen bg-slate-50 font-sans">
+        {/* Header Premium */}
+        <div className="bg-white border-b border-slate-200/80 shadow-sm sticky top-0 z-30">
+          <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Painel Executivo</h1>
+                <span className="bg-teal-50 text-teal-700 text-xs font-bold px-2 py-0.5 rounded-full border border-teal-100">Visão Geral</span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">Estatísticas globais e métricas de engajamento em tempo real</p>
             </div>
-            <div className="flex items-center gap-3">
-              <Button onClick={handleRefresh} disabled={isRefreshing} variant="outline" size="sm">
-                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-                Atualizar
-              </Button>
-              <Button onClick={handleLogout} variant="ghost" size="sm" disabled={isLoggingOut} className="text-red-600">
-                <LogOut className="w-4 h-4 mr-2" />
-                Sair
-              </Button>
-            </div>
+            <Button onClick={handleRefresh} disabled={isRefreshing} variant="outline" size="sm" className="rounded-xl border-slate-200 hover:bg-slate-50 font-semibold text-xs transition-all shadow-sm">
+              <RefreshCw className={`w-3.5 h-3.5 mr-2 text-teal-600 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Sincronizar Dados
+            </Button>
           </div>
         </div>
 
@@ -187,7 +178,16 @@ export default function AdminDashboard() {
                   <CardHeader><CardTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-orange-500" /> Procedimentos</CardTitle></CardHeader>
                   <CardContent>
                     <div className="text-3xl font-bold">{stats.totalProcedures}</div>
-                    <p className="text-sm text-gray-500">{stats.proceduresThisMonth} este mês</p>
+                    <div className="mt-2 space-y-1">
+                      <p className="text-sm text-gray-500 flex justify-between">
+                        <span>Últimas 24h:</span>
+                        <span className="font-semibold text-slate-700">{stats.proceduresLast24h}</span>
+                      </p>
+                      <p className="text-sm text-gray-500 flex justify-between">
+                        <span>Últimos 30 dias:</span>
+                        <span className="font-semibold text-slate-700">{stats.proceduresLast30Days}</span>
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -248,10 +248,41 @@ export default function AdminDashboard() {
                   </CardContent>
                 </Card>
               </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <Card>
+                  <CardHeader><CardTitle className="flex items-center gap-2"><Hospital className="w-5 h-5 text-teal-500" /> Top 10 Hospitais</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {stats.topHospitals.map((h, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <span className="font-medium text-gray-900">{h.name}</span>
+                          <span className="bg-teal-100 text-teal-700 px-2 py-1 rounded text-xs font-bold">{h.count} casos</span>
+                        </div>
+                      ))}
+                      {stats.topHospitals.length === 0 && <p className="text-gray-500 text-center py-4">Nenhum dado disponível</p>}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader><CardTitle className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" /> Top 10 Cirurgiões</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {stats.topSurgeons.map((s, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <span className="font-medium text-gray-900">{s.name}</span>
+                          <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">{s.count} casos</span>
+                        </div>
+                      ))}
+                      {stats.topSurgeons.length === 0 && <p className="text-gray-500 text-center py-4">Nenhum dado disponível</p>}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </>
           ) : null}
         </div>
       </div>
-    </AdminProtectedRoute>
   )
 }

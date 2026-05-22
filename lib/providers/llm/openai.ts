@@ -109,24 +109,30 @@ export async function processImageWithOpenAI(buffer: Buffer): Promise<{ rawText:
 Sua tarefa é extrair dados de etiquetas hospitalares e fichas de anestesia com precisão de 100%.
 
 REGRAS DE VALIDAÇÃO:
-1. PACIENTE: Procure por "Nome", "Paciente" ou campos próximos a códigos de barras de identificação.
-2. PROCEDIMENTO: Valide se o texto é uma cirurgia ou técnica médica. Ignore medicações isoladas.
-3. DATA: Converta para DD/MM/YYYY. Se não encontrar, use a data atual.
-4. CIRURGIÃO: Procure por nomes precedidos de "Dr.", "Dra." ou no campo "Cirurgião".
-5. HOSPITAL: Identifique o nome da instituição pelo cabeçalho ou logotipos.
-6. CONVÊNIO: Procure por nomes de seguradoras ou planos de saúde.
+1. PACIENTE: Procure por "Nome:", "Paciente:" ou campos próximos a códigos de barras.
+2. PROCEDIMENTO: Valide se o texto é uma cirurgia (ex: Colecistectomia).
+3. TÉCNICA ANESTÉSICA: Procure explicitamente pelos rótulos "Anestesia:" ou "Técnica Anestésica:". Extraia o tipo principal (Ex: Geral, Raquidiana, Peridural, Sedação). Ignore o campo "Técnica:" se ele estiver separado de "Anestesia:".
+4. DATA: Converta para DD/MM/YYYY a partir do campo "Data:".
+5. CIRURGIÃO/MÉDICO: Procure por "Medico:", "Cirurgião:" ou "Dr.".
+6. HOSPITAL: Identifique o nome da instituição pelo cabeçalho.
 
 RETORNE APENAS UM JSON COM ESTAS CHAVES:
 {
   "nome_do_paciente": "string",
   "procedimento": "string",
+  "tecnica_anestesica": "string",
   "data_da_cirurgia": "DD/MM/YYYY",
   "hospital": "string",
   "cirurgiao": "string",
   "convenio": "string",
   "carteirinha": "string",
-  "observacoes": "string"
-}`
+  "observacoes": "string",
+  "confidence_score": 0.0 a 1.0
+}
+ 
+REGRAS ADICIONAIS:
+- Se não tiver certeza absoluta de um campo, deixe vazio.
+- O campo confidence_score deve refletir a qualidade da imagem e clareza dos dados.`
           },
           {
             role: 'user',

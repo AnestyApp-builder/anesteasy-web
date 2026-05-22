@@ -21,7 +21,7 @@ import { ArrowRight } from 'lucide-react'
 import { Zap } from 'lucide-react'
 import { AlertCircle } from 'lucide-react'
 import { Send } from 'lucide-react'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, HelpCircle, BookOpen, Sparkles } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { WelcomeModal } from '@/components/dashboard/WelcomeModal'
@@ -32,6 +32,7 @@ import { goalService } from '@/lib/goals'
 import { shiftService } from '@/lib/shifts'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { formatCurrency, formatDate, getFullGreeting, handleButtonPress, handleCardPress, retryWithTimeout } from '@/lib/utils'
 import { Loading } from '@/components/ui/Loading'
 import { SkeletonStatsCard, SkeletonChart, SkeletonProcedureList } from '@/components/ui/Skeleton'
@@ -105,6 +106,7 @@ export default function Dashboard() {
   const [monthlyShifts, setMonthlyShifts] = useState<any[]>([])
   const [allProcedures, setAllProcedures] = useState<any[]>([])
   const [allShifts, setAllShifts] = useState<any[]>([])
+  const [userDistributions, setUserDistributions] = useState<any[]>([])
   const [monthlyStats, setMonthlyStats] = useState<any>({
     receivedValue: 0,
     pendingValue: 0,
@@ -121,20 +123,34 @@ export default function Dashboard() {
     periodStart: null as Date | null,
     periodEnd: null as Date | null
   })
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('particular')
+  const [groups, setGroups] = useState<any[]>([])
+  const [isFinancialHidden, setIsFinancialHidden] = useState(false)
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null)
   const [pendingSends, setPendingSends] = useState<any[]>([])
   const [nearPayments, setNearPayments] = useState<any[]>([])
   const [latePayments, setLatePayments] = useState<any[]>([])
   const { user } = useAuth()
+  const { setWorkspace } = useWorkspace()
   const router = useRouter()
   
 
   // Verificar cache de autenticação e redirecionar se necessário
   useEffect(() => {
+    // Ensure personal workspace on dashboard
+    setWorkspace('personal')
+
     if (user?.id) {
-      // Verificar cache local para decisão rápida
-      const cachedAuth = localStorage.getItem('auth_cache')
-      
+      // Carregar grupos
+      const fetchGroups = async () => {
+        const { data } = await supabase
+          .from('groups')
+          .select('id, name, share_financials, created_by')
+          .eq('is_active', true)
+        if (data) setGroups(data)
+      }
+      fetchGroups()
+
       // Carregar dados em paralelo
       Promise.all([
         loadDashboardData(),
@@ -144,7 +160,7 @@ export default function Dashboard() {
         console.error('Erro ao carregar dados do dashboard:', error)
       })
     }
-  }, [user, router])
+  }, [user, router, selectedGroupId, setWorkspace])
 
   // Verificar se precisa resetar a meta e recalcular progresso
   useEffect(() => {
@@ -198,11 +214,12 @@ export default function Dashboard() {
   const loadFinancialData = async () => {
     if (!user?.id) return
     try {
+      const gId = selectedGroupId === 'particular' ? undefined : selectedGroupId
       const [summary, pending, near, late] = await Promise.all([
-        financialService.getFinancialSummary(user.id),
-        financialService.getPendingProcedures(user.id),
-        financialService.getNearPayments(user.id),
-        financialService.getLatePayments(user.id)
+        financialService.getFinancialSummary(user.id, 'monthly', undefined, gId),
+        financialService.getPendingProcedures(user.id, gId),
+        financialService.getNearPayments(user.id, gId),
+        financialService.getLatePayments(user.id, gId)
       ])
       setFinancialSummary(summary)
       setPendingSends(pending)
@@ -221,14 +238,44 @@ export default function Dashboard() {
     
     setLoading(true)
     try {
+      const gId = selectedGroupId === 'particular' ? undefined : selectedGroupId
+      
+      // Verificar se o financeiro deve ser escondido para este grupo
+      let hidden = false
+      if (gId) {
+        let group = groups.find(g => g.id === gId)
+        if (!group) {
+          const { data } = await supabase
+            .from('groups')
+            .select('share_financials, created_by')
+            .eq('id', gId)
+            .single()
+          group = data
+        }
+        
+        if (group && !group.share_financials) {
+          // Verificar se é admin
+          const { data: membership } = await supabase
+            .from('group_members')
+            .select('role')
+            .eq('group_id', gId)
+            .eq('user_id', user.id)
+            .single()
+          
+          const isAdmin = membership?.role === 'admin' || group.created_by === user.id
+          if (!isAdmin) hidden = true
+        }
+      }
+      setIsFinancialHidden(hidden)
+
       // Usar retry com timeout padronizado de 7s
       const [statsData, proceduresData, shiftStats, shiftsData] = await retryWithTimeout(
         () => Promise.all([
-          procedureService.getProcedureStats(user.id),
+          procedureService.getProcedureStats(user.id, gId),
           // Dashboard não precisa de todos os registros; limitar para melhorar desempenho
-          procedureService.getProcedures(user.id, { limit: 300 }),
-          shiftService.getShiftStats(user.id),
-          shiftService.getShifts(user.id)
+          procedureService.getProcedures(user.id, { limit: 300, groupId: gId }),
+          !gId ? shiftService.getShiftStats(user.id) : Promise.resolve({ total: 0, completed: 0, pending: 0, cancelled: 0, sent: 0, totalValue: 0, completedValue: 0, pendingValue: 0 }),
+          !gId ? shiftService.getShifts(user.id) : Promise.resolve([])
         ]),
         {
           maxRetries: 2,
@@ -240,23 +287,62 @@ export default function Dashboard() {
         }
       )
       
-      // Combinar estatísticas de procedimentos e plantões
+      // Buscar distribuições de fechamento do usuário
+      let userDists: any[] = []
+      let totalDistsValue = 0
+      if (!gId) {
+        try {
+          const { data: distData, error: distError } = await supabase
+            .from('group_distributions')
+            .select(`
+              id,
+              net_amount,
+              gross_amount,
+              created_at,
+              group_monthly_closings!inner (
+                id,
+                reference_month,
+                status
+              ),
+              groups (
+                name
+              )
+            `)
+            .eq('user_id', user.id)
+            .eq('group_monthly_closings.status', 'fechado')
+          
+          if (!distError && distData) {
+            userDists = distData
+            totalDistsValue = distData.reduce((sum: number, d: any) => sum + (Number(d.net_amount) || 0), 0)
+          }
+        } catch (error) {
+          console.error('Erro ao carregar distribuições:', error)
+        }
+      }
+      setUserDistributions(userDists)
+      
+      // Combinar estatísticas de procedimentos e plantões (somando repasses recebidos)
       const combinedStats = {
         total: statsData.total + shiftStats.total,
         completed: statsData.completed + shiftStats.completed,
         pending: statsData.pending + shiftStats.pending,
         cancelled: statsData.cancelled + shiftStats.cancelled,
         sent: statsData.sent || 0,
-        totalValue: statsData.totalValue + shiftStats.totalValue,
-        completedValue: statsData.completedValue + shiftStats.completedValue,
+        totalValue: statsData.totalValue + shiftStats.totalValue + totalDistsValue,
+        completedValue: statsData.completedValue + shiftStats.completedValue + totalDistsValue,
         pendingValue: statsData.pendingValue + shiftStats.pendingValue
       }
       
+      // Filtrar procedimentos por grupo se selecionado
+      const filteredProcedures = gId 
+        ? proceduresData.filter((p: any) => p.group_id === gId)
+        : proceduresData
+
       setStats(combinedStats)
-      setRecentProcedures(proceduresData.slice(0, 5))
+      setRecentProcedures(filteredProcedures.slice(0, 5))
       
       // Armazenar todos os procedimentos e plantões para cálculos totais
-      setAllProcedures(proceduresData)
+      setAllProcedures(filteredProcedures)
       setAllShifts(shiftsData)
       
       // Filtrar procedimentos do mês atual para os detalhes
@@ -266,7 +352,7 @@ export default function Dashboard() {
       const monthStart = new Date(currentYear, currentMonth, 1)
       const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999)
       
-      const monthlyProcs = proceduresData.filter((proc: any) => {
+      const monthlyProcs = filteredProcedures.filter((proc: any) => {
         if (!proc.procedure_date) return false
         const procDate = new Date(proc.procedure_date)
         return procDate >= monthStart && procDate <= monthEnd
@@ -309,17 +395,18 @@ export default function Dashboard() {
       const allProcedureIds = proceduresData.map((p: any) => p.id)
       const allParcelasMap = await procedureService.getParcelasBatch(allProcedureIds)
       
-      // Calcular receita mensal dos últimos 6 meses usando o mapa de parcelas
-      const monthlyData = await calculateMonthlyRevenue(proceduresData, allParcelasMap)
+      // Calcular receita mensal dos últimos 6 meses usando o mapa de parcelas e repasses de fechamentos
+      const monthlyData = await calculateMonthlyRevenue(proceduresData, allParcelasMap, userDists)
       setMonthlyRevenue(monthlyData)
       
-      // Atualizar estatísticas mensais usando o mapa de parcelas (passando dados diretos para evitar stale state)
+      // Atualizar estatísticas mensais usando o mapa de parcelas e repasses (passando dados diretos para evitar stale state)
       const monthlyStatsData = await calculateMonthlyStats(
         proceduresData, 
         shiftsData, 
         monthlyProcs, 
         monthlyShiftsData, 
-        allParcelasMap
+        allParcelasMap,
+        userDists
       )
       setMonthlyStats(monthlyStatsData)
     } catch (error: any) {
@@ -586,7 +673,17 @@ export default function Dashboard() {
           return sum + (shift.shift_value || 0)
         }, 0)
         
-        currentValue = proceduresValue + shiftsValue
+        // Filtrar repasses do período
+        const periodDists = userDistributions.filter((d: any) => {
+          const refMonthStr = d.group_monthly_closings?.reference_month
+          if (!refMonthStr) return false
+          const refDate = new Date(refMonthStr)
+          const utcDate = new Date(refDate.getUTCFullYear(), refDate.getUTCMonth(), 1)
+          return utcDate >= startDate && utcDate < endDate
+        })
+        const distsValue = periodDists.reduce((sum: number, d: any) => sum + (Number(d.net_amount) || 0), 0)
+        
+        currentValue = proceduresValue + shiftsValue + distsValue
       } catch (error) {
         // Fallback: usar monthlyStats.receivedValue se disponível, senão stats.completedValue
         currentValue = monthlyStats?.receivedValue || stats.completedValue || 0
@@ -606,7 +703,11 @@ export default function Dashboard() {
 
   // Função para calcular receita mensal
   // Função para calcular receita mensal (Otimizada com batch parcelas)
-  const calculateMonthlyRevenue = async (procedures: any[], parcelasMap: Record<string, Parcela[]> = {}) => {
+  const calculateMonthlyRevenue = async (
+    procedures: any[], 
+    parcelasMap: Record<string, Parcela[]> = {},
+    userDists: any[] = []
+  ) => {
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
     const currentDate = new Date()
     const monthlyData = []
@@ -647,6 +748,18 @@ export default function Dashboard() {
           }
         }
       }
+
+      // Somar distribuições do mês alvo
+      const distsOfTargetMonth = userDists.filter((d: any) => {
+        const refMonthStr = d.group_monthly_closings?.reference_month
+        if (!refMonthStr) return false
+        const refDate = new Date(refMonthStr)
+        const utcDate = new Date(refDate.getUTCFullYear(), refDate.getUTCMonth(), 1)
+        return utcDate >= monthStart && utcDate <= monthEnd
+      })
+      const distsRevenue = distsOfTargetMonth.reduce((sum: number, d: any) => sum + (Number(d.net_amount) || 0), 0)
+      
+      monthRevenue += distsRevenue
       
       monthlyData.push({
         name: months[targetDate.getMonth()],
@@ -667,6 +780,33 @@ export default function Dashboard() {
     const parcelasRecebidas = procedure.parcelas_recebidas || 0
     
     return `${parcelasRecebidas}/${totalParcelas}`
+  }
+
+  // Renderiza o badge de parcelamento com cores e textos inteligentes baseados nas parcelas pagas
+  const renderParcelBadge = (procedure: any) => {
+    if (procedure.payment_method !== 'Parcelado' && procedure.forma_pagamento !== 'Parcelado') {
+      return null
+    }
+
+    const total = Number(procedure.numero_parcelas || 0)
+    const recebidas = Number(procedure.parcelas_recebidas || 0)
+    const unpaid = Math.max(0, total - recebidas)
+
+    if (unpaid === 0) {
+      return (
+        <span className="text-xs text-green-700 font-bold bg-green-50 border border-green-200/50 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5 shadow-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+          Parcelas: {recebidas}/{total}
+        </span>
+      )
+    } else {
+      return (
+        <span className="text-xs text-amber-700 font-bold bg-amber-50 border border-amber-200/50 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5 shadow-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+          A receber {unpaid} {unpaid === 1 ? 'parcela' : 'parcelas'} ({recebidas}/{total})
+        </span>
+      )
+    }
   }
 
   // Função para obter cor do status
@@ -721,7 +861,8 @@ export default function Dashboard() {
     shifts: any[], 
     monthlyProcsInput: any[], 
     monthlyShiftsInput: any[], 
-    parcelasMap: Record<string, any[]> = {}
+    parcelasMap: Record<string, any[]> = {},
+    userDists: any[] = []
   ) => {
     const now = new Date()
     const currentMonth = now.getMonth()
@@ -780,7 +921,17 @@ export default function Dashboard() {
     })
     const receivedValueShifts = paidShiftsThisMonth.reduce((sum: number, s: any) => sum + (s.shift_value || 0), 0)
     
-    const receivedValue = receivedValueProcs + receivedValueShifts
+    // Calcular receita recebida de repasses do fechamento no mês atual (comparando o reference_month com o mês atual)
+    const distsThisMonth = userDists.filter((d: any) => {
+      const refMonthStr = d.group_monthly_closings?.reference_month
+      if (!refMonthStr) return false
+      const refDate = new Date(refMonthStr)
+      const utcDate = new Date(refDate.getUTCFullYear(), refDate.getUTCMonth(), 1)
+      return utcDate >= monthStart && utcDate <= monthEnd
+    })
+    const receivedValueDists = distsThisMonth.reduce((sum: number, d: any) => sum + (Number(d.net_amount) || 0), 0)
+
+    const receivedValue = receivedValueProcs + receivedValueShifts + receivedValueDists
     
     // Calcular receita pendente
     const pendingProceduresList = monthlyProcs.filter((p: any) => p.payment_status === 'pending')
@@ -910,6 +1061,33 @@ export default function Dashboard() {
           }
         }
         
+        // Adicionar repasses de fechamentos recebidos no mês
+        const distsThisMonth = userDistributions.filter((d: any) => {
+          const refMonthStr = d.group_monthly_closings?.reference_month
+          if (!refMonthStr) return false
+          const refDate = new Date(refMonthStr)
+          const utcDate = new Date(refDate.getUTCFullYear(), refDate.getUTCMonth(), 1)
+          return utcDate >= monthStart && utcDate <= monthEnd
+        })
+
+        for (const dist of distsThisMonth) {
+          const refMonthDate = new Date(dist.group_monthly_closings?.reference_month)
+          const formattedMonth = refMonthDate.toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric', timeZone: 'UTC' })
+          
+          itemsToShow.push({
+            id: dist.id,
+            type: 'fechamento',
+            patient_name: `Repasse - Grupo ${dist.groups?.name || ''}`,
+            procedure_name: `Fechamento de ${formattedMonth}`,
+            procedure_date: dist.created_at || dist.group_monthly_closings?.reference_month,
+            value: Number(dist.net_amount) || 0,
+            procedure_value: Number(dist.net_amount) || 0,
+            payment_date: dist.created_at || dist.group_monthly_closings?.reference_month,
+            isParcela: false
+          })
+          totalValue += Number(dist.net_amount) || 0
+        }
+        
         return {
           title: 'Receita Total (mensal) - Recebida',
           description: `Valores recebidos em ${monthName}`,
@@ -984,7 +1162,7 @@ export default function Dashboard() {
   const dashboardStats = [
     {
       title: 'Receita Mensal',
-      value: formatCurrency(monthlyStats.receivedValue),
+      value: isFinancialHidden ? '---' : formatCurrency(monthlyStats.receivedValue),
       change: monthlyStats.periodStart && monthlyStats.periodEnd 
         ? `${formatDate(monthlyStats.periodStart)} até ${formatDate(monthlyStats.periodEnd)}`
         : 'Recebida no mês',
@@ -994,7 +1172,7 @@ export default function Dashboard() {
     },
     {
       title: 'Receita Total',
-      value: formatCurrency(stats.completedValue),
+      value: isFinancialHidden ? '---' : formatCurrency(stats.completedValue),
       change: 'Total acumulado',
       changeType: 'positive' as const,
       icon: TrendingUp,
@@ -1002,7 +1180,7 @@ export default function Dashboard() {
     },
     {
       title: 'A Receber',
-      value: formatCurrency(stats.pendingValue),
+      value: isFinancialHidden ? '---' : formatCurrency(stats.pendingValue),
       change: 'Pendente total',
       changeType: 'neutral' as const,
       icon: DollarSign,
@@ -1038,17 +1216,31 @@ export default function Dashboard() {
   return (
     <ProtectedRoute>
       {user?.id && (
-        <WelcomeModal userId={user.id} userName={user.name || ''} />
+        <WelcomeModal userId={user.id} userName={user.name || ''} trialEndsAt={user.trialEndsAt} />
       )}
       <Layout>
         <div className="space-y-8">
           {/* Header - sempre visível */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Dashboard</h1>
               <p className="text-base sm:text-lg text-gray-600 mt-1 font-medium">{getFullGreeting(user?.name, user?.gender)}</p>
             </div>
           </div>
+
+          {isFinancialHidden && (
+            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-start space-x-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="p-1.5 bg-amber-100 rounded-full">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-amber-900">Privacidade Financeira Ativada</h3>
+                <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                  Este grupo restringiu a visualização de valores para membros. Apenas administradores do grupo podem ver estatísticas financeiras e metas.
+                </p>
+              </div>
+            </div>
+          )}
 
         {/* Seção de Pendências (Removido FinancialSummaryCards) */}
         <div className="grid grid-cols-1 gap-6 lg:gap-8 mb-8">
@@ -1113,8 +1305,12 @@ export default function Dashboard() {
                     <span className="text-gray-600">
                       {formatCurrency(currentProgress.currentValue || monthlyStats?.receivedValue || 0)} de {formatCurrency(monthlyGoal.targetValue)}
                     </span>
-                    <span className="font-medium text-teal-600">
-                      {formatCurrency(monthlyGoal.targetValue - (currentProgress.currentValue || monthlyStats?.receivedValue || 0))} restante
+                    <span className={`font-medium ${(currentProgress.currentValue || monthlyStats?.receivedValue || 0) >= monthlyGoal.targetValue ? 'text-green-600 font-bold' : 'text-teal-600'}`}>
+                      {(currentProgress.currentValue || monthlyStats?.receivedValue || 0) >= monthlyGoal.targetValue ? (
+                        `+ ${formatCurrency((currentProgress.currentValue || monthlyStats?.receivedValue || 0) - monthlyGoal.targetValue)}`
+                      ) : (
+                        `${formatCurrency(monthlyGoal.targetValue - (currentProgress.currentValue || monthlyStats?.receivedValue || 0))} restante`
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1146,7 +1342,7 @@ export default function Dashboard() {
             <CardTitle className="text-base font-semibold text-gray-900">Ações Rápidas</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3">
               {/* Cadastro Rápido */}
               <Link href="/procedimentos/rapido" className="w-full">
                 <div
@@ -1173,6 +1369,21 @@ export default function Dashboard() {
                 </div>
               </Link>
 
+              {/* Minha Agenda / Agenda do Grupo */}
+              <Link 
+                href={selectedGroupId === 'particular' ? '/agenda' : `/agenda?groupId=${selectedGroupId}`} 
+                className="w-full"
+              >
+                <div
+                  className="w-full bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center gap-1.5 py-3 px-2 sm:py-4 sm:px-3 cursor-pointer active:scale-95"
+                  onClick={() => handleButtonPress(undefined, 'medium')}
+                >
+                  <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-gray-700" />
+                  <span className="text-[10px] sm:text-xs font-medium text-gray-900 text-center leading-tight px-0.5">
+                    {selectedGroupId === 'particular' ? 'Minha Agenda' : 'Agenda do Grupo'}
+                  </span>
+                </div>
+              </Link>
             </div>
 
           </CardContent>
@@ -1395,15 +1606,21 @@ export default function Dashboard() {
                             <p className="text-sm text-gray-600 truncate font-medium mb-1">
                               {procedure.procedure_name || procedure.procedure_type || 'Procedimento não informado'}
                             </p>
-                            {getParcelStatus(procedure) && (
-                              <p className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-1 rounded-full inline-block">
-                                Parcelas: {getParcelStatus(procedure)}
-                              </p>
-                            )}
+                            {renderParcelBadge(procedure)}
                           </div>
                         </div>
-                        <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(procedure.payment_status || 'cancelled')}`}>
-                          {getStatusText(procedure.payment_status || 'cancelled')}
+                        <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${
+                          (procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado')
+                            ? (Number(procedure.numero_parcelas || 0) - Number(procedure.parcelas_recebidas || 0) <= 0
+                              ? 'bg-green-500 text-white shadow-sm'
+                              : 'bg-amber-500 text-white shadow-sm')
+                            : getStatusColor(procedure.payment_status || 'cancelled')
+                        }`}>
+                          {(procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado')
+                            ? (Number(procedure.numero_parcelas || 0) - Number(procedure.parcelas_recebidas || 0) <= 0
+                              ? 'Pago'
+                              : 'Pendente')
+                            : getStatusText(procedure.payment_status || 'cancelled')}
                         </span>
                       </div>
                       
@@ -1411,7 +1628,9 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center">
                           <DollarSign className="w-5 h-5 mr-2 text-gray-600" />
-                          <span className="font-bold text-gray-900 text-lg">{formatCurrency(procedure.procedure_value || 0)}</span>
+                          <span className="font-bold text-gray-900 text-lg">
+                            {isFinancialHidden ? 'R$ ---' : formatCurrency(procedure.procedure_value || 0)}
+                          </span>
                         </div>
                         <div className="text-sm text-gray-500 font-medium">
                           {formatDate(procedure.procedure_date)}
@@ -1445,15 +1664,21 @@ export default function Dashboard() {
                           <p className="text-sm text-gray-600 font-medium mb-1">
                             {procedure.procedure_name || procedure.procedure_type || 'Procedimento não informado'}
                           </p>
-                          {getParcelStatus(procedure) && (
-                            <p className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-1 rounded-full inline-block">
-                              Parcelas: {getParcelStatus(procedure)}
-                            </p>
-                          )}
+                          {renderParcelBadge(procedure)}
                         </div>
                       </div>
-                      <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(procedure.payment_status || 'cancelled')}`}>
-                        {getStatusText(procedure.payment_status || 'cancelled')}
+                      <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${
+                        (procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado')
+                          ? (Number(procedure.numero_parcelas || 0) - Number(procedure.parcelas_recebidas || 0) <= 0
+                            ? 'bg-green-500 text-white shadow-sm'
+                            : 'bg-amber-500 text-white shadow-sm')
+                          : getStatusColor(procedure.payment_status || 'cancelled')
+                      }`}>
+                        {(procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado')
+                          ? (Number(procedure.numero_parcelas || 0) - Number(procedure.parcelas_recebidas || 0) <= 0
+                            ? 'Pago'
+                            : 'Pendente')
+                          : getStatusText(procedure.payment_status || 'cancelled')}
                       </span>
                     </div>
                     
@@ -1469,8 +1694,8 @@ export default function Dashboard() {
                     <div className="text-right">
                           <p className="font-bold text-gray-900 text-xl flex items-center justify-end">
                             <DollarSign className="w-5 h-5 mr-2 text-gray-600" />
-                        {formatCurrency(procedure.procedure_value || 0)}
-                      </p>
+                            {isFinancialHidden ? 'R$ ---' : formatCurrency(procedure.procedure_value || 0)}
+                          </p>
                         </div>
                       </div>
                     </div>

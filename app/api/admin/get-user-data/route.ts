@@ -54,6 +54,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // ATUALIZAÇÃO AUTOMÁTICA DE LAST LOGIN
+    // Como esta rota é chamada pelo AuthContext no início de cada sessão/sessão restaurada,
+    // garantimos que o last_login_at seja atualizado sem depender apenas do clique no botão de login.
+    try {
+      // Atualizar em background
+      supabaseAdmin
+        .from('users')
+        .update({ last_login_at: new Date().toISOString() })
+        .eq('id', userId)
+        .then(({ error }) => {
+          if (error) console.error('⚠️ [GET USER DATA] Falha ao atualizar last_login_at:', error)
+          else console.log(`✅ [GET USER DATA] last_login_at atualizado para o usuário ${userId}`)
+        })
+    } catch (e) {
+      console.error('⚠️ [GET USER DATA] Erro ao disparar update do login time:', e)
+    }
+
     return NextResponse.json({ 
       data: userData, 
       exists: true 
@@ -67,4 +84,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-

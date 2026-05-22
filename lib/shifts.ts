@@ -18,6 +18,10 @@ export interface Shift {
   sobreaviso_type?: 'fixo' | 'variavel'
   payment_status?: 'pending' | 'paid' | 'cancelled'
   payment_date?: string
+  group_id?: string | null
+  assigned_user_id?: string | null
+  backup_user_id?: string | null
+  professional_role?: 'principal' | 'auxiliar' | '' | null
   created_at: string
   updated_at: string
 }
@@ -39,6 +43,10 @@ export interface ShiftInsert {
   sobreaviso_type?: 'fixo' | 'variavel'
   payment_status?: 'pending' | 'paid' | 'cancelled'
   payment_date?: string
+  group_id?: string | null
+  assigned_user_id?: string | null
+  backup_user_id?: string | null
+  professional_role?: 'principal' | 'auxiliar' | '' | null
 }
 
 export interface ShiftUpdate {
@@ -57,6 +65,10 @@ export interface ShiftUpdate {
   sobreaviso_type?: 'fixo' | 'variavel'
   payment_status?: 'pending' | 'paid' | 'cancelled'
   payment_date?: string
+  group_id?: string | null
+  assigned_user_id?: string | null
+  backup_user_id?: string | null
+  professional_role?: 'principal' | 'auxiliar' | '' | null
 }
 
 export const shiftService = {

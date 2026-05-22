@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { fetchWithTimeout } from '@/lib/utils'
 
 interface VersionData {
@@ -11,6 +11,9 @@ interface VersionData {
   environment?: string
 }
 
+// Intervalo de polling: 30 minutos (reduz drasticamente Function Invocations no Vercel)
+const VERSION_CHECK_INTERVAL = 30 * 60 * 1000
+
 /**
  * Componente para exibir informações de versão (útil para debug)
  * Também verifica automaticamente por novas versões com estratégia de Silent Update
@@ -18,11 +21,28 @@ interface VersionData {
 export function VersionInfo() {
   const [version, setVersion] = useState<VersionData | null>(null)
   const [hasUpdate, setHasUpdate] = useState(false)
+  const versionRef = useRef<VersionData | null>(null)
 
+  const handleReload = useCallback(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then((registration) => {
+        if (registration) {
+          registration.unregister().then(() => {
+            window.location.reload()
+          })
+        } else {
+          window.location.reload()
+        }
+      })
+    } else {
+      window.location.reload()
+    }
+  }, [])
+
+  // Efeito 1: Carregar versão inicial (roda apenas UMA vez)
   useEffect(() => {
     let mounted = true
 
-    // Carregar versão inicial
     const loadVersion = async () => {
       try {
         const response = await fetchWithTimeout('/version.json', {
@@ -40,6 +60,7 @@ export function VersionInfo() {
         if (!mounted) return
         
         setVersion(data)
+        versionRef.current = data
         
         // Verificar atualização apenas em produção
         const currentBuildId = localStorage.getItem('buildId')
@@ -56,52 +77,46 @@ export function VersionInfo() {
 
     loadVersion()
 
-    // Verificar por atualizações a cada 5 minutos (Apenas em Produção)
-    let interval: any;
-    if (process.env.NODE_ENV === 'production') {
-      interval = setInterval(async () => {
-        try {
-          const response = await fetchWithTimeout('/version.json', {
-            cache: 'no-cache',
-            timeout: 5000,
-            maxRetries: 1
-          })
-          
-          if (!response.ok) return
-          
-          const data = await response.json()
-          
-          if (version && data.buildId !== version.buildId) {
-            console.log('🆕 Nova versão detectada!')
-            if (mounted) setHasUpdate(true)
-          }
-        } catch (err) {
-          // Silenciar erro
+    return () => { mounted = false }
+  }, []) // ← Array vazio: roda apenas uma vez no mount
+
+  // Efeito 2: Polling periódico (separado para não criar loop)
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') return
+
+    let mounted = true
+
+    const checkForUpdate = async () => {
+      // Não fazer polling se a aba estiver em background
+      if (document.hidden) return
+
+      try {
+        const response = await fetchWithTimeout('/version.json', {
+          cache: 'no-cache',
+          timeout: 5000,
+          maxRetries: 1
+        })
+        
+        if (!response.ok) return
+        
+        const data = await response.json()
+        
+        if (versionRef.current && data.buildId !== versionRef.current.buildId) {
+          console.log('🆕 Nova versão detectada!')
+          if (mounted) setHasUpdate(true)
         }
-      }, 300000) // 5 minutos
+      } catch {
+        // Silenciar erro
+      }
     }
+
+    const interval = setInterval(checkForUpdate, VERSION_CHECK_INTERVAL)
 
     return () => {
       mounted = false
-      if (interval) clearInterval(interval)
+      clearInterval(interval)
     }
-  }, [version])
-
-  const handleReload = () => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistration().then((registration) => {
-        if (registration) {
-          registration.unregister().then(() => {
-            window.location.reload()
-          })
-        } else {
-          window.location.reload()
-        }
-      })
-    } else {
-      window.location.reload()
-    }
-  }
+  }, []) // ← Array vazio: configura o interval apenas uma vez
 
   // Silent Update Logic: Recarrega automaticamente apenas se for seguro
   useEffect(() => {
@@ -124,7 +139,7 @@ export function VersionInfo() {
       }, 3000)
       return () => clearTimeout(timeout)
     }
-  }, [hasUpdate])
+  }, [hasUpdate, handleReload])
 
   // Em produção com Silent Update, não renderizamos nada na tela (Totalmente silencioso)
   if (process.env.NODE_ENV === 'production') {

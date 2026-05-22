@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { AdminProtectedRoute } from '@/components/auth/AdminProtectedRoute'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -322,7 +321,6 @@ export default function AdminErrorLogs() {
   }
 
   return (
-    <AdminProtectedRoute>
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         {/* Header */}
         <div className="bg-white border-b border-gray-200 shadow-sm">
@@ -618,7 +616,6 @@ export default function AdminErrorLogs() {
           )}
         </div>
       </div>
-    </AdminProtectedRoute>
   )
 }
 

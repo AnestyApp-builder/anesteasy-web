@@ -48,7 +48,7 @@ export default function DashboardRechartsSection({
             </CardHeader>
             <div className="p-3 sm:p-4 lg:p-6">
               <div className="h-48 sm:h-56 lg:h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={monthlyRevenue} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="2 4" stroke="#e5e7eb" strokeOpacity={0.6} />
                     <XAxis
@@ -125,7 +125,7 @@ export default function DashboardRechartsSection({
             </CardHeader>
             <div className="p-3 sm:p-4 lg:p-6">
               <div className="h-48 sm:h-56 lg:h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <PieChart>
                     <Pie
                       data={pieData}

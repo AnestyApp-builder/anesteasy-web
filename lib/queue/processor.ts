@@ -1,6 +1,6 @@
 import { logger } from '@/lib/logger';
 import { supabaseAdmin } from '@/lib/supabase-server';
-import { getMediaUrl, downloadMedia, sendWhatsAppMessage } from '@/lib/providers/whatsapp/meta';
+import { getMediaUrl, downloadMedia, sendWhatsAppMessage, sendWhatsAppButtons } from '@/lib/providers/whatsapp/meta';
 import { detectDocumentType, structureOCRData, processImageWithOpenAI } from '@/lib/providers/llm/openai';
 import { isValidImage } from '@/utils/base64';
 import { MetaMessage } from '@/types/meta';
@@ -96,19 +96,57 @@ export async function processWhatsAppMessage(message: MetaMessage) {
         throw extError;
       }
 
-      // 6. Responder usuário
-      // Mapear campos comuns que a IA pode retornar
-      const nomePaciente = structuredData.nome_do_paciente || structuredData.paciente || structuredData.nome || 'Não identificado';
-      const nomeProcedimento = structuredData.procedimento || structuredData.cirurgia || structuredData.procedure || 'Não identificado';
+      // 6. Inteligência de Fluxo (BOT 2.0)
+      const nomePaciente = structuredData.nome_do_paciente || structuredData.paciente || structuredData.nome || '';
+      const tecnica = structuredData.tecnica_anestesica || structuredData.tecnica || '';
+      const procedimento = structuredData.procedimento || structuredData.cirurgia || '';
+      const hospital = structuredData.hospital || structuredData.local || '';
+      const dataCirurgia = structuredData.data_da_cirurgia || structuredData.data || '';
+      const confidence = Number(structuredData.confidence_score) || 0;
 
-      const resumo = `📋 *Ficha Analisada!*
+      // Critérios para "Fluxo Rápido" (Single Card)
+      const hasAllKeyFields = nomePaciente && tecnica && procedimento && hospital && dataCirurgia;
+      const isHighConfidence = confidence >= 0.85;
 
-*Paciente:* ${nomePaciente}
+      if (hasAllKeyFields && isHighConfidence) {
+        await supabaseAdmin.from('whatsapp_extractions').insert({
+          user_id: account.user_id,
+          raw_ocr_text: encrypt(rawText),
+          extracted_fields: encrypt(JSON.stringify(structuredData)) as any,
+          status: 'awaiting_full_confirmation',
+          overall_confidence: confidence
+        });
 
-Confirma o nome do paciente ou deseja alterar?
-(Digite *SIM* para confirmar ou digite o *NOME CORRETO*)`;
-      
-      await sendWhatsAppMessage(phone, resumo);
+        const resumo = `📋 *Ficha Analisada com Sucesso!* 🚀\n\n` +
+                       `👤 *Paciente:* ${nomePaciente}\n` +
+                       `💉 *Anestesia:* ${tecnica}\n` +
+                       `📝 *Cirurgia:* ${procedimento}\n` +
+                       `🏥 *Local:* ${hospital}\n` +
+                       `📅 *Data:* ${dataCirurgia}\n\n` +
+                       `Tudo correto?`;
+        
+        await sendWhatsAppButtons(phone, resumo, [
+          { id: 'confirm_all', title: '✅ Confirmar tudo' },
+          { id: 'adjust_fields', title: '✏️ Ajustar campos' },
+          { id: 'new_flow', title: '❌ Cancelar' }
+        ]);
+      } else {
+        // Fluxo Guiado (Step-by-Step)
+        await supabaseAdmin.from('whatsapp_extractions').insert({
+          user_id: account.user_id,
+          raw_ocr_text: encrypt(rawText),
+          extracted_fields: encrypt(JSON.stringify(structuredData)) as any,
+          status: 'awaiting_name',
+          overall_confidence: confidence || 0.5
+        });
+
+        const msg = `📋 *Ficha Analisada!*\n\n*Paciente:* ${nomePaciente || 'Não identificado'}\n\nConfirma o nome do paciente ou deseja alterar?`;
+        
+        await sendWhatsAppButtons(phone, msg, [
+          { id: 'confirm_name', title: '✅ Sim, confirmar' },
+          { id: 'change_name', title: '✏️ Alterar nome' }
+        ]);
+      }
     } else {
       await sendWhatsAppMessage(phone, "❌ Não consegui ler os dados desta imagem. Por favor, tente enviar uma foto mais nítida.");
     }

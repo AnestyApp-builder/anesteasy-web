@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Logo } from '@/components/ui/Logo'
 import { Navigation } from '@/components/layout/Navigation'
+import { trackLead } from '@/lib/analytics'
 const FAQ = dynamic(() => import('@/components/FAQ').then(m => m.FAQ), {
   loading: () => null,
 })
@@ -100,7 +101,10 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16 sm:h-20">
             <div className="focus:outline-none">
-              <Logo size="md" showText={false} />
+              <Link href="/">
+                <Logo size="sm" className="sm:hidden" showText={false} />
+                <Logo size="md" className="hidden sm:flex" showText={true} />
+              </Link>
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
                 <>
@@ -119,7 +123,11 @@ export default function Home() {
                     </Button>
                   </Link>
                   <Link href="/register">
-                    <Button size="sm" className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-xl shadow-emerald-600/30 min-h-[44px] font-semibold">
+                    <Button 
+                      size="sm" 
+                      className="text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-xl shadow-emerald-600/30 min-h-[44px] font-semibold"
+                      onClick={trackLead}
+                    >
                       <span className="hidden sm:inline">Começar Grátis</span>
                       <span className="sm:hidden">Começar</span>
                     </Button>
@@ -141,7 +149,6 @@ export default function Home() {
           loop
           playsInline
           preload="none"
-          poster="/images/hero-poster.jpg"
           className="absolute inset-0 w-full h-full object-cover"
           style={{ zIndex: 1, top: 0 }}
           onError={(e) => {
@@ -206,7 +213,11 @@ export default function Home() {
             
             <div className="cta-container flex justify-center mb-16 px-4" style={{ backgroundColor: 'transparent' }}>
               <Link href="/register" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full sm:w-auto bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white px-8 sm:px-12 py-5 sm:py-6 text-lg sm:text-xl font-bold shadow-2xl shadow-teal-500/40 transition-all duration-300 hover:scale-[1.02] active:scale-95 rounded-2xl flex flex-col items-center">
+                <Button 
+                  size="lg" 
+                  className="w-full sm:w-auto bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white px-8 sm:px-12 py-5 sm:py-6 text-lg sm:text-xl font-bold shadow-2xl shadow-teal-500/40 transition-all duration-300 hover:scale-[1.02] active:scale-95 rounded-2xl flex flex-col items-center"
+                  onClick={trackLead}
+                >
                   <span className="flex items-center">
                     Comece gratuitamente
                     <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 ml-3" />
@@ -635,7 +646,10 @@ export default function Home() {
 
                   <div className="flex justify-center">
                     <Link href="/register">
-                      <Button className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 text-sm sm:text-base font-semibold rounded-xl shadow-md shadow-emerald-500/30">
+                      <Button 
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 text-sm sm:text-base font-semibold rounded-xl shadow-md shadow-emerald-500/30"
+                        onClick={trackLead}
+                      >
                         Recuperar meu controle agora
                       </Button>
                     </Link>
@@ -694,7 +708,11 @@ export default function Home() {
           </p>
           <div className="flex justify-center mb-12">
             <Link href="/register">
-              <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xl px-12 py-5 text-xl font-bold rounded-xl flex flex-col items-center">
+              <Button 
+                size="lg" 
+                className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xl px-12 py-5 text-xl font-bold rounded-xl flex flex-col items-center"
+                onClick={trackLead}
+              >
                 <span className="flex items-center">
                   Comece gratuitamente
                   <ArrowRight className="w-6 h-6 ml-3" />

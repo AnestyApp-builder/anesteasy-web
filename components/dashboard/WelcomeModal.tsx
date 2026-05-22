@@ -8,10 +8,10 @@ import { Button } from '@/components/ui/Button'
 interface WelcomeModalProps {
   userId: string
   userName: string
+  trialEndsAt?: string | null
 }
 
 const STORAGE_KEY = 'welcome_v1_'
-const TRIAL_DAYS = 7
 
 const features = [
   {
@@ -31,7 +31,14 @@ const features = [
   }
 ]
 
-export function WelcomeModal({ userId, userName }: WelcomeModalProps) {
+/** Calcula quantos dias inteiros restam até trialEndsAt (mínimo 0) */
+function calcTrialDaysLeft(trialEndsAt?: string | null): number {
+  if (!trialEndsAt) return 0
+  const msLeft = new Date(trialEndsAt).getTime() - Date.now()
+  return Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)))
+}
+
+export function WelcomeModal({ userId, userName, trialEndsAt }: WelcomeModalProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   useEffect(() => {
@@ -51,6 +58,30 @@ export function WelcomeModal({ userId, userName }: WelcomeModalProps) {
   }
 
   const firstName = userName?.split(' ')[0] || 'Médico'
+  const daysLeft = calcTrialDaysLeft(trialEndsAt)
+
+  // Texto dinâmico do banner de trial
+  const trialBannerText = () => {
+    if (!trialEndsAt) {
+      return (
+        <>
+          <span className="font-bold">Período gratuito</span> para explorar todos os recursos — sem precisar de cartão.
+        </>
+      )
+    }
+    if (daysLeft <= 0) {
+      return (
+        <>
+          Seu período gratuito <span className="font-bold">terminou hoje</span>. Assine para continuar usando.
+        </>
+      )
+    }
+    return (
+      <>
+        <span className="font-bold">{daysLeft} {daysLeft === 1 ? 'dia grátis' : 'dias grátis'}</span> para explorar todos os recursos — sem precisar de cartão.
+      </>
+    )
+  }
 
   return (
     <AnimatePresence>
@@ -110,7 +141,7 @@ export function WelcomeModal({ userId, userName }: WelcomeModalProps) {
                 <Gift className="w-4 h-4 text-amber-600" />
               </div>
               <p className="text-sm text-amber-800">
-                <span className="font-bold">{TRIAL_DAYS} dias grátis</span> para explorar todos os recursos — sem precisar de cartão.
+                {trialBannerText()}
               </p>
             </div>
 

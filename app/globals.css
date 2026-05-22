@@ -564,8 +564,8 @@ textarea:disabled {
     line-height: 1.5;
   }
   
-  /* Links mais fáceis de tocar */
-  a {
+  /* Links mais fáceis de tocar (exclui blocos, flex, grid e group cards) */
+  a:not(.group):not([class*="flex"]):not([class*="block"]):not([class*="grid"]) {
     font-size: 1rem;
     line-height: 1.6;
     min-height: 44px; /* Área de toque mínima recomendada */

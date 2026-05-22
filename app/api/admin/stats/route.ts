@@ -36,12 +36,16 @@ export async function GET(request: NextRequest) {
     }
 
     const now = new Date()
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
 
     const [
       usersResult,
       proceduresResult,
+      proceduresLast24hResult,
+      proceduresLast30DaysResult,
+      proceduresThisMonthResult,
       recentLoginsResult,
       anestesistasResult
     ] = await Promise.all([
@@ -52,7 +56,22 @@ export async function GET(request: NextRequest) {
       
       supabaseAdmin
         .from('procedures')
-        .select('id, procedure_date, created_at', { count: 'exact' }),
+        .select('id', { count: 'exact', head: true }),
+
+      supabaseAdmin
+        .from('procedures')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', yesterday.toISOString()),
+
+      supabaseAdmin
+        .from('procedures')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', thirtyDaysAgo.toISOString()),
+
+      supabaseAdmin
+        .from('procedures')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', thisMonthStart.toISOString()),
       
       supabaseAdmin
         .from('users')
@@ -63,18 +82,37 @@ export async function GET(request: NextRequest) {
       supabaseAdmin
         .from('users')
         .select('id, email, subscription_plan, subscription_status, trial_ends_at')
-        .eq('role', 'anestesista')
+        .eq('role', 'anestesista'),
+      
+      supabaseAdmin
+        .from('procedures')
+        .select('hospital_clinic, surgeon_name, nome_cirurgiao')
     ])
+
+    // Calcular rankings
+    const hospitalMap = new Map<string, number>()
+    const surgeonMap = new Map<string, number>()
+
+    proceduresResult.data?.forEach(p => {
+      const hospital = (p.hospital_clinic || 'Não informado').trim()
+      hospitalMap.set(hospital, (hospitalMap.get(hospital) || 0) + 1)
+
+      const surgeon = (p.surgeon_name || p.nome_cirurgiao || 'Não informado').trim()
+      surgeonMap.set(surgeon, (surgeonMap.get(surgeon) || 0) + 1)
+    })
+
+    const topHospitals = Array.from(hospitalMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+
+    const topSurgeons = Array.from(surgeonMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
 
     const activeUsers = usersResult.data?.filter(
       user => user.last_login_at && new Date(user.last_login_at) >= thirtyDaysAgo
-    ).length || 0
-
-    const proceduresThisMonth = proceduresResult.data?.filter(
-      proc => {
-        const procDate = new Date(proc.procedure_date || proc.created_at)
-        return procDate >= thisMonthStart
-      }
     ).length || 0
 
     const sortedLogins = (recentLoginsResult.data || [])
@@ -107,7 +145,11 @@ export async function GET(request: NextRequest) {
       activeUsers,
       totalAnestesistas: usersResult.count || 0,
       totalProcedures: proceduresResult.count || 0,
-      proceduresThisMonth,
+      proceduresLast24h: proceduresLast24hResult.count || 0,
+      proceduresLast30Days: proceduresLast30DaysResult.count || 0,
+      proceduresThisMonth: proceduresThisMonthResult.count || 0,
+      topHospitals,
+      topSurgeons,
       recentLogins: sortedLogins,
       registerClicks: 0,
       freeTrialUsers,

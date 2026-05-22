@@ -364,6 +364,45 @@ function ProcedimentosContent() {
   const [undoTimeout, setUndoTimeout] = useState<NodeJS.Timeout | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
+  
+  const [groups, setGroups] = useState<any[]>([])
+  const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [groupMembers, setGroupMembers] = useState<any[]>([])
+  const [loadingGroupMembers, setLoadingGroupMembers] = useState(false)
+
+  useEffect(() => {
+    if (user) {
+      import('@/lib/groups').then(m => m.getUserGroups().then(setGroups))
+    }
+  }, [user])
+
+  useEffect(() => {
+    const activeGroupId = isEditingMode ? editFormData.group_id : selectedProcedure?.group_id
+    if (activeGroupId) {
+      setLoadingGroupMembers(true)
+      import('@/lib/groups').then(m => {
+        m.getGroupDetails(activeGroupId)
+          .then(details => {
+            const activeMembers = (details.group_members || [])
+              .filter((mem: any) => mem.status === 'active' && mem.users)
+              .map((mem: any) => ({
+                id: mem.users.id,
+                name: mem.users.name || 'Sem Nome',
+                crm: mem.users.crm || ''
+              }))
+            setGroupMembers(activeMembers)
+          })
+          .catch(err => {
+            console.error('Erro ao carregar membros do grupo:', err)
+          })
+          .finally(() => {
+            setLoadingGroupMembers(false)
+          })
+      })
+    } else {
+      setGroupMembers([])
+    }
+  }, [isEditingMode, editFormData.group_id, selectedProcedure?.group_id])
 
   // Carregar buscas frequentes do localStorage
   useEffect(() => {
@@ -438,6 +477,7 @@ function ProcedimentosContent() {
     setSpecialFilter(null)
     setDateFilter(null)
     setValueFilter(null)
+    setGroupFilter('all')
     setShowAdvancedFilters(false)
   }
 
@@ -584,10 +624,19 @@ function ProcedimentosContent() {
       filtered = filtered.filter(p => p.show_to_secretary === false)
     }
 
+    // Filtro de Grupo
+    if (groupFilter !== 'all') {
+      if (groupFilter === 'particular') {
+        filtered = filtered.filter(p => !p.group_id)
+      } else {
+        filtered = filtered.filter(p => p.group_id === groupFilter)
+      }
+    }
+
     setFilteredProcedures(filtered)
     // Resetar contador de procedimentos visíveis quando filtros mudarem
     setVisibleProceduresCount(10)
-  }, [debouncedSearchTerm, statusFilter, dateFilter, valueFilter, procedures])
+  }, [debouncedSearchTerm, statusFilter, dateFilter, valueFilter, procedures, specialFilter, groupFilter])
 
   const loadProcedures = async () => {
     if (!user?.id) return
@@ -688,6 +737,33 @@ function ProcedimentosContent() {
     const parcelasRecebidas = (procedure as any).parcelas_recebidas || 0
     
     return `${parcelasRecebidas}/${totalParcelas}`
+  }
+
+  // Renderiza o badge de parcelamento com cores e textos inteligentes baseados nas parcelas pagas
+  const renderParcelBadge = (procedure: Procedure) => {
+    if (procedure.payment_method !== 'Parcelado' && procedure.forma_pagamento !== 'Parcelado') {
+      return null
+    }
+
+    const total = Number((procedure as any).numero_parcelas || 0)
+    const recebidas = Number((procedure as any).parcelas_recebidas || 0)
+    const unpaid = Math.max(0, total - recebidas)
+
+    if (unpaid === 0) {
+      return (
+        <span className="text-xs text-green-700 font-bold bg-green-50 border border-green-200/50 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5 shadow-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+          Parcelas: {recebidas}/{total}
+        </span>
+      )
+    } else {
+      return (
+        <span className="text-xs text-amber-700 font-bold bg-amber-50 border border-amber-200/50 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5 shadow-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+          A receber {unpaid} {unpaid === 1 ? 'parcela' : 'parcelas'} ({recebidas}/{total})
+        </span>
+      )
+    }
   }
 
   // Função para obter o indicador de feedback
@@ -862,7 +938,7 @@ function ProcedimentosContent() {
 
     const fullProcedure = await procedureService.getProcedureById(procedure.id)
     
-    setSelectedProcedure(procedure as Procedure)
+    setSelectedProcedure((fullProcedure || procedure) as Procedure)
     setShowDetailsModal(true)
     
     // Carregar parcelas se o procedimento for parcelado
@@ -1690,6 +1766,23 @@ function ProcedimentosContent() {
                       <option value="paid">Pago</option>
                     </select>
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Grupo
+                    </label>
+                    <select
+                      value={groupFilter}
+                      onChange={(e) => setGroupFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    >
+                      <option value="all">Todos os Grupos/Particulares</option>
+                      <option value="particular">Somente Particulares</option>
+                      {groups.map(g => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Filtros Especiais
@@ -1767,6 +1860,7 @@ function ProcedimentosContent() {
                   <div 
                     key={procedure.id} 
                   className="group relative overflow-hidden bg-white rounded-xl border border-gray-200/50 shadow-sm hover:shadow-lg hover:shadow-gray-200/50 hover:border-gray-300/50 cursor-pointer transition-all duration-300 ease-in-out transform hover:-translate-y-1"
+                  style={procedure.group_id ? { borderLeft: `4px solid ${groups.find(g => g.id === procedure.group_id)?.color || '#0d9488'}` } : {}}
                   onClick={() => handleCardPress(() => handleProcedureClick(procedure))}
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-gray-50/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -1800,15 +1894,21 @@ function ProcedimentosContent() {
                               )}
                             </div>
                             <p className="text-sm text-gray-600 truncate font-medium mb-1">{procedure.procedure_type}</p>
-                            {getParcelStatus(procedure) && (
-                              <p className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-1 rounded-full inline-block">
-                                Parcelas: {getParcelStatus(procedure)}
-                              </p>
-                            )}
+                            {renderParcelBadge(procedure)}
                           </div>
                         </div>
-                        <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(procedure.payment_status || 'pending')}`}>
-                          {getStatusText(procedure.payment_status || 'pending')}
+                        <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${
+                          (procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado')
+                            ? (Number((procedure as any).numero_parcelas || 0) - Number((procedure as any).parcelas_recebidas || 0) <= 0
+                              ? 'bg-green-500 text-white shadow-sm'
+                              : 'bg-amber-500 text-white shadow-sm')
+                            : getStatusColor(procedure.payment_status || 'pending')
+                        }`}>
+                          {(procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado')
+                            ? (Number((procedure as any).numero_parcelas || 0) - Number((procedure as any).parcelas_recebidas || 0) <= 0
+                              ? 'Pago'
+                              : 'Pendente')
+                            : getStatusText(procedure.payment_status || 'pending')}
                         </span>
                       </div>
                       
@@ -1855,15 +1955,21 @@ function ProcedimentosContent() {
                             )}
                           </div>
                           <p className="text-sm text-gray-600 font-medium mb-1">{procedure.procedure_type}</p>
-                          {getParcelStatus(procedure) && (
-                            <p className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-1 rounded-full inline-block">
-                              Parcelas: {getParcelStatus(procedure)}
-                            </p>
-                          )}
+                          {renderParcelBadge(procedure)}
                         </div>
                       </div>
-                      <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${getStatusColor(procedure.payment_status || 'pending')}`}>
-                        {getStatusText(procedure.payment_status || 'pending')}
+                      <span className={`inline-flex px-3 py-1.5 text-xs font-semibold rounded-full shadow-sm ${
+                        (procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado')
+                          ? (Number((procedure as any).numero_parcelas || 0) - Number((procedure as any).parcelas_recebidas || 0) <= 0
+                            ? 'bg-green-500 text-white shadow-sm'
+                            : 'bg-amber-500 text-white shadow-sm')
+                          : getStatusColor(procedure.payment_status || 'pending')
+                      }`}>
+                        {(procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado')
+                          ? (Number((procedure as any).numero_parcelas || 0) - Number((procedure as any).parcelas_recebidas || 0) <= 0
+                            ? 'Pago'
+                            : 'Pendente')
+                          : getStatusText(procedure.payment_status || 'pending')}
                       </span>
                     </div>
                     
@@ -2167,14 +2273,7 @@ function ProcedimentosContent() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
-                  <EditField
-                    field="grupo_anestesico"
-                    label="Grupo Anestésico"
-                    value={selectedProcedure.grupo_anestesico || 'Nenhum'}
-                    isEditingMode={isEditingMode}
-                    editFormData={editFormData}
-                    updateFormField={updateFormField}
-                  />
+
                 </div>
               </div>
 
@@ -2220,6 +2319,121 @@ function ProcedimentosContent() {
                     updateFormField={updateFormField}
                   />
                 </div>
+              </div>
+
+              {/* Grupo & Faturamento (Grupo PRO) */}
+              <div className="bg-gradient-to-r from-teal-50 to-teal-100/50 rounded-xl p-6 shadow-sm border border-teal-200">
+                <h3 className="text-xl font-bold text-teal-800 mb-5 flex items-center">
+                  <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center mr-3">
+                    <Users className="w-5 h-5 text-teal-600" />
+                  </div>
+                  Grupo & Faturamento (Grupo PRO)
+                </h3>
+                
+                {isEditingMode ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2 h-[90px]">
+                      <label className="text-sm font-medium text-gray-700 block h-5 truncate">Grupo</label>
+                      <select
+                        value={editFormData.group_id || ''}
+                        onChange={(e) => updateFormField('group_id', e.target.value)}
+                        className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-sm sm:text-base"
+                      >
+                        <option value="">Nenhum (Particular)</option>
+                        {groups.map(g => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {editFormData.group_id ? (
+                      <>
+                        <div className="space-y-2 h-[90px]">
+                          <label className="text-sm font-medium text-gray-700 block h-5 truncate">Anestesista (Grupo)</label>
+                          <select
+                            value={editFormData.anesthesiologist_user_id || ''}
+                            onChange={(e) => updateFormField('anesthesiologist_user_id', e.target.value)}
+                            disabled={loadingGroupMembers}
+                            className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-sm sm:text-base"
+                          >
+                            {loadingGroupMembers ? (
+                              <option value="">Carregando membros...</option>
+                            ) : (
+                              <>
+                                <option value="">Selecione o anestesista...</option>
+                                {groupMembers.map(m => (
+                                  <option key={m.id} value={m.id}>{m.name} {m.crm ? `(CRM: ${m.crm})` : ''}</option>
+                                ))}
+                              </>
+                            )}
+                          </select>
+                        </div>
+
+
+
+                        <div className="space-y-2 h-[90px]">
+                          <label className="text-sm font-medium text-gray-700 block h-5 truncate">Entidade de Faturamento</label>
+                          <select
+                            value={editFormData.billing_entity_type || ''}
+                            onChange={(e) => updateFormField('billing_entity_type', e.target.value)}
+                            className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-sm sm:text-base"
+                          >
+                            <option value="">Em aberto</option>
+                            <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
+                            <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
+                          </select>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1.5 sm:space-y-2 min-h-[75px] sm:h-[90px]">
+                      <label className="text-xs sm:text-sm font-medium text-gray-700 block h-4 sm:h-5 truncate">Grupo</label>
+                      <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[48px] sm:h-[52px] flex items-center">
+                        <p className="text-gray-900 font-medium truncate text-sm sm:text-base">
+                          {selectedProcedure.group_id 
+                            ? (groups.find(g => g.id === selectedProcedure.group_id)?.name || 'Carregando Grupo...') 
+                            : 'Nenhum (Particular)'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedProcedure.group_id && (
+                      <>
+                        <div className="space-y-1.5 sm:space-y-2 min-h-[75px] sm:h-[90px]">
+                          <label className="text-xs sm:text-sm font-medium text-gray-700 block h-4 sm:h-5 truncate">Anestesista (Grupo)</label>
+                          <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[48px] sm:h-[52px] flex items-center">
+                            <p className="text-gray-900 font-medium truncate text-sm sm:text-base">
+                              {loadingGroupMembers ? (
+                                <span className="text-gray-400">Carregando...</span>
+                              ) : (
+                                groupMembers.find(m => m.id === selectedProcedure.anesthesiologist_user_id)?.name || 
+                                selectedProcedure.anesthesiologist_name || 
+                                'Não selecionado'
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+
+
+                        <div className="space-y-1.5 sm:space-y-2 min-h-[75px] sm:h-[90px]">
+                          <label className="text-xs sm:text-sm font-medium text-gray-700 block h-4 sm:h-5 truncate">Entidade de Faturamento</label>
+                          <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[48px] sm:h-[52px] flex items-center">
+                            <p className="text-gray-900 font-medium truncate text-sm sm:text-base">
+                              {selectedProcedure.billing_entity_type === 'cnpj_grupo' 
+                                ? 'CNPJ do Grupo' 
+                                : (selectedProcedure.billing_entity_type === 'cnpj_anestesista' 
+                                    ? 'CPF/CNPJ do Anestesista' 
+                                    : 'Em aberto')}
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Feedback do Cirurgião - Seção Unificada */}
@@ -2930,54 +3144,7 @@ function ProcedimentosContent() {
                 </div>
               </div>
 
-              {/* Visibilidade para Secretária */}
-              <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl p-6 shadow-sm border border-emerald-200">
-                <h3 className="text-xl font-bold text-emerald-800 mb-5 flex items-center">
-                  <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
-                    <Eye className="w-5 h-5 text-emerald-600" />
-                  </div>
-                  Configurações de Visibilidade
-                </h3>
-                <div className="space-y-4">
-                  <div 
-                    className={`flex items-center gap-3 p-4 rounded-xl border transition-all ${
-                      isEditingMode ? 'cursor-pointer hover:bg-white/50' : ''
-                    } ${
-                      ((isEditingMode ? editFormData.show_to_secretary : selectedProcedure.show_to_secretary) ?? true)
-                        ? 'bg-emerald-50 border-emerald-200' 
-                        : 'bg-gray-50 border-gray-200 opacity-80'
-                    }`}
-                    onClick={() => {
-                      if (isEditingMode) {
-                        updateFormField('show_to_secretary', !((editFormData.show_to_secretary ?? selectedProcedure.show_to_secretary) ?? true) as any)
-                      }
-                    }}
-                  >
-                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
-                      ((isEditingMode ? editFormData.show_to_secretary : selectedProcedure.show_to_secretary) ?? true)
-                        ? 'bg-emerald-600 border-emerald-600' 
-                        : 'bg-white border-gray-300'
-                    }`}>
-                      {((isEditingMode ? editFormData.show_to_secretary : selectedProcedure.show_to_secretary) ?? true) && (
-                        <Check className="w-4 h-4 text-white" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-emerald-900">Visível para Secretária</p>
-                      <p className="text-xs text-emerald-700">
-                        {((isEditingMode ? editFormData.show_to_secretary : selectedProcedure.show_to_secretary) ?? true)
-                          ? 'Este procedimento é visível no link seguro da secretária.'
-                          : 'Este procedimento está oculto no link seguro da secretária.'}
-                      </p>
-                    </div>
-                  </div>
-                  {!isEditingMode && (
-                    <p className="text-[10px] text-gray-400 italic">
-                      Para alterar a visibilidade, clique em editar no topo do formulário.
-                    </p>
-                  )}
-                </div>
-              </div>
+
 
               {/* Seção de Anexos */}
               {attachments.length > 0 && (
@@ -3284,6 +3451,49 @@ function ProcedimentosContent() {
                       }`}
                     >
                       {status === 'all' ? 'Todos' : status === 'pending' ? 'Pendente' : status === 'sent' ? 'Enviado' : 'Pago'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Filtro por Grupo */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Filtrar por Grupo
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setGroupFilter('all')}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      groupFilter === 'all'
+                        ? 'bg-teal-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Todos
+                  </button>
+                  <button
+                    onClick={() => setGroupFilter('particular')}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      groupFilter === 'particular'
+                        ? 'bg-gray-800 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Particular
+                  </button>
+                  {groups.map(g => (
+                    <button
+                      key={g.id}
+                      onClick={() => setGroupFilter(g.id)}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                        groupFilter === g.id
+                          ? 'text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                      style={groupFilter === g.id ? { backgroundColor: g.color || '#0d9488' } : { borderLeft: `4px solid ${g.color || '#0d9488'}` }}
+                    >
+                      {g.name}
                     </button>
                   ))}
                 </div>

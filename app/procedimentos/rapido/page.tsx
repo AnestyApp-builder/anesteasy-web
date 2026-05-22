@@ -550,21 +550,7 @@ export default function CadastroRapido() {
                   </div>
                 </div>
 
-                <div className="flex items-center p-4 bg-teal-50/30 rounded-xl border border-teal-100 transition-all hover:bg-teal-50">
-                  <div className="flex-1">
-                    <h4 className="font-bold text-gray-900 flex items-center gap-2">
-                      <Eye className="w-4 h-4 text-teal-600" />
-                      Visibilidade
-                    </h4>
-                    <p className="text-xs text-gray-500">Permitir visualização pela secretária.</p>
-                  </div>
-                  <div 
-                    onClick={() => updateFormData('show_to_secretary', !formData.show_to_secretary)}
-                    className={`w-14 h-8 rounded-full cursor-pointer transition-all p-1 flex-shrink-0 ${formData.show_to_secretary ? 'bg-teal-500' : 'bg-gray-300'}`}
-                  >
-                    <div className={`bg-white w-6 h-6 rounded-full shadow-sm transition-transform ${formData.show_to_secretary ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </div>
-                </div>
+
               </div>
             </Card>
 
@@ -637,10 +623,7 @@ export default function CadastroRapido() {
                     <label className="text-xs font-bold text-gray-500 uppercase">Nome da Equipe</label>
                     <Input value={formData.nomeEquipe} onChange={e => updateFormData('nomeEquipe', e.target.value)} />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 uppercase">Grupo Anestésico</label>
-                    <Input value={formData.grupoAnestesico} onChange={e => updateFormData('grupoAnestesico', e.target.value)} placeholder="Ex: Grupo A" />
-                  </div>
+
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500 uppercase">Email Cirurgião</label>
                     <Input type="email" value={formData.emailCirurgiao} onChange={e => updateFormData('emailCirurgiao', e.target.value)} />

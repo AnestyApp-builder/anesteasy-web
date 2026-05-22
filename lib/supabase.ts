@@ -52,6 +52,60 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_messages: {
+        Row: {
+          admin_user_id: string
+          channel: string | null
+          created_at: string | null
+          error_message: string | null
+          id: string
+          message_text: string
+          status: string | null
+          target_phone: string
+          target_user_id: string
+          whatsapp_message_id: string | null
+        }
+        Insert: {
+          admin_user_id: string
+          channel?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          message_text: string
+          status?: string | null
+          target_phone: string
+          target_user_id: string
+          whatsapp_message_id?: string | null
+        }
+        Update: {
+          admin_user_id?: string
+          channel?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          message_text?: string
+          status?: string | null
+          target_phone?: string
+          target_user_id?: string
+          whatsapp_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_messages_admin_user_id_fkey"
+            columns: ["admin_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_messages_target_user_id_fkey"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       anestesista_secretaria: {
         Row: {
           anestesista_id: string
@@ -225,29 +279,35 @@ export type Database = {
         Row: {
           anemia_transfusao: boolean
           cefaleia: boolean
+          comentarios: string | null
           created_at: string | null
           dor_lombar: boolean
           feedback_link_id: string | null
           id: string
           nausea_vomito: boolean
+          satisfacao: number | null
         }
         Insert: {
           anemia_transfusao: boolean
           cefaleia: boolean
+          comentarios?: string | null
           created_at?: string | null
           dor_lombar: boolean
           feedback_link_id?: string | null
           id?: string
           nausea_vomito: boolean
+          satisfacao?: number | null
         }
         Update: {
           anemia_transfusao?: boolean
           cefaleia?: boolean
+          comentarios?: string | null
           created_at?: string | null
           dor_lombar?: boolean
           feedback_link_id?: string | null
           id?: string
           nausea_vomito?: boolean
+          satisfacao?: number | null
         }
         Relationships: [
           {
@@ -295,6 +355,217 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      group_members: {
+        Row: {
+          group_id: string
+          id: string
+          invited_by: string | null
+          joined_at: string
+          role: string
+          user_id: string
+          quota_percent: number | null
+          quota_since: string | null
+          status: string | null
+          invited_at: string | null
+        }
+        Insert: {
+          group_id: string
+          id?: string
+          invited_by?: string | null
+          joined_at?: string
+          role: string
+          user_id: string
+          quota_percent?: number | null
+          quota_since?: string | null
+          status?: string | null
+          invited_at?: string | null
+        }
+        Update: {
+          group_id?: string
+          id?: string
+          invited_by?: string | null
+          joined_at?: string
+          role?: string
+          user_id?: string
+          quota_percent?: number | null
+          quota_since?: string | null
+          status?: string | null
+          invited_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_members_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      groups: {
+        Row: {
+          color: string
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          share_financials: boolean
+          type: string | null
+          cnpj: string | null
+          google_sheets_id: string | null
+          google_sheets_sync_enabled: boolean | null
+          google_sheets_last_sync: string | null
+        }
+        Insert: {
+          color: string
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          share_financials?: boolean
+          type?: string | null
+          cnpj?: string | null
+          google_sheets_id?: string | null
+          google_sheets_sync_enabled?: boolean | null
+          google_sheets_last_sync?: string | null
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          share_financials?: boolean
+          type?: string | null
+          cnpj?: string | null
+          google_sheets_id?: string | null
+          google_sheets_sync_enabled?: boolean | null
+          google_sheets_last_sync?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "groups_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_quota_history: {
+        Row: {
+          id: string
+          group_id: string
+          user_id: string
+          quota_percent: number
+          valid_from: string
+          valid_until: string | null
+          changed_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          group_id: string
+          user_id: string
+          quota_percent: number
+          valid_from: string
+          valid_until?: string | null
+          changed_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          group_id?: string
+          user_id?: string
+          quota_percent?: number
+          valid_from?: string
+          valid_until?: string | null
+          changed_by?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_quota_history_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_quota_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_quota_history_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      group_secretary_permissions: {
+        Row: {
+          id: string
+          secretary_id: string
+          module: string
+          granted_by: string | null
+          granted_at: string
+        }
+        Insert: {
+          id?: string
+          secretary_id: string
+          module: string
+          granted_by?: string | null
+          granted_at?: string
+        }
+        Update: {
+          id?: string
+          secretary_id?: string
+          module?: string
+          granted_by?: string | null
+          granted_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_secretary_permissions_secretary_id_fkey"
+            columns: ["secretary_id"]
+            isOneToOne: false
+            referencedRelation: "secretarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_secretary_permissions_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
         ]
       }
       notifications: {
@@ -752,6 +1023,7 @@ export type Database = {
           fichas_anestesicas: Json | null
           forma_pagamento: string | null
           grau_laceracao: string | null
+          group_id: string | null
           grupo_anestesico: string | null
           hemorragia_puerperal: string | null
           hora_inicio: string | null
@@ -818,6 +1090,7 @@ export type Database = {
           fichas_anestesicas?: Json | null
           forma_pagamento?: string | null
           grau_laceracao?: string | null
+          group_id?: string | null
           grupo_anestesico?: string | null
           hemorragia_puerperal?: string | null
           hora_inicio?: string | null
@@ -884,6 +1157,7 @@ export type Database = {
           fichas_anestesicas?: Json | null
           forma_pagamento?: string | null
           grau_laceracao?: string | null
+          group_id?: string | null
           grupo_anestesico?: string | null
           hemorragia_puerperal?: string | null
           hora_inicio?: string | null
@@ -931,6 +1205,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "procedures_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "procedures_secretaria_id_fkey"
             columns: ["secretaria_id"]
@@ -1035,7 +1316,7 @@ export type Database = {
       }
       secretaria_invites: {
         Row: {
-          anestesista_id: string
+          anestesista_id: string | null
           created_at: string | null
           email: string
           expires_at: string
@@ -1043,9 +1324,10 @@ export type Database = {
           token: string
           updated_at: string | null
           used_at: string | null
+          group_id: string | null
         }
         Insert: {
-          anestesista_id: string
+          anestesista_id?: string | null
           created_at?: string | null
           email: string
           expires_at: string
@@ -1053,9 +1335,10 @@ export type Database = {
           token: string
           updated_at?: string | null
           used_at?: string | null
+          group_id?: string | null
         }
         Update: {
-          anestesista_id?: string
+          anestesista_id?: string | null
           created_at?: string | null
           email?: string
           expires_at?: string
@@ -1063,6 +1346,7 @@ export type Database = {
           token?: string
           updated_at?: string | null
           used_at?: string | null
+          group_id?: string | null
         }
         Relationships: [
           {
@@ -1070,6 +1354,13 @@ export type Database = {
             columns: ["anestesista_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "secretaria_invites_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
             referencedColumns: ["id"]
           },
         ]
@@ -1137,6 +1428,12 @@ export type Database = {
           status: string | null
           telefone: string | null
           updated_at: string | null
+          type: string
+          group_id: string | null
+          password_hash: string | null
+          invite_token: string | null
+          invite_expires_at: string | null
+          created_by: string | null
         }
         Insert: {
           cpf?: string | null
@@ -1148,6 +1445,12 @@ export type Database = {
           status?: string | null
           telefone?: string | null
           updated_at?: string | null
+          type?: string
+          group_id?: string | null
+          password_hash?: string | null
+          invite_token?: string | null
+          invite_expires_at?: string | null
+          created_by?: string | null
         }
         Update: {
           cpf?: string | null
@@ -1159,8 +1462,29 @@ export type Database = {
           status?: string | null
           telefone?: string | null
           updated_at?: string | null
+          type?: string
+          group_id?: string | null
+          password_hash?: string | null
+          invite_token?: string | null
+          invite_expires_at?: string | null
+          created_by?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "secretarias_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "secretarias_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       shared_links: {
         Row: {

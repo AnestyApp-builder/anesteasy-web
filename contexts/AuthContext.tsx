@@ -55,7 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         specialty: userData?.specialty || sessionUser.user_metadata?.specialty || 'Anestesiologia',
         crm: userData?.crm || sessionUser.user_metadata?.crm || '000000',
         gender: userData?.gender || null,
-        phone: userData?.phone || null
+        phone: userData?.phone || null,
+        trialEndsAt: userData?.trial_ends_at || null
       }
 
       setUser(currentUser)

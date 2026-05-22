@@ -29,9 +29,11 @@ export async function POST(request: NextRequest) {
         created_at: data.created_at
       }
     })
-  } catch (error: unknown) {
+  } catch (error: any) {
     const elapsedTime = Date.now() - startTime
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao criar procedimento'
+    
+    // Extract message even if error is not a JS Error instance (like PostgrestError)
+    const errorMessage = error?.message || (typeof error === 'string' ? error : 'Erro desconhecido ao criar procedimento')
     
     logger.error(`[API-CREATE-PROCEDURE] Erro inesperado (${elapsedTime}ms):`, error)
     

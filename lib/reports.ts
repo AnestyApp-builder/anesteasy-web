@@ -1,6 +1,7 @@
 import { procedureService, Procedure } from './procedures'
 import { shiftService, Shift } from './shifts'
 import { formatCurrency, formatDate, formatDateTime } from './utils'
+import { normalizeProcedureName, normalizeHospitalName, normalizeSurgeonName } from './normalization'
 import { supabase } from './supabase'
 
 interface FeedbackStats {
@@ -39,6 +40,12 @@ interface ProcedureTypeStat {
   totalValue: number
 }
 
+interface SurgeonStat {
+  surgeon: string
+  count: number
+  totalValue: number
+}
+
 interface MonthlyStat {
   month: string // format 'YYYY-MM'
   count: number
@@ -65,6 +72,8 @@ export interface ReportData {
   hospitalStats: HospitalStat[]
   procedureTypeStats: ProcedureTypeStat[]
   monthlyStats: MonthlyStat[]
+  isFinancialHidden?: boolean
+  groupName?: string
   period: {
     start: string
     end: string
@@ -236,26 +245,35 @@ function computeObstetricAndConvenioStats(procedures: Procedure[]): {
 function computeAdvancedStats(procedures: Procedure[]): {
   hospitalStats: HospitalStat[]
   procedureTypeStats: ProcedureTypeStat[]
+  surgeonStats: SurgeonStat[]
   monthlyStats: MonthlyStat[]
 } {
   const hospitalMap = new Map<string, { count: number; totalValue: number }>()
   const typeMap = new Map<string, { count: number; totalValue: number }>()
+  const surgeonMap = new Map<string, { count: number; totalValue: number }>()
   const monthMap = new Map<string, { count: number; totalValue: number }>()
 
   for (const p of procedures) {
     // Hospital
-    const hospital = (p.hospital_clinic || 'Não informado').trim()
+    const hospital = normalizeHospitalName(p.hospital_clinic || '')
     const hStat = hospitalMap.get(hospital) || { count: 0, totalValue: 0 }
     hStat.count += 1
     hStat.totalValue += p.procedure_value || 0
     hospitalMap.set(hospital, hStat)
 
     // Tipo de Procedimento
-    const type = (p.procedure_type || 'Outros').trim()
+    const type = normalizeProcedureName(p.procedure_type || '')
     const tStat = typeMap.get(type) || { count: 0, totalValue: 0 }
     tStat.count += 1
     tStat.totalValue += p.procedure_value || 0
     typeMap.set(type, tStat)
+
+    // Cirurgião
+    const surgeon = normalizeSurgeonName(p.surgeon_name || p.nome_cirurgiao || '')
+    const sStat = surgeonMap.get(surgeon) || { count: 0, totalValue: 0 }
+    sStat.count += 1
+    sStat.totalValue += p.procedure_value || 0
+    surgeonMap.set(surgeon, sStat)
 
     // Mensal
     if (p.procedure_date) {
@@ -278,26 +296,63 @@ function computeAdvancedStats(procedures: Procedure[]): {
     .map(([type, agg]) => ({ type, ...agg }))
     .sort((a, b) => b.count - a.count)
 
+  const surgeonStats: SurgeonStat[] = Array.from(surgeonMap.entries())
+    .map(([surgeon, agg]) => ({ surgeon, ...agg }))
+    .sort((a, b) => b.count - a.count)
+
   const monthlyStats: MonthlyStat[] = Array.from(monthMap.entries())
     .map(([month, agg]) => ({ month, ...agg }))
     .sort((a, b) => a.month.localeCompare(b.month))
 
-  return { hospitalStats, procedureTypeStats, monthlyStats }
+  return { hospitalStats, procedureTypeStats, surgeonStats, monthlyStats }
 }
 
 export const reportService = {
   // Gerar dados do relatório
-  async generateReportData(userId: string, startDate?: string, endDate?: string): Promise<ReportData> {
+  async generateReportData(userId: string, startDate?: string, endDate?: string, groupId?: string): Promise<ReportData> {
     try {
+      // 1. Verificar se é um relatório de grupo e as permissões financeiras
+      let isFinancialHidden = false
+      let groupName = undefined
+
+      if (groupId) {
+        const { data: groupData } = await supabase
+          .from('groups')
+          .select('name, share_financials, created_by')
+          .eq('id', groupId)
+          .single()
+        
+        if (groupData) {
+          groupName = groupData.name
+          
+          // Se não compartilha financeiros, verificar se o usuário é o criador ou admin
+          if (!groupData.share_financials) {
+            const { data: membership } = await supabase
+              .from('group_members')
+              .select('role')
+              .eq('group_id', groupId)
+              .eq('user_id', userId)
+              .single()
+            
+            const isAdmin = membership?.role === 'admin' || groupData.created_by === userId
+            if (!isAdmin) {
+              isFinancialHidden = true
+            }
+          }
+        }
+      }
+
       const [procedures, procedureStats, shifts, shiftStats, userResult] = await Promise.all([
         startDate && endDate 
-          ? procedureService.getProceduresByDateRange(userId, startDate, endDate)
+          ? procedureService.getProceduresByDateRange(userId, startDate, endDate, groupId)
           : procedureService.getProcedures(userId),
-        procedureService.getProcedureStats(userId),
-        startDate && endDate
+        procedureService.getProcedureStats(userId, groupId),
+        startDate && endDate && !groupId // Plantões ainda não estão vinculados a grupos
           ? shiftService.getShiftsWithValuesByPeriod(userId, startDate, endDate)
-          : shiftService.getShifts(userId),
-        shiftService.getShiftStats(userId),
+          : Promise.resolve([]),
+        !groupId 
+          ? shiftService.getShiftStats(userId)
+          : Promise.resolve({ total: 0, completed: 0, pending: 0, cancelled: 0, sent: 0, totalValue: 0, completedValue: 0, pendingValue: 0 }),
         supabase
           .from('users')
           .select('name, gender')
@@ -305,23 +360,32 @@ export const reportService = {
           .maybeSingle()
       ])
 
+      // Se financeiro estiver escondido, zerar os valores para os cálculos de stats
+      const processedProcedures = isFinancialHidden 
+        ? procedures.map(p => ({ ...p, procedure_value: 0 }))
+        : procedures
+
+      const processedProcedureStats = isFinancialHidden
+        ? { ...procedureStats, totalValue: 0, completedValue: 0, pendingValue: 0 }
+        : procedureStats
+
       // Combinar estatísticas de procedimentos e plantões
       const combinedStats = {
-        total: procedureStats.total + shiftStats.total,
-        completed: procedureStats.completed + shiftStats.completed,
-        pending: procedureStats.pending + shiftStats.pending,
-        cancelled: procedureStats.cancelled + shiftStats.cancelled,
-        totalValue: procedureStats.totalValue + shiftStats.totalValue,
-        completedValue: procedureStats.completedValue + shiftStats.completedValue,
-        pendingValue: procedureStats.pendingValue + shiftStats.pendingValue
+        total: processedProcedureStats.total + shiftStats.total,
+        completed: processedProcedureStats.completed + shiftStats.completed,
+        pending: processedProcedureStats.pending + shiftStats.pending,
+        cancelled: processedProcedureStats.cancelled + shiftStats.cancelled,
+        totalValue: processedProcedureStats.totalValue + shiftStats.totalValue,
+        completedValue: processedProcedureStats.completedValue + shiftStats.completedValue,
+        pendingValue: processedProcedureStats.pendingValue + shiftStats.pendingValue
       }
 
-      const feedbackStats = await computeFeedbackStats(procedures)
-      const { obstetricStats, convenioStats } = computeObstetricAndConvenioStats(procedures)
-      const { hospitalStats, procedureTypeStats, monthlyStats } = computeAdvancedStats(procedures)
+      const feedbackStats = await computeFeedbackStats(processedProcedures)
+      const { obstetricStats, convenioStats } = computeObstetricAndConvenioStats(processedProcedures)
+      const { hospitalStats, procedureTypeStats, surgeonStats, monthlyStats } = computeAdvancedStats(processedProcedures)
 
       return {
-        procedures,
+        procedures: processedProcedures,
         shifts,
         stats: combinedStats,
         feedbackStats,
@@ -329,7 +393,10 @@ export const reportService = {
         convenioStats,
         hospitalStats,
         procedureTypeStats,
+        surgeonStats,
         monthlyStats,
+        isFinancialHidden,
+        groupName,
         doctorName: userResult?.data?.name || undefined,
         doctorGender: (userResult?.data as any)?.gender ?? null,
         period: {
@@ -469,7 +536,7 @@ export const reportService = {
 
   // Gerar HTML do relatório com template profissional e identidade AnestEasy
   generateReportHTML(reportData: ReportData): string {
-    const { procedures, period, feedbackStats, obstetricStats, convenioStats, hospitalStats, procedureTypeStats, monthlyStats } = reportData
+    const { procedures, period, feedbackStats, obstetricStats, convenioStats, hospitalStats, procedureTypeStats, surgeonStats, monthlyStats, isFinancialHidden, groupName } = reportData
     
     // Estatísticas calculadas apenas com os procedimentos do período
     const filteredStats = {
@@ -477,11 +544,11 @@ export const reportService = {
       completed: procedures.filter(p => p.payment_status === 'paid').length,
       pending: procedures.filter(p => p.payment_status === 'pending').length,
       cancelled: procedures.filter(p => p.payment_status === 'cancelled').length,
-      totalValue: procedures.reduce((sum, p) => sum + (p.procedure_value || 0), 0),
-      completedValue: procedures
+      totalValue: isFinancialHidden ? 0 : procedures.reduce((sum, p) => sum + (p.procedure_value || 0), 0),
+      completedValue: isFinancialHidden ? 0 : procedures
         .filter(p => p.payment_status === 'paid')
         .reduce((sum, p) => sum + (p.procedure_value || 0), 0),
-      pendingValue: procedures
+      pendingValue: isFinancialHidden ? 0 : procedures
         .filter(p => p.payment_status === 'pending')
         .reduce((sum, p) => sum + (p.procedure_value || 0), 0)
     }
@@ -544,7 +611,7 @@ export const reportService = {
         <div class="ae-stat-bar-container">
           <div class="ae-stat-bar" style="width: ${(h.count / filteredStats.total * 100) || 0}%"></div>
         </div>
-        <div class="ae-stat-value">${h.count} (${formatCurrency(h.totalValue)})</div>
+        <div class="ae-stat-value">${h.count} ${isFinancialHidden ? '' : `(${formatCurrency(h.totalValue)})`}</div>
       </div>
     `).join('')
 
@@ -554,7 +621,17 @@ export const reportService = {
         <div class="ae-stat-bar-container">
           <div class="ae-stat-bar bg-teal-secondary" style="width: ${(t.count / filteredStats.total * 100) || 0}%"></div>
         </div>
-        <div class="ae-stat-value">${t.count} (${formatCurrency(t.totalValue)})</div>
+        <div class="ae-stat-value">${t.count} ${isFinancialHidden ? '' : `(${formatCurrency(t.totalValue)})`}</div>
+      </div>
+    `).join('')
+
+    const surgeonSection = surgeonStats.map(s => `
+      <div class="ae-stat-row">
+        <div class="ae-stat-label">${s.surgeon}</div>
+        <div class="ae-stat-bar-container">
+          <div class="ae-stat-bar" style="background: #0f766e; width: ${(s.count / filteredStats.total * 100) || 0}%"></div>
+        </div>
+        <div class="ae-stat-value">${s.count} ${isFinancialHidden ? '' : `(${formatCurrency(s.totalValue)})`}</div>
       </div>
     `).join('')
 
@@ -562,8 +639,8 @@ export const reportService = {
       <tr>
         <td>${m.month}</td>
         <td>${m.count}</td>
-        <td>${formatCurrency(m.totalValue)}</td>
-        <td>${formatCurrency(m.count > 0 ? m.totalValue / m.count : 0)}</td>
+        <td>${isFinancialHidden ? '---' : formatCurrency(m.totalValue)}</td>
+        <td>${isFinancialHidden ? '---' : formatCurrency(m.count > 0 ? m.totalValue / m.count : 0)}</td>
       </tr>
     `).join('')
 
@@ -582,10 +659,11 @@ export const reportService = {
             </div>
             <div>
               <h1 class="ae-title">AnestEasy</h1>
-              <p class="ae-subtitle">Relatório Consolidado de Desempenho Anestésico</p>
+              <p class="ae-subtitle">Relatório Consolidado ${groupName ? `de ${groupName}` : 'de Desempenho Anestésico'}</p>
             </div>
           </div>
           <div class="ae-header-right">
+            ${isFinancialHidden ? '<p style="color: #b45309; font-weight: bold; font-size: 10px;">[Privacidade Financeira Ativada]</p>' : ''}
             ${doctorTitle ? `<p><strong>Médico(a):</strong> ${doctorTitle}</p>` : ''}
             <p><strong>Período:</strong> ${formatDate(period.start)} a ${formatDate(period.end)}</p>
             <p><strong>Gerado em:</strong> ${formatDateTime(new Date())}</p>
@@ -602,18 +680,18 @@ export const reportService = {
             </div>
             <div class="ae-summary-card">
               <span class="ae-summary-label">Receita Estimada</span>
-              <span class="ae-summary-value">${formatCurrency(filteredStats.totalValue)}</span>
+              <span class="ae-summary-value">${isFinancialHidden ? '---' : formatCurrency(filteredStats.totalValue)}</span>
               <span class="ae-summary-hint">Base de cadastro</span>
             </div>
             <div class="ae-summary-card">
               <span class="ae-summary-label">Ticket Médio</span>
-              <span class="ae-summary-value">${formatCurrency(ticketMedio)}</span>
+              <span class="ae-summary-value">${isFinancialHidden ? '---' : formatCurrency(ticketMedio)}</span>
               <span class="ae-summary-hint">Valor por caso</span>
             </div>
             <div class="ae-summary-card">
               <span class="ae-summary-label">Recebidos</span>
-              <span class="ae-summary-value ae-text-success">${receiptRate}%</span>
-              <span class="ae-summary-hint">${formatCurrency(filteredStats.completedValue)}</span>
+              <span class="ae-summary-value ae-text-success">${isFinancialHidden ? '---' : `${receiptRate}%`}</span>
+              <span class="ae-summary-hint">${isFinancialHidden ? '---' : formatCurrency(filteredStats.completedValue)}</span>
             </div>
           </div>
         </section>
@@ -635,7 +713,14 @@ export const reportService = {
         </div>
 
         <section class="ae-summary">
-          <h2 class="ae-section-title">4. Evolução Mensal no Período</h2>
+          <h2 class="ae-section-title">4. Distribuição por Cirurgião</h2>
+          <div class="ae-stat-container">
+            ${surgeonSection || '<p class="ae-empty">Nenhum dado disponível</p>'}
+          </div>
+        </section>
+
+        <section class="ae-summary">
+          <h2 class="ae-section-title">5. Evolução Mensal no Período</h2>
           <table class="ae-table">
             <thead>
               <tr>
@@ -652,7 +737,7 @@ export const reportService = {
         </section>
 
         <section class="ae-summary">
-          <h2 class="ae-section-title">5. Qualidade e Feedback</h2>
+          <h2 class="ae-section-title">6. Qualidade e Feedback</h2>
           <div class="ae-feedback-grid">
             <div class="ae-feedback-card">
               <span class="ae-feedback-label">Taxa de Resposta</span>
@@ -671,7 +756,7 @@ export const reportService = {
         </section>
 
         <section class="ae-table-section">
-          <h2 class="ae-section-title">6. Detalhamento de Procedimentos</h2>
+          <h2 class="ae-section-title">7. Detalhamento de Procedimentos</h2>
           <table class="ae-table">
             <thead>
               <tr>
@@ -690,7 +775,7 @@ export const reportService = {
                   <td>${procedure.procedure_type || 'N/A'}</td>
                   <td>${procedure.hospital_clinic || 'N/A'}</td>
                   <td>${formatDate(procedure.procedure_date)}</td>
-                  <td>${formatCurrency(procedure.procedure_value || 0)}</td>
+                  <td>${isFinancialHidden ? '---' : formatCurrency(procedure.procedure_value || 0)}</td>
                   <td>
                     <span class="ae-status ae-status-${procedure.payment_status || 'pending'}">
                       ${procedure.payment_status === 'paid' ? 'Pago' : 'Pendente'}

@@ -7,6 +7,7 @@ export interface User {
   gender: string | null
   phone?: string | null
   cpf?: string | null
+  trialEndsAt?: string | null
 }
 
 export interface ProcedureInsert {
@@ -65,6 +66,10 @@ export interface ProcedureInsert {
   parcelas_recebidas?: number
   observacoes_financeiras?: string
   user_id?: string
+  group_id?: string | null
+  anesthesiologist_user_id?: string | null
+  billing_entity_type?: 'cnpj_anestesista' | 'cnpj_grupo' | '' | null
+  anesthesiologist_role?: 'principal' | 'auxiliar' | '' | null
 
   // Campos de anestesia
   tecnica_anestesica?: string

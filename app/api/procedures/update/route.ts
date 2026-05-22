@@ -18,10 +18,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'id e updates são obrigatórios' }, { status: 400 });
     }
 
+    // Convert empty strings to null for database updates to prevent check constraint violations
+    const dbUpdates = { ...updates };
+    for (const key of Object.keys(dbUpdates)) {
+      if (dbUpdates[key] === '') {
+        dbUpdates[key] = null;
+      }
+    }
+
     // Criptografar campos sensíveis se estiverem presentes nos updates
-    const encryptedUpdates = { ...updates };
-    if (updates.patient_name) {
-      encryptedUpdates.patient_name = encrypt(updates.patient_name);
+    const encryptedUpdates = { ...dbUpdates };
+    if (dbUpdates.patient_name) {
+      encryptedUpdates.patient_name = encrypt(dbUpdates.patient_name);
     }
 
     const { data, error } = await supabaseAdmin

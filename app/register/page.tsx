@@ -17,6 +17,7 @@ export default function Register() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isRegistering, setIsRegistering] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(false)
   
   const [form, setForm] = useState({
     name: '',
@@ -57,6 +58,12 @@ export default function Register() {
     // Validação
     if (!form.name || !form.email || !form.password || !form.specialty || !form.crm || !form.gender || !form.phone || !form.cpf) {
       setError('Por favor, preencha todos os campos obrigatórios')
+      setIsRegistering(false)
+      return
+    }
+
+    if (!termsAccepted) {
+      setError('Você precisa aceitar os Termos de Uso e Política de Privacidade para continuar.')
       setIsRegistering(false)
       return
     }
@@ -257,6 +264,34 @@ export default function Register() {
                 >
                   {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
+              </div>
+            </div>
+
+            <div className="flex items-start space-x-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
+              <div className="flex items-center h-5">
+                <input
+                  id="terms"
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="w-4 h-4 text-teal-600 bg-white border-gray-300 rounded focus:ring-teal-500"
+                />
+              </div>
+              <div className="text-sm">
+                <label htmlFor="terms" className="font-medium text-gray-700">
+                  Aceito as políticas e termos
+                </label>
+                <p className="text-gray-500 text-xs mt-0.5">
+                  Declaro que li e concordo com os{' '}
+                  <Link href="/termos" className="text-teal-600 hover:underline font-semibold" target="_blank">
+                    Termos de Uso
+                  </Link>{' '}
+                  e a{' '}
+                  <Link href="/politica-privacidade" className="text-teal-600 hover:underline font-semibold" target="_blank">
+                    Política de Privacidade
+                  </Link>{' '}
+                  (obrigatório segundo a LGPD).
+                </p>
               </div>
             </div>
 

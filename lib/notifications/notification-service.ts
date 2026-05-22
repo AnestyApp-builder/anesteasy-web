@@ -68,27 +68,32 @@ export const notificationService = {
    * Helper para evitar notificações duplicadas (atualiza se já existe uma não lida do mesmo tipo)
    */
   async upsertFinancialNotification(userId: string, type: NotificationType, title: string, message: string) {
-    // Verificar se já existe uma notificação não lida deste tipo nas últimas 24h
+    // Verificar se já existe qualquer notificação deste tipo nas últimas 24h (lida ou não)
     const twentyFourHoursAgo = new Date();
     twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
 
     const { data: existing } = await supabase
       .from('notifications')
-      .select('id')
+      .select('id, is_read')
       .eq('user_id', userId)
       .eq('type', type)
-      .eq('is_read', false)
       .gt('created_at', twentyFourHoursAgo.toISOString())
+      .order('created_at', { ascending: false })
       .limit(1);
 
     if (existing && existing.length > 0) {
-      // Atualizar a mensagem se já existe uma recente não lida
+      // Já existe uma notificação recente deste tipo
+      if (existing[0].is_read) {
+        // Usuário já leu → não incomodar até amanhã
+        return;
+      }
+      // Ainda não lida → atualizar a mensagem com os dados mais recentes
       await supabase
         .from('notifications')
-        .update({ message, created_at: new Date().toISOString() })
+        .update({ message, updated_at: new Date().toISOString() })
         .eq('id', existing[0].id);
     } else {
-      // Criar nova
+      // Não existe notificação recente → criar nova
       await this.createNotification({ user_id: userId, type, title, message });
     }
   },

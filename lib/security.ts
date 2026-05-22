@@ -68,3 +68,51 @@ export function decrypt(encryptedText: string): string {
     return '[ERRO NA DESCRIPTOGRAFIA]';
   }
 }
+
+/**
+ * Hashes a password securely using Node.js native scrypt.
+ * Returns formatted string: salt:hash
+ */
+export function hashPassword(password: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const salt = crypto.randomBytes(16).toString('hex');
+    crypto.scrypt(password, salt, 64, { N: 16384, r: 8, p: 1 }, (err, derivedKey) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(`${salt}:${derivedKey.toString('hex')}`);
+    });
+  });
+}
+
+/**
+ * Verifies a password against a hash using Node.js native scrypt.
+ */
+export function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    if (!storedHash) {
+      resolve(false);
+      return;
+    }
+    const parts = storedHash.split(':');
+    if (parts.length !== 2) {
+      resolve(false);
+      return;
+    }
+    const [salt, hash] = parts;
+    crypto.scrypt(password, salt, 64, { N: 16384, r: 8, p: 1 }, (err, derivedKey) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      try {
+        const isMatch = crypto.timingSafeEqual(Buffer.from(hash, 'hex'), derivedKey);
+        resolve(isMatch);
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  });
+}
+

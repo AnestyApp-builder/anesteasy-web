@@ -40,23 +40,33 @@ export interface ProcedureWithUser extends Procedure {
 
 export const procedureService = {
   // Buscar procedimentos do usuário (com limite opcional para evitar carregar tudo)
-  async getProcedures(userId: string, options?: { limit?: number; offset?: number }): Promise<Procedure[]> {
+  async getProcedures(userId: string, options?: { limit?: number; offset?: number; groupId?: string }): Promise<Procedure[]> {
     try {
       const limit = options?.limit ?? 500;
       const offset = options?.offset ?? 0;
-      const response = await fetch(`/api/procedures/list?userId=${userId}&limit=${limit}&offset=${offset}`);
+      const groupId = options?.groupId;
+      
+      let url = `/api/procedures/list?userId=${userId}&limit=${limit}&offset=${offset}`;
+      if (groupId) url += `&groupId=${groupId}`;
+      
+      const response = await fetch(url);
       
       if (response.ok) {
         return await response.json();
       }
 
       // Fallback para Supabase direto se a API falhar
-      const query = supabase
+      let query = supabase
         .from('procedures')
         .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
+        .order('procedure_date', { ascending: false })
         .range(offset, offset + limit - 1);
+
+      if (groupId) {
+        query = query.eq('group_id', groupId);
+      } else {
+        query = query.eq('user_id', userId);
+      }
 
       const { data, error } = await query;
       if (error) return [];
@@ -181,31 +191,38 @@ export const procedureService = {
     }
   },
 
-  // Buscar procedimentos por período
-  async getProceduresByDateRange(userId: string, startDate: string, endDate: string): Promise<Procedure[]> {
+  // Buscar procedimentos por período ou grupo
+  async getProceduresByDateRange(userId: string, startDate: string, endDate: string, groupId?: string): Promise<Procedure[]> {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('procedures')
         .select('*')
-        .eq('user_id', userId)
-        .gte('procedure_date', startDate)
-        .lte('procedure_date', endDate)
         .order('procedure_date', { ascending: false })
 
+      if (groupId) {
+        query = query.eq('group_id', groupId)
+      } else {
+        query = query.eq('user_id', userId)
+      }
+
+      if (startDate) query = query.gte('procedure_date', startDate)
+      if (endDate) query = query.lte('procedure_date', endDate)
+
+      const { data, error } = await query
       if (error) {
-        
+        console.error('Erro ao buscar procedimentos por período:', error)
         return []
       }
 
       return data || []
     } catch (error) {
-      
+      console.error('Erro no serviço de procedimentos:', error)
       return []
     }
   },
 
   // Obter estatísticas dos procedimentos
-  async getProcedureStats(userId: string): Promise<{
+  async getProcedureStats(userId: string, groupId?: string): Promise<{
     total: number
     completed: number
     pending: number
@@ -216,10 +233,17 @@ export const procedureService = {
     pendingValue: number
   }> {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('procedures')
         .select('id, payment_status, procedure_value, payment_method, forma_pagamento')
-        .eq('user_id', userId)
+
+      if (groupId) {
+        query = query.eq('group_id', groupId)
+      } else {
+        query = query.eq('user_id', userId)
+      }
+
+      const { data, error } = await query
 
       if (error) {
         
@@ -360,7 +384,12 @@ export const procedureService = {
         .order('numero_parcela', { ascending: true })
 
       if (error) {
-        console.error('Erro ao buscar parcelas em lote:', error)
+        console.error('Erro ao buscar parcelas em lote:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        })
         return {}
       }
 

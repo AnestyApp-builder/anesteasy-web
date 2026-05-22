@@ -3,10 +3,13 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { WorkspaceProvider } from '@/contexts/WorkspaceContext'
 import { NotificationsProvider } from '@/contexts/NotificationsContext'
 import { DeferredVersionInfo } from '@/components/DeferredVersionInfo'
 import { Toaster } from '@/components/ui/Toaster'
 import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister'
+import { Suspense } from 'react'
+import FacebookPixel from '@/components/analytics/FacebookPixel'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -96,21 +99,25 @@ export default function RootLayout({
         <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/apple-splash-828-1792.png" />
         <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/apple-splash-750-1334.png" />
         <link rel="apple-touch-startup-image" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/apple-splash-2048-2732.png" />
-        
       </head>
       <body
         className={`h-full font-sans antialiased ${inter.className}`}
         style={{ backgroundColor: '#f1f5f9' }}
       >
         <AuthProvider>
-          <NotificationsProvider>
-            <ToastProvider>
-              {children}
-              <Toaster />
-              <ServiceWorkerRegister />
-              <DeferredVersionInfo />
-            </ToastProvider>
-          </NotificationsProvider>
+          <WorkspaceProvider>
+            <NotificationsProvider>
+              <ToastProvider>
+                {children}
+                <Toaster />
+                <ServiceWorkerRegister />
+                <DeferredVersionInfo />
+                <Suspense fallback={null}>
+                  <FacebookPixel />
+                </Suspense>
+              </ToastProvider>
+            </NotificationsProvider>
+          </WorkspaceProvider>
         </AuthProvider>
       </body>
     </html>

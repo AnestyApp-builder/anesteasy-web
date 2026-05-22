@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { fetchWithTimeout } from '@/lib/utils'
@@ -179,7 +179,9 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
     return (
       <div className="min-h-screen bg-white">
         {/* Navigation sempre visível em mobile */}
-        <Navigation />
+        <Suspense fallback={<div className="h-16 bg-teal-600/90 w-full fixed top-0" />}>
+          <Navigation />
+        </Suspense>
         <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] pt-16">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
