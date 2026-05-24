@@ -101,7 +101,7 @@ const EditField = memo(({
   field: string
   label: string
   value: string
-  type?: 'text' | 'select' | 'date' | 'time' | 'number'
+  type?: 'text' | 'select' | 'date' | 'time' | 'number' | 'textarea'
   options?: { value: string; label: string }[] | null
   isEditingMode: boolean
   editFormData: any
@@ -247,7 +247,8 @@ const EditField = memo(({
     const simNaoFields = [
       'sangramento', 'nausea_vomito', 'dor', 'acompanhamento_antes',
       'indicacao_cesariana', 'retencao_placenta', 'laceracao_presente',
-      'hemorragia_puerperal', 'transfusao_realizada', 'feedback_solicitado'
+      'hemorragia_puerperal', 'transfusao_realizada', 'feedback_solicitado',
+      'show_to_secretary'
     ]
     
     if (simNaoFields.includes(field)) {
@@ -359,7 +360,7 @@ function ProcedimentosContent() {
   const [loadingAttachments, setLoadingAttachments] = useState<Set<string>>(new Set())
   const [hasAttachments, setHasAttachments] = useState<Record<string, boolean>>({})
   const [showPaymentRegistrationBanner, setShowPaymentRegistrationBanner] = useState(false)
-  const [visibleProceduresCount, setVisibleProceduresCount] = useState(10)
+const [visibleProceduresCount, setVisibleProceduresCount] = useState(10)
   const [deletedProcedure, setDeletedProcedure] = useState<{ procedure: Procedure; index: number } | null>(null)
   const [undoTimeout, setUndoTimeout] = useState<NodeJS.Timeout | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -940,11 +941,10 @@ function ProcedimentosContent() {
     
     setSelectedProcedure((fullProcedure || procedure) as Procedure)
     setShowDetailsModal(true)
-    
-    // Carregar parcelas se o procedimento for parcelado
+
+    // Carregar parcelas
     if (procedure.payment_method === 'Parcelado' || procedure.forma_pagamento === 'Parcelado') {
-      const parcelasData = await procedureService.getParcelas(procedure.id)
-      setParcelas(parcelasData)
+      procedureService.getParcelas(procedure.id).then(setParcelas).catch(() => setParcelas([]))
     } else {
       setParcelas([])
     }
@@ -1071,7 +1071,8 @@ function ProcedimentosContent() {
               numero: index + 1,
               valor: valorParcela,
               recebida: parcelaExistente ? parcelaExistente.recebida : false,
-              data_recebimento: parcelaExistente ? parcelaExistente.data_recebimento : ''
+              data_recebimento: parcelaExistente ? parcelaExistente.data_recebimento : '',
+              billing_entity_type: parcelaExistente ? (parcelaExistente.billing_entity_type || '') : (prev.billing_entity_type || '')
             }
           })
           
@@ -1086,7 +1087,7 @@ function ProcedimentosContent() {
   }
 
   // Função para atualizar parcelas individuais
-  const updateParcela = async (parcelaId: string, field: 'recebida' | 'data_recebimento', value: any) => {
+  const updateParcela = async (parcelaId: string, field: 'recebida' | 'data_recebimento' | 'billing_entity_type', value: any) => {
     if (!selectedProcedure) return
 
     try {
@@ -1119,7 +1120,7 @@ function ProcedimentosContent() {
   }
 
   // Função para atualizar parcelas no modo de edição
-  const updateParcelaEdit = (index: number, field: 'recebida' | 'data_recebimento', value: any) => {
+  const updateParcelaEdit = (index: number, field: 'recebida' | 'data_recebimento' | 'billing_entity_type', value: any) => {
     setEditFormData((prev: any) => {
       const newParcelas = prev.parcelas?.map((parcela: any, i: number) => 
         i === index ? { ...parcela, [field]: value } : parcela
@@ -1159,8 +1160,15 @@ function ProcedimentosContent() {
     
     try {
       const { id, user_id, created_at, updated_at, parcelas, ...updateData } = editFormData
-      
-      
+
+      // Converter campos booleanos que vêm como string do formulário
+      if (updateData.show_to_secretary !== undefined) {
+        updateData.show_to_secretary = updateData.show_to_secretary === 'Sim' || updateData.show_to_secretary === true
+      }
+      if (updateData.feedback_solicitado !== undefined) {
+        updateData.feedback_solicitado = updateData.feedback_solicitado === 'Sim' || updateData.feedback_solicitado === true
+      }
+
       const updatedProcedure = await procedureService.updateProcedure(selectedProcedure.id, updateData)
       
       if (updatedProcedure) {
@@ -1177,7 +1185,8 @@ function ProcedimentosContent() {
               numero_parcela: parcela.numero || parcela.numero_parcela || (index + 1),
               valor_parcela: parcela.valor || parcela.valor_parcela || 0,
               recebida: parcela.recebida || false,
-              data_recebimento: parcela.data_recebimento || null
+              data_recebimento: parcela.data_recebimento || null,
+              billing_entity_type: parcela.billing_entity_type || null
             }
             return parcelaData
           })
@@ -2201,6 +2210,49 @@ function ProcedimentosContent() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
+                  <EditField
+                    field="patient_phone"
+                    label="Telefone do Paciente"
+                    value={selectedProcedure.patient_phone || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="patient_email"
+                    label="Email do Paciente"
+                    value={selectedProcedure.patient_email || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="patient_companion"
+                    label="Acompanhante"
+                    value={selectedProcedure.patient_companion || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="patient_companion_phone"
+                    label="Telefone do Acompanhante"
+                    value={selectedProcedure.patient_companion_phone || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <div className="md:col-span-2">
+                    <EditField
+                      field="patient_notes"
+                      label="Observações do Paciente"
+                      value={selectedProcedure.patient_notes || ''}
+                      type="textarea"
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -2233,6 +2285,14 @@ function ProcedimentosContent() {
                     field="codigo_tssu"
                     label="Código TSSU"
                     value={selectedProcedure.codigo_tssu || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="grupo_anestesico"
+                    label="Grupo Anestésico"
+                    value={selectedProcedure.grupo_anestesico || ''}
                     isEditingMode={isEditingMode}
                     editFormData={editFormData}
                     updateFormField={updateFormField}
@@ -2273,6 +2333,19 @@ function ProcedimentosContent() {
                     editFormData={editFormData}
                     updateFormField={updateFormField}
                   />
+                  
+                  {/* Linha adicional para observarões para ocupar grid span 1 ou 2 */}
+                  <div className="md:col-span-2">
+                    <EditField
+                      field="observacoes_procedimento"
+                      label="Observações do Procedimento"
+                      value={selectedProcedure.observacoes_procedimento || ''}
+                      type="textarea"
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                  </div>
 
                 </div>
               </div>
@@ -2314,6 +2387,20 @@ function ProcedimentosContent() {
                     field="especialidade_cirurgiao"
                     label="Especialidade do Cirurgião"
                     value={selectedProcedure.especialidade_cirurgiao || ''}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                  <EditField
+                    field="anesthesiologist_role"
+                    label="Função do Anestesista"
+                    value={selectedProcedure.anesthesiologist_role || ''}
+                    type="select"
+                    options={[
+                      { value: '', label: 'Não especificado' },
+                      { value: 'principal', label: 'Principal' },
+                      { value: 'auxiliar', label: 'Auxiliar' }
+                    ]}
                     isEditingMode={isEditingMode}
                     editFormData={editFormData}
                     updateFormField={updateFormField}
@@ -2371,18 +2458,20 @@ function ProcedimentosContent() {
 
 
 
-                        <div className="space-y-2 h-[90px]">
-                          <label className="text-sm font-medium text-gray-700 block h-5 truncate">Entidade de Faturamento</label>
-                          <select
-                            value={editFormData.billing_entity_type || ''}
-                            onChange={(e) => updateFormField('billing_entity_type', e.target.value)}
-                            className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-sm sm:text-base"
-                          >
-                            <option value="">Em aberto</option>
-                            <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
-                            <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
-                          </select>
-                        </div>
+                        {editFormData.payment_method !== 'Parcelado' && editFormData.forma_pagamento !== 'Parcelado' && (
+                          <div className="space-y-2 h-[90px]">
+                            <label className="text-sm font-medium text-gray-700 block h-5 truncate">Entidade de Faturamento</label>
+                            <select
+                              value={editFormData.billing_entity_type || ''}
+                              onChange={(e) => updateFormField('billing_entity_type', e.target.value)}
+                              className="w-full h-[52px] px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-sm sm:text-base"
+                            >
+                              <option value="">Em aberto</option>
+                              <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
+                              <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
+                            </select>
+                          </div>
+                        )}
                       </>
                     ) : null}
                   </div>
@@ -2418,18 +2507,20 @@ function ProcedimentosContent() {
 
 
 
-                        <div className="space-y-1.5 sm:space-y-2 min-h-[75px] sm:h-[90px]">
-                          <label className="text-xs sm:text-sm font-medium text-gray-700 block h-4 sm:h-5 truncate">Entidade de Faturamento</label>
-                          <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[48px] sm:h-[52px] flex items-center">
-                            <p className="text-gray-900 font-medium truncate text-sm sm:text-base">
-                              {selectedProcedure.billing_entity_type === 'cnpj_grupo' 
-                                ? 'CNPJ do Grupo' 
-                                : (selectedProcedure.billing_entity_type === 'cnpj_anestesista' 
-                                    ? 'CPF/CNPJ do Anestesista' 
-                                    : 'Em aberto')}
-                            </p>
+                        {selectedProcedure.payment_method !== 'Parcelado' && selectedProcedure.forma_pagamento !== 'Parcelado' && (
+                          <div className="space-y-1.5 sm:space-y-2 min-h-[75px] sm:h-[90px]">
+                            <label className="text-xs sm:text-sm font-medium text-gray-700 block h-4 sm:h-5 truncate">Entidade de Faturamento</label>
+                            <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm h-[48px] sm:h-[52px] flex items-center">
+                              <p className="text-gray-900 font-medium truncate text-sm sm:text-base">
+                                {selectedProcedure.billing_entity_type === 'cnpj_grupo' 
+                                  ? 'CNPJ do Grupo' 
+                                  : (selectedProcedure.billing_entity_type === 'cnpj_anestesista' 
+                                      ? 'CPF/CNPJ do Anestesista' 
+                                      : 'Em aberto')}
+                              </p>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -2988,6 +3079,25 @@ function ProcedimentosContent() {
                                         />
                                       </div>
                                     )}
+
+                                    {((isEditingMode && editFormData.group_id) || (!isEditingMode && selectedProcedure?.group_id)) && (
+                                      <div className="pt-1">
+                                        <label className="block text-xs text-gray-500 mb-1 flex items-center">
+                                          <Building className="w-3.5 h-3.5 mr-1 text-teal-600" />
+                                          Entidade de Faturamento
+                                        </label>
+                                        <select
+                                          value={parcela.billing_entity_type || ''}
+                                          onChange={(e) => isEditingMode ? updateParcelaEdit(index, 'billing_entity_type', e.target.value) : null}
+                                          disabled={!isEditingMode}
+                                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
+                                        >
+                                          <option value="">Em aberto</option>
+                                          <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
+                                          <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
+                                        </select>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               ))}
@@ -3112,6 +3222,25 @@ function ProcedimentosContent() {
                                             />
                                           </div>
                                         )}
+
+                                        {((isEditingMode && editFormData.group_id) || (!isEditingMode && selectedProcedure?.group_id)) && (
+                                          <div className="pt-1">
+                                            <label className="block text-xs text-gray-500 mb-1 flex items-center">
+                                              <Building className="w-3.5 h-3.5 mr-1 text-teal-600" />
+                                              Entidade de Faturamento
+                                            </label>
+                                            <select
+                                              value={parcela.billing_entity_type || ''}
+                                              onChange={(e) => isEditingMode ? updateParcelaEdit(index, 'billing_entity_type', e.target.value) : null}
+                                              disabled={!isEditingMode}
+                                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
+                                            >
+                                              <option value="">Em aberto</option>
+                                              <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
+                                              <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
+                                            </select>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   )
@@ -3141,10 +3270,57 @@ function ProcedimentosContent() {
                       </p>
                     </div>
                   )}
+
+                  {/* Previsão de pagamento e observações financeiras */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                    <EditField
+                      field="expected_payment_date"
+                      label="Previsão de Pagamento"
+                      value={selectedProcedure.expected_payment_date ? selectedProcedure.expected_payment_date.split('T')[0] : ''}
+                      type="date"
+                      isEditingMode={isEditingMode}
+                      editFormData={editFormData}
+                      updateFormField={updateFormField}
+                    />
+                    <div className="md:col-span-2">
+                      <EditField
+                        field="observacoes_financeiras"
+                        label="Observações Financeiras"
+                        value={selectedProcedure.observacoes_financeiras || ''}
+                        type="textarea"
+                        isEditingMode={isEditingMode}
+                        editFormData={editFormData}
+                        updateFormField={updateFormField}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-
+              {/* Configurações de Visibilidade */}
+              <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-6 shadow-sm">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-5 flex items-center">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 bg-slate-100 rounded-lg flex items-center justify-center mr-2 sm:mr-3">
+                    <EyeOff className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
+                  </div>
+                  Configurações
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                  <EditField
+                    field="show_to_secretary"
+                    label="Visível para Secretária"
+                    value={selectedProcedure.show_to_secretary !== false ? 'Sim' : 'Não'}
+                    type="select"
+                    options={[
+                      { value: 'Sim', label: 'Sim — visível para a secretária' },
+                      { value: 'Não', label: 'Não — oculto para a secretária' }
+                    ]}
+                    isEditingMode={isEditingMode}
+                    editFormData={editFormData}
+                    updateFormField={updateFormField}
+                  />
+                </div>
+              </div>
 
               {/* Seção de Anexos */}
               {attachments.length > 0 && (

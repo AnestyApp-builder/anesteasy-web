@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { despesaService } from '@/lib/despesas'
 import type { DadosFinanceirosGrupo } from '@/lib/exportarRelatorioContador'
 
 const MESES_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -76,9 +77,11 @@ export function useFinanceiroDashboard({ groupId, groupName, groupMembers, curre
         }
       }
 
+      // Buscar despesas do grupo no ano
+      const despesas = await despesaService.getTotalByGroup(groupId, anoAtual)
+
       // Cotistas
       const totalCotistas = groupMembers.length
-      const despesas = 0 // Placeholder — não temos tabela de despesas ainda
       const liquidoDistribuivel = faturamentoBruto - despesas
       const cotaIndividual = totalCotistas > 0 ? Math.round(liquidoDistribuivel / totalCotistas) : 0
 

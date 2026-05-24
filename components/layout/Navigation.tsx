@@ -37,6 +37,26 @@ export const Navigation = React.memo(function Navigation() {
   const workspaceDropdownRef = useRef<HTMLDivElement>(null)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
+  const [isSecretary, setIsSecretary] = useState(false)
+  const [secretarySession, setSecretarySession] = useState<any>(null)
+
+  useEffect(() => {
+    const checkSec = async () => {
+      try {
+        const res = await fetch('/api/secretary/session')
+        if (res.ok) {
+          const data = await res.json()
+          if (data.session) {
+            setIsSecretary(true)
+            setSecretarySession(data.session)
+          }
+        }
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    checkSec()
+  }, [])
 
   const fetchSentCount = useCallback(async () => {
     if (user?.id) {
@@ -111,6 +131,33 @@ export const Navigation = React.memo(function Navigation() {
   }, [mobileMenuOpen])
 
   const navigationItems = React.useMemo(() => {
+    if (isSecretary && secretarySession) {
+      const items = [
+        { name: 'Membros', href: `/grupos/${secretarySession.groupId}?tab=members`, icon: Users }
+      ]
+      if (secretarySession.permissions.includes('agenda')) {
+        items.push(
+          { name: 'Agenda', href: `/grupos/${secretarySession.groupId}?tab=agenda`, icon: Calendar },
+          { name: 'Escalas', href: `/grupos/${secretarySession.groupId}?tab=shifts`, icon: Calendar }
+        )
+      }
+      if (secretarySession.permissions.includes('procedures')) {
+        items.push({ name: 'Lançamentos', href: `/grupos/${secretarySession.groupId}?tab=procedures`, icon: FileText })
+      }
+      if (secretarySession.permissions.includes('patients')) {
+        items.push({ name: 'Cadastros', href: `/grupos/${secretarySession.groupId}?tab=patients`, icon: Users })
+      }
+      if (secretarySession.permissions.includes('financials')) {
+        items.push({ name: 'Financeiro', href: `/grupos/${secretarySession.groupId}?tab=finance`, icon: DollarSign })
+      }
+      if (secretarySession.permissions.includes('secretaries')) {
+        items.push({ name: 'Secretárias', href: `/grupos/${secretarySession.groupId}?tab=secretaries`, icon: Users })
+      }
+      const order = ['Agenda', 'Procedimentos', 'Escalas', 'Membros', 'Secretárias', 'Financeiro', 'Cadastros']
+      items.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name))
+      return items
+    }
+
     if (workspaceType === 'personal') {
       return [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -123,23 +170,27 @@ export const Navigation = React.memo(function Navigation() {
       // Group context
       return [
         { name: 'Agenda', href: `/grupos/${currentGroupId}?tab=agenda`, icon: Calendar },
+        { name: 'Lançamentos', href: `/grupos/${currentGroupId}?tab=procedures`, icon: FileText },
         { name: 'Escalas', href: `/grupos/${currentGroupId}?tab=shifts`, icon: Calendar },
         { name: 'Membros', href: `/grupos/${currentGroupId}?tab=members`, icon: Users },
+        { name: 'Secretárias', href: `/grupos/${currentGroupId}?tab=secretaries`, icon: Users },
         { name: 'Financeiro', href: `/grupos/${currentGroupId}?tab=finance`, icon: DollarSign },
-        { name: 'Procedimentos', href: `/grupos/${currentGroupId}?tab=procedures`, icon: FileText },
+        { name: 'Cadastros', href: `/grupos/${currentGroupId}?tab=patients`, icon: Users },
       ]
     }
-  }, [workspaceType, currentGroupId])
+  }, [workspaceType, currentGroupId, isSecretary, secretarySession])
 
   // Handler para clicar no logo
   const handleLogoClick = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    if (isAuthenticated && user) {
+    if (isSecretary && secretarySession) {
+      router.push(`/grupos/${secretarySession.groupId}`)
+    } else if (isAuthenticated && user) {
       router.push('/dashboard')
     } else {
       router.push('/')
     }
-  }, [isAuthenticated, user, router])
+  }, [isAuthenticated, user, router, isSecretary, secretarySession])
 
   return (
     <>
@@ -147,7 +198,7 @@ export const Navigation = React.memo(function Navigation() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           {/* Logo */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 shrink-0">
             <button
               onClick={handleLogoClick}
               className="no-underline focus:outline-none cursor-pointer bg-transparent border-none p-0 shrink-0"
@@ -169,7 +220,7 @@ export const Navigation = React.memo(function Navigation() {
                       <User className="w-4 h-4 text-teal-100" />
                     ) : (
                       <div 
-                        className="w-4 h-4 rounded-full" 
+                        className="w-4 h-4 rounded-full shrink-0" 
                         style={{ backgroundColor: userGroups.find(g => g.id === currentGroupId)?.color || '#14b8a6' }} 
                       />
                     )}
@@ -180,7 +231,7 @@ export const Navigation = React.memo(function Navigation() {
                       }
                     </span>
                   </div>
-                  <div className="w-4 h-4 text-teal-300 opacity-70 group-hover:opacity-100 transition-opacity">
+                  <div className="w-4 h-4 shrink-0 text-teal-300 opacity-70 group-hover:opacity-100 transition-opacity">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                   </div>
                 </button>
@@ -248,47 +299,38 @@ export const Navigation = React.memo(function Navigation() {
           </div>
 
           {/* Desktop Navigation */}
-          {isAuthenticated && (
-            <div className="hidden lg:flex flex-1 justify-center items-center space-x-1 xl:space-x-4 px-2">
-              {navigationItems.map((item) => {
-                const isActive = workspaceType === 'group' 
-                  ? searchParams.get('tab') === new URLSearchParams(item.href.split('?')[1]).get('tab') || (item.name === 'Agenda' && !searchParams.get('tab'))
-                  : pathname === item.href || (item.href === '/dashboard' && pathname === '/')
-                
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center space-x-1 px-2 py-1.5 xl:px-3 xl:py-2 rounded-lg text-xs xl:text-sm font-medium transition-all duration-200 whitespace-nowrap",
-                      isActive 
-                        ? "bg-white text-teal-700 shadow-sm" 
-                        : "text-white hover:bg-white/10"
-                    )}
-                  >
-                    <item.icon className="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0" />
-                    <span className="truncate">{item.name}</span>
-                  </Link>
-                )
-              })}
+          {(isAuthenticated || isSecretary) && (
+            <div className="hidden lg:flex flex-1 min-w-0 overflow-x-auto scrollbar-hide px-2 items-center justify-center" style={{ justifyContent: 'safe center' }}>
+              <div className="flex items-center gap-1 xl:gap-2 w-max">
+                {navigationItems.map((item) => {
+                  const isActive = workspaceType === 'group' 
+                    ? searchParams.get('tab') === new URLSearchParams(item.href.split('?')[1]).get('tab') || (item.name === 'Agenda' && !searchParams.get('tab'))
+                    : pathname === item.href || (item.href === '/dashboard' && pathname === '/')
+                  
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] xl:text-xs font-bold transition-all duration-200 whitespace-nowrap",
+                        isActive 
+                           ? "bg-white text-teal-700 shadow-sm" 
+                          : "text-white hover:bg-white/10"
+                      )}
+                    >
+                      <item.icon className="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0" />
+                      <span className="whitespace-nowrap">{item.name}</span>
+                    </Link>
+                  )
+                })}
+              </div>
             </div>
           )}
 
           {/* User Menu */}
-          {isAuthenticated ? (
+          {(isAuthenticated || isSecretary) ? (
             <div className="hidden lg:flex items-center space-x-2 xl:space-x-3 shrink-0">
-              {/* Botão de Sugestão Desktop - Mais compacto agora */}
-              <button
-                onClick={() => setFeedbackModalOpen(true)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 text-teal-600 bg-white hover:bg-teal-50 shadow-sm border border-transparent"
-              >
-                <MessageSquarePlus className="w-3.5 h-3.5" />
-                <span>Sugerir</span>
-              </button>
-
-              <div className="h-6 w-px bg-white/20 mx-1" />
-              
-              <NotificationBell />
+              {!isSecretary && <NotificationBell />}
               
               <div className="relative" ref={userMenuRef}>
                 <Button 
@@ -303,9 +345,15 @@ export const Navigation = React.memo(function Navigation() {
                 {showUserMenu && (
                   <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 overflow-hidden animate-in fade-in slide-in-from-top-2">
                     <div className="px-3 pb-2 mb-2 border-b border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ajustes da Conta</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {isSecretary ? 'Portal da Secretária' : 'Ajustes da Conta'}
+                      </span>
                     </div>
-                    {workspaceType === 'personal' ? (
+                    {isSecretary ? (
+                      <div className="px-4 py-2 text-xs text-slate-500 font-bold border-b border-slate-100">
+                        {secretarySession?.nome}
+                      </div>
+                    ) : workspaceType === 'personal' ? (
                       <>
                         <Link href="/planos" onClick={() => setShowUserMenu(false)} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 font-medium">
                           <CreditCard className="w-4 h-4" /> Plano
@@ -318,10 +366,31 @@ export const Navigation = React.memo(function Navigation() {
                         </Link>
                       </>
                     ) : (
-                      <Link href={`/grupos/${currentGroupId}?tab=settings`} onClick={() => setShowUserMenu(false)} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 font-medium">
-                        <Settings className="w-4 h-4" /> Ajustes do Grupo
-                      </Link>
+                      <>
+                        <Link href={`/grupos/${currentGroupId}?tab=billing`} onClick={() => setShowUserMenu(false)} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 font-medium">
+                          <CreditCard className="w-4 h-4" /> Assinatura do Grupo
+                        </Link>
+                        <Link href={`/grupos/${currentGroupId}?tab=settings`} onClick={() => setShowUserMenu(false)} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 font-medium">
+                          <Settings className="w-4 h-4" /> Ajustes do Grupo
+                        </Link>
+                      </>
                     )}
+                    
+                    {!isSecretary && (
+                      <div className="border-t border-slate-100 mt-1 pt-1">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault()
+                            setShowUserMenu(false)
+                            setFeedbackModalOpen(true)
+                          }}
+                          className="w-full flex items-center gap-2 px-4 py-2 text-sm text-teal-600 hover:bg-teal-50 font-medium"
+                        >
+                          <MessageSquarePlus className="w-4 h-4" /> Sugerir Melhoria
+                        </button>
+                      </div>
+                    )}
+
                     <div className="border-t border-slate-100 mt-1 pt-1">
                       <button 
                         onClick={(e) => {
@@ -360,7 +429,7 @@ export const Navigation = React.memo(function Navigation() {
 
           {/* Mobile menu button */}
           <div className="lg:hidden flex items-center space-x-2 shrink-0">
-            {isAuthenticated && (
+            {isAuthenticated && !isSecretary && (
               <div className="flex items-center">
                 <NotificationBell />
               </div>
@@ -395,7 +464,7 @@ export const Navigation = React.memo(function Navigation() {
           aria-label="Menu de navegação móvel"
         >
           <div className="px-4 py-2 space-y-1">
-            {isAuthenticated ? (
+            {(isAuthenticated || isSecretary) ? (
               <>
                 {navigationItems.map((item) => {
                   const isActive = workspaceType === 'group' 
@@ -425,27 +494,33 @@ export const Navigation = React.memo(function Navigation() {
                 })}
 
                 {/* Botão de Sugestão Mobile */}
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false)
-                    setFeedbackModalOpen(true)
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 mt-2"
-                >
-                  <div className="flex items-center space-x-3">
-                    <MessageSquarePlus className="w-5 h-5" />
-                    <span>Sugerir Melhoria</span>
-                  </div>
-                  <Sparkles className="w-4 h-4" />
-                </button>
+                {!isSecretary && (
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false)
+                      setFeedbackModalOpen(true)
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 mt-2"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <MessageSquarePlus className="w-5 h-5" />
+                      <span>Sugerir Melhoria</span>
+                    </div>
+                    <Sparkles className="w-4 h-4" />
+                  </button>
+                )}
                 <div className="border-t border-teal-500/30 pt-1 mt-1">
                   <div className="flex items-center space-x-3 px-3 py-2" aria-label="Perfil do usuário">
                     <div className="w-9 h-9 bg-white/10 rounded-full flex items-center justify-center">
                       <User className="w-4 h-4 text-teal-100" aria-hidden="true" />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-sm font-bold text-white">Minha Conta</span>
-                      <span className="text-xs text-teal-200">{user?.email}</span>
+                      <span className="text-sm font-bold text-white">
+                        {isSecretary ? 'Portal da Secretária' : 'Minha Conta'}
+                      </span>
+                      <span className="text-xs text-teal-200">
+                        {isSecretary ? secretarySession?.nome : user?.email}
+                      </span>
                     </div>
                   </div>
                   <Button 
