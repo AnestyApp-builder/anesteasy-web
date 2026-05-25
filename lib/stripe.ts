@@ -40,10 +40,16 @@ export const PLAN_NAMES = {
 // IDs dos preços na Stripe (serão preenchidos após criar os produtos na Stripe Dashboard)
 // Você precisará substituir esses IDs pelos IDs reais após criar os preços na Stripe
 export const STRIPE_PRICE_IDS = {
-  monthly: process.env.STRIPE_PRICE_ID_MONTHLY || '',
-  quarterly: process.env.STRIPE_PRICE_ID_QUARTERLY || '',
-  annual: process.env.STRIPE_PRICE_ID_ANNUAL || '',
-  daily: process.env.STRIPE_PRICE_ID_DAILY || ''
+  monthly: process.env.STRIPE_PRICE_ID_MONTHLY || 'price_1STnz90OPdbN283Dy0Bo5SQ9',
+  quarterly: process.env.STRIPE_PRICE_ID_QUARTERLY || 'price_1STo0P0OPdbN283DwICLYGlA',
+  annual: process.env.STRIPE_PRICE_ID_ANNUAL || 'price_1STo0n0OPdbN283DM1EKyzHw',
+  daily: process.env.STRIPE_PRICE_ID_DAILY || 'price_1SVBLC0OPdbN283D6CArozLY',
+  standard_seat_monthly: process.env.STRIPE_PRICE_ID_STANDARD_SEAT_MONTHLY || 'price_1TZzxm0OPdbN283DXv3FWJsw',
+  standard_seat_quarterly: process.env.STRIPE_PRICE_ID_STANDARD_SEAT_QUARTERLY || 'price_1Ta0030OPdbN283DsAeJIsQH',
+  standard_seat_annual: process.env.STRIPE_PRICE_ID_STANDARD_SEAT_ANNUAL || 'price_1Ta01v0OPdbN283DqPGZ5dur',
+  coord_seat_monthly: process.env.STRIPE_PRICE_ID_COORD_SEAT_MONTHLY || 'price_1Ta03j0OPdbN283DjadzH7xZ',
+  coord_seat_quarterly: process.env.STRIPE_PRICE_ID_COORD_SEAT_QUARTERLY || 'price_1Ta04L0OPdbN283D5EdFb6XQ',
+  coord_seat_annual: process.env.STRIPE_PRICE_ID_COORD_SEAT_ANNUAL || 'price_1Ta0550OPdbN283DrvelJNrj'
 }
 
 /**
@@ -55,7 +61,9 @@ export async function createCheckoutSession({
   planType,
   successUrl,
   cancelUrl,
-  isDaily = false
+  isDaily = false,
+  standardSeats = 0,
+  coordSeats = 0
 }: {
   userId: string
   userEmail: string
@@ -63,6 +71,8 @@ export async function createCheckoutSession({
   successUrl: string
   cancelUrl: string
   isDaily?: boolean
+  standardSeats?: number
+  coordSeats?: number
 }): Promise<Stripe.Checkout.Session> {
   
   if (!stripe) {
@@ -72,11 +82,16 @@ export async function createCheckoutSession({
   // Obter ou criar customer na Stripe
   const customer = await getOrCreateCustomer(userId, userEmail)
   
-  // Obter Price ID do plano
-  const priceId = STRIPE_PRICE_IDS[planType]
+  // Se estiver comprando assentos de equipe, o usuário é considerado Coordenador de Grupo.
+  // Portanto, o plano base dele é o Plano Coordenador (coord_seat) ao invés do individual.
+  const isGroupCoordinator = (standardSeats && standardSeats > 0) || (coordSeats && coordSeats > 0);
+  const resolvedPlanType = planType === 'daily' ? 'monthly' : planType;
+  const priceId = isGroupCoordinator
+    ? (STRIPE_PRICE_IDS as any)[`coord_seat_${resolvedPlanType}`]
+    : STRIPE_PRICE_IDS[planType];
   
   console.log('🔍 Verificando Price ID para planType:', planType)
-  console.log('🔍 STRIPE_PRICE_IDS disponíveis:', Object.keys(STRIPE_PRICE_IDS))
+  console.log('🔍 Coordenador de Grupo:', isGroupCoordinator)
   console.log('🔍 Price ID encontrado:', priceId ? `${priceId.substring(0, 20)}...` : 'NÃO ENCONTRADO')
   
   if (!priceId) {
@@ -121,22 +136,36 @@ export async function createCheckoutSession({
   
   // Criar sessão de checkout
   try {
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+      {
+        price: priceId,
+        quantity: 1,
+      },
+    ]
+ 
+    // Para vagas extras da equipe, ambos (Anestesistas e Secretárias) utilizam o preço padrão de assento (R$ 79,90)
+    const extraSeatsPriceId = (STRIPE_PRICE_IDS as any)[`standard_seat_${resolvedPlanType}`]
+    const totalExtraSeats = (standardSeats || 0) + (coordSeats || 0)
+
+    if (totalExtraSeats > 0 && extraSeatsPriceId) {
+      lineItems.push({
+        price: extraSeatsPriceId,
+        quantity: totalExtraSeats,
+      })
+    }
+
     const sessionConfig: Stripe.Checkout.SessionCreateParams = {
       customer: customer.id,
       mode: mode,
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
+      line_items: lineItems,
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: {
         user_id: userId,
         plan_type: isDaily ? 'test' : planType,
-        is_daily: isDaily ? 'true' : 'false'
+        is_daily: isDaily ? 'true' : 'false',
+        standard_seats: standardSeats.toString(),
+        coord_seats: coordSeats.toString()
       },
       billing_address_collection: isDaily && mode === 'payment' ? 'auto' : 'required',
     }
@@ -158,7 +187,9 @@ export async function createCheckoutSession({
         metadata: {
           user_id: userId,
           plan_type: isDaily ? 'test' : planType,
-          is_daily: isDaily ? 'true' : 'false'
+          is_daily: isDaily ? 'true' : 'false',
+          standard_seats: standardSeats.toString(),
+          coord_seats: coordSeats.toString()
         },
       }
       // Para daily, não permitir códigos promocionais (já que é um teste)
@@ -270,7 +301,20 @@ export async function cancelSubscription(subscriptionId: string): Promise<Stripe
   if (!stripe) {
     throw new Error('Stripe não inicializado. Verifique STRIPE_SECRET_KEY no .env.local')
   }
-  const subscription = await stripe.subscriptions.cancel(subscriptionId)
+  // Agenda o cancelamento para o fim do período atual (não cancela imediatamente)
+  const subscription = await stripe.subscriptions.update(subscriptionId, {
+    cancel_at_period_end: true,
+  })
+  return subscription
+}
+
+export async function reactivateSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
+  if (!stripe) {
+    throw new Error('Stripe não inicializado. Verifique STRIPE_SECRET_KEY no .env.local')
+  }
+  const subscription = await stripe.subscriptions.update(subscriptionId, {
+    cancel_at_period_end: false,
+  })
   return subscription
 }
 

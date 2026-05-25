@@ -38,16 +38,20 @@ export default function ForgotPassword() {
     setIsLoading(true)
 
     try {
-      const result = await authService.resetPassword(email)
-      
-      if (result.success) {
-        setSuccess(result.message)
-        setIsSubmitted(true)
-      } else {
-        setError(result.message)
-      }
+      // Disparar os dois fluxos em paralelo: Supabase Auth (anestesiologistas)
+      // e reset customizado (secretárias). Ambos são silenciosos se o email não existir.
+      await Promise.all([
+        authService.resetPassword(email),
+        fetch('/api/secretary/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        }),
+      ])
+
+      setSuccess('Se o email estiver cadastrado, você receberá um link de recuperação em breve. Verifique sua caixa de entrada e pasta de spam.')
+      setIsSubmitted(true)
     } catch (error) {
-      
       setError('Erro interno. Tente novamente.')
     } finally {
       setIsLoading(false)

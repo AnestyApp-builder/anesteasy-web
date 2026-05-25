@@ -83,6 +83,8 @@ function ConfiguracoesContent() {
   } | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelImmediately, setCancelImmediately] = useState(false);
+  const [paidSeats, setPaidSeats] = useState<{ standard: number; coord: number }>({ standard: 0, coord: 0 });
+  const [loadingPortal, setLoadingPortal] = useState(false);
 
   // Estados para Link da Secretária
   const [secretaryLink, setSecretaryLink] = useState<string | null>(null);
@@ -145,6 +147,18 @@ function ConfiguracoesContent() {
         if (response.ok) {
           const data = await response.json();
           setSubscription(data.subscription);
+
+          // Buscar assentos pagos nos grupos do usuário
+          const { data: groups } = await supabase
+            .from("groups")
+            .select("standard_seats_paid, coord_seats_paid")
+            .eq("created_by", user.id);
+
+          if (groups) {
+            const standard = groups.reduce((acc: number, g: any) => acc + (g.standard_seats_paid || 0), 0);
+            const coord = groups.reduce((acc: number, g: any) => acc + (g.coord_seats_paid || 0), 0);
+            setPaidSeats({ standard, coord });
+          }
 
           // Verificar elegibilidade para reembolso se tiver assinatura
           if (data.subscription && data.subscription.id) {
@@ -703,6 +717,45 @@ function ConfiguracoesContent() {
     }
   };
 
+  const handleOpenPortal = async () => {
+    try {
+      setLoadingPortal(true);
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        alert("Sessão expirada. Faça login novamente.");
+        return;
+      }
+
+      const response = await fetch("/api/stripe/portal", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erro ao abrir o portal do cliente.");
+      }
+
+      if (data.portal_url) {
+        window.location.href = data.portal_url;
+      }
+    } catch (err: any) {
+      setFeedbackMessage({
+        type: "error",
+        message: err.message || "Erro ao carregar o portal da Stripe",
+      });
+      setTimeout(() => setFeedbackMessage(null), 5000);
+    } finally {
+      setLoadingPortal(false);
+    }
+  };
+
   // Função para excluir conta
   const handleDeleteAccount = async () => {
     if (deleteConfirmation !== "EXCLUIR") {
@@ -962,6 +1015,26 @@ function ConfiguracoesContent() {
                         </p>
                       </div>
                     </div>
+                    {(paidSeats.standard > 0 || paidSeats.coord > 0) && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-4">
+                        {paidSeats.standard > 0 && (
+                          <div>
+                            <p className="text-xs text-gray-600 mb-1">Vagas Anestesistas</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {paidSeats.standard} {paidSeats.standard === 1 ? 'vaga ativa' : 'vagas ativas'}
+                            </p>
+                          </div>
+                        )}
+                        {paidSeats.coord > 0 && (
+                          <div>
+                            <p className="text-xs text-gray-600 mb-1">Vagas Secretárias</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {paidSeats.coord} {paidSeats.coord === 1 ? 'vaga ativa' : 'vagas ativas'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {subscription.current_period_end &&
                       subscription.status === "active" && (
                         <div className="mt-3 pt-3 border-t border-primary-200">
@@ -1017,6 +1090,23 @@ function ConfiguracoesContent() {
                   {/* Ações */}
                   {subscription.status === "active" && (
                     <div className="space-y-2">
+                      <Button
+                        onClick={handleOpenPortal}
+                        disabled={loadingPortal}
+                        className="w-full bg-teal-600 hover:bg-teal-700 flex items-center justify-center gap-2"
+                      >
+                        {loadingPortal ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Carregando Portal...
+                          </>
+                        ) : (
+                          <>
+                            <ExternalLink className="w-4 h-4" />
+                            Gerenciar Assinatura & Assentos
+                          </>
+                        )}
+                      </Button>
                       <Button
                         onClick={() => setShowChangePlanModal(true)}
                         disabled={isChangingPlan}

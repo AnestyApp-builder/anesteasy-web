@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Secretária não encontrada' }, { status: 404 })
     }
 
-    if (secretary.status !== 'active') {
+    if (secretary.status !== 'ativo') {
       return NextResponse.json({ error: 'Acesso bloqueado. Conta inativa.' }, { status: 403 })
     }
 
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     // 3. Buscar membros ativos do grupo
     const { data: membersData, error: membersError } = await supabaseAdmin
       .from('group_members')
-      .select('user_id, status, quota_percent, users(id, name, email, crm, cpf, cnpj)')
+      .select('user_id, status, quota_percent, users:user_id(id, name, email, crm, cpf, cnpj)')
       .eq('group_id', groupId)
 
     if (membersError) throw membersError

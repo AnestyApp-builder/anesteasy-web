@@ -147,8 +147,69 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ subscription })
+    // Fetch seats from user and groups
+    let standardSeats = 0;
 
+    const { data: userData } = await supabaseAdmin
+      .from('users')
+      .select('available_standard_seats')
+      .eq('id', user.id)
+      .single();
+
+    if (userData) {
+      standardSeats += userData.available_standard_seats || 0;
+    }
+
+    const { data: adminMembers } = await supabaseAdmin
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', user.id)
+      .eq('role', 'admin');
+
+    if (adminMembers && adminMembers.length > 0) {
+      const groupIds = adminMembers.map((m: any) => m.group_id);
+      const { data: groupsData } = await supabaseAdmin
+        .from('groups')
+        .select('standard_seats_paid')
+        .in('id', groupIds);
+
+      if (groupsData) {
+        groupsData.forEach((g: any) => {
+          standardSeats += g.standard_seats_paid || 0;
+        });
+      }
+    }
+
+    // Auto-heal: if seats are zero but user has a subscription, try to recover from Stripe session metadata
+    if (standardSeats === 0 && subscription.stripe_customer_id && stripe) {
+      try {
+        const sessions = await stripe.checkout.sessions.list({
+          customer: subscription.stripe_customer_id,
+          limit: 5,
+        });
+        for (const session of sessions.data) {
+          const sSeats = parseInt(session.metadata?.standard_seats || '0', 10);
+          if (sSeats > 0) {
+            standardSeats = sSeats;
+            await supabaseAdmin
+              .from('users')
+              .update({ available_standard_seats: sSeats })
+              .eq('id', user.id);
+            console.log(`✅ Vagas recuperadas do Stripe: standard=${sSeats}`);
+            break;
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ Erro ao recuperar vagas do histórico de sessões Stripe:', e);
+      }
+    }
+
+    return NextResponse.json({
+      subscription,
+      seats: {
+        standard: standardSeats
+      }
+    })
   } catch (error: any) {
     console.error('❌ Erro ao buscar assinatura:', error)
     return NextResponse.json(

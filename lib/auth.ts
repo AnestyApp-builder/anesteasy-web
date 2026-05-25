@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { User } from './types'
+export type { User }
 import { logger } from './logger'
 
 export interface AuthState {
@@ -80,7 +81,7 @@ export const authService = {
               phone: authData.user.user_metadata?.phone || null,
               cpf: authData.user.user_metadata?.cpf || null,
               password_hash: '',
-              subscription_plan: 'premium',
+              subscription_plan: 'standard',
               subscription_status: 'active'
             })
             .select()
@@ -530,11 +531,22 @@ export const authService = {
   // Excluir conta do usuário
   async deleteAccount(userId: string): Promise<{ success: boolean; message: string }> {
     try {
+      // Captura o token ANTES de qualquer deleção para não perder a sessão
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        return { success: false, message: 'Sessão expirada. Faça login novamente.' }
+      }
+
       const tablesToClean = [
         'procedures',
-        'goals', 
+        'goals',
         'shifts',
-        'feedback'
+        'feedback',
+        'subscriptions',
+        'payment_transactions',
+        'group_members',
       ]
 
       for (const table of tablesToClean) {
@@ -550,7 +562,7 @@ export const authService = {
         .eq('id', userId)
 
       if (userError) {
-        logger.error('Erro ao excluir anestesista:', userError.message)
+        logger.error('Erro ao excluir usuário:', userError.message)
         return { success: false, message: 'Erro ao excluir dados do usuário.' }
       }
 
@@ -559,6 +571,7 @@ export const authService = {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
           },
           body: JSON.stringify({ userId }),
         })
@@ -567,7 +580,7 @@ export const authService = {
 
         if (!response.ok) {
           logger.error('Erro ao excluir do Auth:', result)
-          return { success: false, message: 'Erro ao excluir conta de autenticação.' }
+          return { success: false, message: result.error || 'Erro ao excluir conta de autenticação.' }
         }
       } catch (apiError) {
         logger.error('Erro na API de exclusão:', apiError)

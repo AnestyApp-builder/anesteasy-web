@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 // ---------------------------------------------------------------------------
 
 export interface DadosFinanceirosGrupo {
-  grupo: { id: string; nome: string; totalCotistas: number };
+  grupo: { id: string; nome: string; totalCotistas: number; isQuotaGroup?: boolean };
   anual: {
     ano: number;
     faturamentoBruto: number;
@@ -51,6 +51,17 @@ export interface DadosFinanceirosGrupo {
     glosado: number;
     glosaEmAberto: number;
     aReceber: number;
+    despesasGrupoMes: number;
+    receitaCnpjGrupoMes: number;
+    detalhamentoMembros: {
+      nome: string;
+      crm: string;
+      producaoOriginal: number;
+      cotaPercentual: number;
+      producaoOuCota: number;
+      despesas: number;
+      aReceber: number;
+    }[];
   };
 }
 

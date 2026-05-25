@@ -82,6 +82,30 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
         if (!mounted) return
 
         if (!session?.access_token) {
+          // Verificar se existe sessão de secretária ativa antes de redirecionar para login
+          try {
+            const secRes = await fetch('/api/secretary/session')
+            if (secRes.ok) {
+              const secData = await secRes.json()
+              if (secData.session) {
+                if (mounted) {
+                  setAuthStatus({
+                    ok: true,
+                    authenticated: true,
+                    email_confirmed: true,
+                    role: 'anestesista',
+                    subscription_status: 'active',
+                    has_access: true
+                  })
+                  setIsChecking(false)
+                }
+                return
+              }
+            }
+          } catch (e) {
+            console.warn('Erro ao verificar sessão de secretária no ProtectedRoute:', e)
+          }
+
           if (!user) {
             router.push('/login')
             setIsChecking(false)
@@ -131,7 +155,7 @@ export function ProtectedRoute({ children, requireSubscription = true }: Protect
         }
 
         if (!status.email_confirmed) {
-          router.push(`/confirm-email?email=${encodeURIComponent(user.email || '')}`)
+          router.push(`/confirm-email?email=${encodeURIComponent(user?.email || '')}`)
           setIsChecking(false)
           return
         }

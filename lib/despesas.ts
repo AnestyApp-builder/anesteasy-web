@@ -9,6 +9,7 @@ export interface Despesa {
   categoria: string
   valor: number
   data_despesa: string
+  anesthesiologist_id?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -36,7 +37,7 @@ export const despesaService = {
     return data || []
   },
 
-  async createGroupDespesa(groupId: string, despesa: { descricao: string; categoria: string; valor: number; data_despesa: string }): Promise<Despesa | null> {
+  async createGroupDespesa(groupId: string, despesa: { descricao: string; categoria: string; valor: number; data_despesa: string; anesthesiologist_id?: string | null }): Promise<Despesa | null> {
     const { data: { session } } = await supabase.auth.getSession()
     const { data, error } = await supabase
       .from('despesas')

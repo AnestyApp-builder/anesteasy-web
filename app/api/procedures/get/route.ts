@@ -31,6 +31,11 @@ export async function GET(req: NextRequest) {
     const decryptedData = {
       ...data,
       patient_name: decrypt(data.patient_name || ''),
+      patient_phone: decrypt(data.patient_phone || ''),
+      patient_email: decrypt(data.patient_email || ''),
+      patient_notes: decrypt(data.patient_notes || ''),
+      patient_companion: decrypt(data.patient_companion || ''),
+      patient_companion_phone: decrypt(data.patient_companion_phone || '')
     };
 
     return NextResponse.json(decryptedData);

@@ -46,7 +46,7 @@ export const procedureService = {
     }
 
     // 2. Campos para criptografar (LGPD)
-    const sensitiveFields = ['patient_name', 'patient_id', 'notes', 'procedure_name'];
+    const sensitiveFields = ['patient_name', 'patient_id', 'notes', 'procedure_name', 'patient_phone', 'patient_email', 'patient_notes', 'patient_companion', 'patient_companion_phone'];
     const encryptedData = { ...dbData };
 
     for (const field of sensitiveFields) {

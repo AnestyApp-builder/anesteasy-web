@@ -523,6 +523,33 @@ export const Navigation = React.memo(function Navigation() {
                       </span>
                     </div>
                   </div>
+                  
+                  {/* Links de Configuração Mobile */}
+                  <div className="pb-2 space-y-1">
+                    {!isSecretary && workspaceType === 'personal' ? (
+                      <>
+                        <Link href="/planos" onClick={() => setMobileMenuOpen(false)} className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-bold text-teal-100 hover:text-white hover:bg-teal-500/20 mx-1">
+                          <CreditCard className="w-4 h-4" /><span>Plano</span>
+                        </Link>
+                        <Link href="/configuracoes" onClick={() => setMobileMenuOpen(false)} className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-bold text-teal-100 hover:text-white hover:bg-teal-500/20 mx-1">
+                          <Settings className="w-4 h-4" /><span>Configurações</span>
+                        </Link>
+                        <Link href="/tutorial" onClick={() => setMobileMenuOpen(false)} className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-bold text-teal-100 hover:text-white hover:bg-teal-500/20 mx-1">
+                          <HelpCircle className="w-4 h-4" /><span>Ajuda</span>
+                        </Link>
+                      </>
+                    ) : !isSecretary && workspaceType === 'group' && currentGroupId ? (
+                      <>
+                        <Link href={`/grupos/${currentGroupId}?tab=billing`} onClick={() => setMobileMenuOpen(false)} className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-bold text-teal-100 hover:text-white hover:bg-teal-500/20 mx-1">
+                          <CreditCard className="w-4 h-4" /><span>Assinatura do Grupo</span>
+                        </Link>
+                        <Link href={`/grupos/${currentGroupId}?tab=settings`} onClick={() => setMobileMenuOpen(false)} className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-bold text-teal-100 hover:text-white hover:bg-teal-500/20 mx-1">
+                          <Settings className="w-4 h-4" /><span>Ajustes do Grupo</span>
+                        </Link>
+                      </>
+                    ) : null}
+                  </div>
+
                   <Button 
                     variant="ghost" 
                     size="sm" 

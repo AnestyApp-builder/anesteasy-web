@@ -62,7 +62,7 @@ async function handleSuccessfulConfirmation(
             name: user.user_metadata?.name || 'Usuário',
             specialty: user.user_metadata?.specialty || 'Anestesiologia',
             crm: user.user_metadata?.crm || null,
-            subscription_plan: 'premium',
+            subscription_plan: 'standard',
             subscription_status: 'active',
             trial_ends_at: trialEndsAt.toISOString(),
           })

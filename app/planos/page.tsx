@@ -13,7 +13,8 @@ import {
   Loader2,
   CheckCircle,
   Gift,
-  X
+  X,
+  Users
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -57,7 +58,7 @@ const PLANS: Plan[] = [
     period: 'trimestral',
     description: 'Economia de 5%',
     popular: true,
-    savings: 'Economize R$ 12,00',
+    savings: '5% OFF',
     features: [
       'Tudo do plano mensal',
       '5% de desconto',
@@ -74,7 +75,7 @@ const PLANS: Plan[] = [
     discount: 10,
     period: 'anual',
     description: 'Melhor custo-benefício',
-    savings: 'Economize R$ 98,00',
+    savings: '10% OFF',
     features: [
       'Tudo do plano trimestral',
       '10% de desconto',
@@ -92,6 +93,7 @@ interface ActiveSubscription {
   status: string
   current_period_end: string
   amount: number
+  cancel_at_period_end?: boolean
 }
 
 interface TrialInfo {
@@ -109,8 +111,25 @@ function PlanosContent() {
   const [loading, setLoading] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
   const [activeSubscription, setActiveSubscription] = useState<ActiveSubscription | null>(null)
+  const [activeSeats, setActiveSeats] = useState<{standard: number} | null>(null)
   const [loadingSubscription, setLoadingSubscription] = useState(true)
   const [trialInfo, setTrialInfo] = useState<TrialInfo | null>(null)
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
+  const [isCanceling, setIsCanceling] = useState(false)
+  const [isReactivating, setIsReactivating] = useState(false)
+
+  const [planMode, setPlanMode] = useState<'individual' | 'group'>('individual')
+
+  const [extraStandardSeats, setExtraStandardSeats] = useState(0)
+
+  const STANDARD_SEAT_UNIT_PRICES = {
+    monthly: 79.90,
+    quarterly: 227.00,
+    annual: 862.90
+  }
+
+
+
 
   useEffect(() => {
     let cancelled = false
@@ -172,8 +191,13 @@ function PlanosContent() {
       const contentType = subscriptionResponse.headers.get('content-type')
       if (contentType && contentType.includes('application/json')) {
         const data = await subscriptionResponse.json()
-        if (subscriptionResponse.ok && data.subscription) {
-          setActiveSubscription(data.subscription)
+        if (subscriptionResponse.ok) {
+          if (data.subscription) {
+            setActiveSubscription(data.subscription)
+          }
+          if (data.seats) {
+            setActiveSeats(data.seats)
+          }
         }
       } else if (subscriptionResponse.status === 404) {
         setActiveSubscription(null)
@@ -236,6 +260,30 @@ function PlanosContent() {
       setLoadingSubscription(false)
     }
   }, [user])
+
+  const handleReactivate = async () => {
+    setIsReactivating(true)
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      const response = await fetch('/api/stripe/reactivate-subscription', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }
+      })
+      const data = await response.json()
+      if (response.ok) {
+        await fetchActiveSubscription()
+      } else {
+        alert(data.error || 'Erro ao reativar renovação')
+      }
+    } catch {
+      alert('Erro ao reativar renovação automática')
+    } finally {
+      setIsReactivating(false)
+    }
+  }
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -376,8 +424,19 @@ function PlanosContent() {
     return days > 0 ? days : 0
   }
 
-  const getPlanName = (planType: string): string => {
-    return PLANS.find(p => p.id === planType)?.name || planType
+  const isUserCoordinator = activeSubscription && (
+    (activeSubscription.plan_type === 'monthly' && activeSubscription.amount >= 179) ||
+    (activeSubscription.plan_type === 'quarterly' && activeSubscription.amount >= 513) ||
+    (activeSubscription.plan_type === 'annual' && activeSubscription.amount >= 1942) ||
+    (activeSeats && activeSeats.standard > 0)
+  )
+
+  const getPlanName = (planType: string, isCoord?: boolean): string => {
+    let name = PLANS.find(p => p.id === planType)?.name || planType
+    if (isCoord) {
+      name = name.replace('Plano ', 'Plano Coordenador ')
+    }
+    return name
   }
 
   const handleSelectPlan = async (plan: Plan) => {
@@ -413,7 +472,8 @@ function PlanosContent() {
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          plan_id: plan.id
+          plan_id: plan.id,
+          standard_seats: extraStandardSeats
         })
       })
 
@@ -521,7 +581,7 @@ function PlanosContent() {
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-gray-900 mb-1">
-                        Assinatura Ativa: {getPlanName(activeSubscription.plan_type)}
+                        Assinatura Ativa: {getPlanName(activeSubscription.plan_type, !!isUserCoordinator)}
                       </h3>
                       <p className="text-sm text-gray-600">
                         {formatCurrency(activeSubscription.amount)} por {activeSubscription.plan_type === 'monthly' ? 'mês' : activeSubscription.plan_type === 'quarterly' ? 'trimestre' : 'ano'}
@@ -537,49 +597,58 @@ function PlanosContent() {
                     </p>
                   </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-primary-200 flex gap-3 flex-wrap">
-                  <Button 
-                    variant="outline" 
-                    onClick={async () => {
-                      if (!confirm('Tem certeza que deseja cancelar sua assinatura? Você perderá o acesso ao final do período atual.')) {
-                        return
-                      }
-                      
-                      try {
-                        const { supabase } = await import('@/lib/supabase')
-                        const { data: { session } } = await supabase.auth.getSession()
-                        
-                        if (!session?.access_token) {
-                          alert('Sessão expirada. Por favor, faça login novamente.')
-                          return
-                        }
-                        
-                        const response = await fetch('/api/stripe/cancel-subscription', {
-                          method: 'POST',
-                          headers: {
-                            'Authorization': `Bearer ${session.access_token}`,
-                            'Content-Type': 'application/json'
-                          }
-                        })
-                        
-                        const data = await response.json()
-                        
-                        if (response.ok) {
-                          alert('Assinatura cancelada com sucesso!')
-                          // Recarregar assinatura
-                          await fetchActiveSubscription()
-                        } else {
-                          alert(data.error || 'Erro ao cancelar assinatura')
-                        }
-                      } catch (error: any) {
-                        alert('Erro ao cancelar assinatura: ' + error.message)
-                      }
-                    }}
-                    className="bg-red-50 hover:bg-red-100 text-red-700 border-red-300"
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Cancelar Assinatura
-                  </Button>
+
+                {/* Vagas do plano — sempre visível para coordenadores */}
+                {isUserCoordinator && (
+                  <div className="mt-6 p-4 bg-white/50 rounded-xl border border-primary-200/50 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 mb-1">Vagas Contratadas</h4>
+                      <p className="text-sm text-gray-600">Composição da sua equipe AnestEasy.</p>
+                    </div>
+                    <div className="flex gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow-sm border border-primary-100">
+                        <Users className="w-4 h-4 text-primary-500" />
+                        <span className="font-bold text-gray-900">1</span>
+                        <span className="text-sm text-gray-600">Coordenador</span>
+                      </div>
+                      {activeSeats && activeSeats.standard > 0 && (
+                        <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow-sm border border-gray-100">
+                          <Users className="w-4 h-4 text-teal-500" />
+                          <span className="font-bold text-gray-900">{activeSeats.standard}</span>
+                          <span className="text-sm text-gray-600">Anestesistas</span>
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 pt-4 border-t border-primary-200 flex gap-3 flex-wrap items-center">
+                  {activeSubscription.cancel_at_period_end ? (
+                    <>
+                      <span className="text-sm text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Renovação cancelada — acesso até {new Date(activeSubscription.current_period_end).toLocaleDateString('pt-BR')}
+                      </span>
+                      <Button
+                        variant="outline"
+                        onClick={handleReactivate}
+                        className="text-teal-600 border-teal-200 hover:bg-teal-50 hover:border-teal-300"
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        Reativar Renovação Automática
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCancelModalOpen(true)}
+                      className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Cancelar Renovação Automática
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -638,10 +707,92 @@ function PlanosContent() {
             </Card>
           ) : null}
 
+          {/* Toggle Individual / Grupo */}
+          <div className="flex justify-center mb-8">
+            <div className="bg-slate-100 p-1 rounded-xl inline-flex relative border border-slate-200">
+              <button
+                onClick={() => {
+                  setPlanMode('individual')
+                  setExtraStandardSeats(0)
+
+                }}
+                className={`relative z-10 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200 ${
+                  planMode === 'individual' ? 'text-teal-700 bg-white shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Anestesista Individual
+              </button>
+              <button
+                onClick={() => {
+                  setPlanMode('group')
+                  if (extraStandardSeats === 0) {
+                    setExtraStandardSeats(1)
+                  }
+                }}
+                className={`relative z-10 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200 ${
+                  planMode === 'group' ? 'text-teal-700 bg-white shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Plano de Grupo (Coordenador)
+              </button>
+            </div>
+          </div>
+
+          {/* Adicionar Vagas Extras à Assinatura */}
+          {planMode === 'group' && (
+          <div className="max-w-3xl mx-auto bg-white p-6 rounded-3xl border border-slate-100 shadow-md mb-12 space-y-4">
+            <h3 className="text-lg font-bold text-slate-900 text-center flex items-center justify-center gap-2">
+              <Users className="w-5 h-5 text-teal-600 animate-pulse" />
+              Deseja adicionar vagas extras para sua equipe?
+            </h3>
+            <p className="text-sm text-slate-500 text-center max-w-xl mx-auto">
+              Ao assinar seu plano, você pode incluir assentos adicionais para Anestesistas e Secretárias extras. Todos os valores serão cobrados juntos em uma única fatura recorrente.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+               <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase flex justify-between">
+                  <span>Assentos Anestesista (Standard)</span>
+                  <span className="text-teal-600 font-bold">
+                    + R$ 79,90/mês
+                  </span>
+                </label>
+                <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
+                  <button
+                    onClick={() => setExtraStandardSeats(Math.max(0, extraStandardSeats - 1))}
+                    className="p-3 hover:bg-slate-100 text-slate-500 font-bold w-12 transition-colors"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min="0"
+                    value={extraStandardSeats}
+                    onChange={(e) => setExtraStandardSeats(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="flex-1 text-center font-bold outline-none border-none bg-transparent"
+                  />
+                  <button
+                    onClick={() => setExtraStandardSeats(extraStandardSeats + 1)}
+                    className="p-3 hover:bg-slate-100 text-slate-500 font-bold w-12 transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+
+            </div>
+          </div>
+          )}
+
           {/* Planos */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
             {PLANS.map((plan) => {
-              const isActivePlan = activeSubscription?.plan_type === plan.id && activeSubscription?.status === 'active'
+              const isCoordinator = planMode === 'group'
+              const isActivePlan = activeSubscription?.plan_type === plan.id && activeSubscription?.status === 'active' && (isCoordinator === !!isUserCoordinator)
+              const basePrice = isCoordinator
+                ? plan.id === 'monthly' ? 179.90 : plan.id === 'quarterly' ? 513.00 : 1942.90
+                : plan.price
+              const totalCardPrice = basePrice + (extraStandardSeats * STANDARD_SEAT_UNIT_PRICES[plan.id])
               
               return (
                 <Card 
@@ -671,8 +822,8 @@ function PlanosContent() {
                 )}
 
                 {plan.savings && (
-                  <div className="absolute -top-4 right-4">
-                    <span className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
+                  <div className="absolute top-4 right-4">
+                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold border border-green-200 shadow-sm">
                       {plan.savings}
                     </span>
                   </div>
@@ -691,14 +842,35 @@ function PlanosContent() {
                       </div>
                     )}
                     <div className="text-4xl font-bold text-primary-600">
-                      {formatCurrency(plan.price)}
+                       {formatCurrency(basePrice)}
                     </div>
                     <div className="text-sm text-gray-500 mt-1">
                       por {plan.period}
                     </div>
-                    {plan.discount && (
+                     {plan.discount && (
                       <div className="text-sm text-green-600 font-semibold mt-1">
                         {plan.discount}% de desconto
+                      </div>
+                    )}
+
+                    {/* Exibir valor total e breakdown se houver assentos adicionais */}
+                    {extraStandardSeats > 0 && (
+                      <div className="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-100 text-left text-xs space-y-1">
+                        <div className="flex justify-between font-bold text-slate-700">
+                          <span>{isCoordinator ? 'Plano Base (Coord.):' : 'Plano Base:'}</span>
+                          <span>{formatCurrency(basePrice)}</span>
+                        </div>
+                        {extraStandardSeats > 0 && (
+                          <div className="flex justify-between text-slate-600">
+                            <span>{extraStandardSeats}x Anestesistas:</span>
+                            <span>{formatCurrency(extraStandardSeats * STANDARD_SEAT_UNIT_PRICES[plan.id])}</span>
+                          </div>
+                        )}
+
+                        <div className="border-t border-slate-200 pt-1.5 flex justify-between font-extrabold text-slate-900 text-sm">
+                          <span>Total Geral:</span>
+                          <span>{formatCurrency(totalCardPrice)}</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -738,7 +910,9 @@ function PlanosContent() {
                     ) : (
                       <>
                         <CreditCard className="w-4 h-4 mr-2" />
-                        Assinar Agora
+                        {extraStandardSeats > 0
+                          ? `Assinar por ${formatCurrency(totalCardPrice)}`
+                          : 'Assinar Agora'}
                       </>
                     )}
                   </Button>
@@ -823,6 +997,93 @@ function PlanosContent() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Modal de Confirmação de Cancelamento */}
+          {isCancelModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl">
+                <div className="flex items-center gap-4 text-red-600 mb-6">
+                  <div className="p-3 bg-red-50 rounded-full">
+                    <X className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-slate-900">Cancelar Renovação Automática</h3>
+                </div>
+
+                <div className="space-y-4 mb-8">
+                  <p className="text-slate-600">Ao cancelar a renovação automática:</p>
+                  <ul className="space-y-3">
+                    <li className="flex gap-2">
+                      <Check className="w-5 h-5 text-teal-500 shrink-0" />
+                      <span className="text-sm text-slate-700"><strong>Acesso garantido:</strong> Você continua usando normalmente até {activeSubscription && new Date(activeSubscription.current_period_end).toLocaleDateString('pt-BR')} ({activeSubscription && calculateDaysRemaining(activeSubscription.current_period_end)} dias restantes).</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <Check className="w-5 h-5 text-teal-500 shrink-0" />
+                      <span className="text-sm text-slate-700"><strong>Sem novas cobranças:</strong> Seu cartão não será cobrado na próxima renovação.</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <Check className="w-5 h-5 text-teal-500 shrink-0" />
+                      <span className="text-sm text-slate-700"><strong>Pode reativar a qualquer momento:</strong> Enquanto o período não vencer, você pode reverter essa decisão.</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <X className="w-5 h-5 text-red-400 shrink-0" />
+                      <span className="text-sm text-slate-700"><strong>Ao vencer:</strong> Seus grupos e vagas extras ficarão inativos se você não reativar antes.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsCancelModalOpen(false)}
+                    className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium transition-colors"
+                    disabled={isCanceling}
+                  >
+                    Manter Renovação
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setIsCanceling(true)
+                      try {
+                        const { supabase } = await import('@/lib/supabase')
+                        const { data: { session } } = await supabase.auth.getSession()
+
+                        if (!session?.access_token) {
+                          alert('Sessão expirada. Por favor, faça login novamente.')
+                          setIsCanceling(false)
+                          return
+                        }
+
+                        const response = await fetch('/api/stripe/cancel-subscription', {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${session.access_token}`,
+                            'Content-Type': 'application/json'
+                          }
+                        })
+
+                        const data = await response.json()
+
+                        if (response.ok) {
+                          setIsCancelModalOpen(false)
+                          fetchActiveSubscription()
+                        } else {
+                          alert(data.error || 'Erro ao cancelar renovação')
+                        }
+                      } catch (error) {
+                        console.error('Erro:', error)
+                        alert('Erro ao cancelar renovação automática')
+                      } finally {
+                        setIsCanceling(false)
+                      }
+                    }}
+                    disabled={isCanceling}
+                    className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors disabled:opacity-70 flex justify-center items-center gap-2"
+                  >
+                    {isCanceling ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Cancelar Renovação'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
       </div>
     </div>
   )

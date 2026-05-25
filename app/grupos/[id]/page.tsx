@@ -6,6 +6,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { getGroupDetails, addGroupMember, removeGroupMember, updateGroup, deleteGroup } from '@/lib/groups'
+import { fechamentoService } from '@/lib/fechamentos'
 import { 
   updateMemberQuota, 
   getMemberQuotaHistory, 
@@ -53,7 +54,8 @@ import {
   Search,
   Filter,
   CreditCard,
-  Pencil
+  Pencil,
+  Download
 } from 'lucide-react'
 import { googleSheetsService } from '@/lib/google-sheets'
 import { useToast } from '@/contexts/ToastContext'
@@ -210,6 +212,7 @@ export default function GroupDetailsPage() {
           tecnica_anestesica: createProcFormData.tecnica_anestesica,
           hospital_clinic: createProcFormData.hospital_clinic,
           group_id: id as string,
+          grupo_anestesico: group?.name || '',
           anesthesiologist_user_id: createProcFormData.anesthesiologist_user_id || null,
           billing_entity_type: createProcFormData.billing_entity_type,
           show_to_secretary: true
@@ -650,13 +653,26 @@ export default function GroupDetailsPage() {
   const [agendaSelectedDate, setAgendaSelectedDate] = useState(new Date())
   const [agendaCurrentMonth, setAgendaCurrentMonth] = useState(new Date())
   
+  // Financeiro e Fechamentos
+  const [financeSubTab, setFinanceSubTab] = useState<'dashboard' | 'fechamentos'>('dashboard')
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0)
+  const [fechamentosHistory, setFechamentosHistory] = useState<any[]>([])
+  const [fechamentoPreview, setFechamentoPreview] = useState<any>(null)
+  const [isGeneratingFechamento, setIsGeneratingFechamento] = useState(false)
+  const [showFechamentoWizard, setShowFechamentoWizard] = useState(false)
+  const [fechamentoCompetencia, setFechamentoCompetencia] = useState('')
+  const [fechamentoEndDate, setFechamentoEndDate] = useState(new Date().toISOString().split('T')[0])
+
+  
   // Despesas do grupo
   const [groupDespesas, setGroupDespesas] = useState<Despesa[]>([])
   const [loadingDespesas, setLoadingDespesas] = useState(false)
-  const [newDespesa, setNewDespesa] = useState({ descricao: '', categoria: 'outros', valor: '', data_despesa: new Date().toISOString().split('T')[0] })
+  const [newDespesa, setNewDespesa] = useState({ descricao: '', categoria: 'outros', valor: '', data_despesa: new Date().toISOString().split('T')[0], anesthesiologist_id: '' })
   const [savingDespesa, setSavingDespesa] = useState(false)
   const [showNewDespesaForm, setShowNewDespesaForm] = useState(false)
   const [showDespesaModal, setShowDespesaModal] = useState(false)
+  const [despesaToDelete, setDespesaToDelete] = useState<{ id: string; descricao: string } | null>(null)
+  const [isDeletingDespesa, setIsDeletingDespesa] = useState(false)
 
   // Modal Mapa de Sala Cirúrgica
   const [showMapaModal, setShowMapaModal] = useState(false)
@@ -676,7 +692,11 @@ export default function GroupDetailsPage() {
 
   const handleDeleteProcedure = async () => {
     if (!selectedProc) return
-    if (!window.confirm('Tem certeza que deseja excluir este procedimento? Esta ação não pode ser desfeita.')) return
+    if (selectedProc.fechamento_id) {
+      addToast({ title: 'Período fechado', description: 'Não é possível excluir procedimentos de um período já encerrado.', variant: 'error' })
+      return
+    }
+    if (!window.confirm(`Excluir o procedimento de ${selectedProc.patient_name || 'este paciente'}? Esta ação não pode ser desfeita.`)) return
     
     try {
       setDeletingProc(true)
@@ -698,8 +718,8 @@ export default function GroupDetailsPage() {
           loadTabProcedures(false)
         }
       } else {
-        const success = await procedureService.deleteProcedure(selectedProc.id)
-        if (success) {
+        const result = await procedureService.deleteProcedure(selectedProc.id)
+        if (result.success) {
           addToast({ title: 'Procedimento excluído com sucesso!', variant: 'success' })
           setShowProcDetailsModal(false)
           if (activeTab === 'agenda') {
@@ -708,7 +728,7 @@ export default function GroupDetailsPage() {
             loadTabProcedures(false)
           }
         } else {
-          throw new Error('Falha ao excluir procedimento')
+          throw new Error(result.message || 'Falha ao excluir procedimento')
         }
       }
     } catch (error: any) {
@@ -727,6 +747,7 @@ export default function GroupDetailsPage() {
   // 6. Aba Procedimentos do Grupo
   const [tabProceduresList, setTabProceduresList] = useState<any[]>([])
   const [tabProceduresSearch, setTabProceduresSearch] = useState('')
+  const [tabProceduresTypeFilter, setTabProceduresTypeFilter] = useState('all')
   const [tabProceduresStatusFilter, setTabProceduresStatusFilter] = useState('all')
   const [tabProceduresMemberFilter, setTabProceduresMemberFilter] = useState('all')
   const [tabProceduresStartDate, setTabProceduresStartDate] = useState('')
@@ -844,9 +865,9 @@ export default function GroupDetailsPage() {
       case 'paid':
         return 'Pago'
       case 'pending':
-        return 'Pendente'
-      case 'cancelled':
         return 'Aguardando'
+      case 'cancelled':
+        return 'Cancelado'
       case 'sent':
         return 'Enviado'
       default:
@@ -1309,7 +1330,7 @@ export default function GroupDetailsPage() {
 
         if (tabProceduresSearch.trim() !== '') {
           const searchVal = `%${tabProceduresSearch.trim()}%`
-          query = query.or(`patient_name.ilike.${searchVal},procedure_name.ilike.${searchVal},procedure_type.ilike.${searchVal},hospital.ilike.${searchVal}`)
+          query = query.or(`patient_name.ilike.${searchVal},procedure_name.ilike.${searchVal},procedure_type.ilike.${searchVal},hospital_clinic.ilike.${searchVal},surgeon_name.ilike.${searchVal},nome_cirurgiao.ilike.${searchVal},anesthesiologist_name.ilike.${searchVal}`)
         }
 
         if (tabProceduresStatusFilter !== 'all') {
@@ -2485,14 +2506,49 @@ export default function GroupDetailsPage() {
                 ========================================== */}
             {activeTab === 'finance' && (
               <div className="space-y-6">
-                {/* Dashboard Financeiro com Gráficos */}
-                {group && (
-                  <FinanceiroDashboardWrapper groupId={id as string} groupName={group.name} groupMembers={group.group_members || []} currentUserId={user?.id} />
-                )}
+                
+                {/* SUB-TABS INTERNAS DO FINANCEIRO */}
+                <div className="flex gap-2 sm:gap-4 border-b border-slate-200">
+                  <button
+                    onClick={() => setFinanceSubTab('dashboard')}
+                    className={`px-4 py-3 text-sm font-bold border-b-2 -mb-[2px] transition-all ${
+                      financeSubTab === 'dashboard' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Painel em Tempo Real
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setFinanceSubTab('fechamentos')
+                      // Carregar histórico de fechamentos
+                      const history = await fechamentoService.getFechamentosByGroup(id as string)
+                      setFechamentosHistory(history)
+                    }}
+                    className={`px-4 py-3 text-sm font-bold border-b-2 -mb-[2px] transition-all ${
+                      financeSubTab === 'fechamentos' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Fechamentos (Extratos)
+                  </button>
+                </div>
+
+                {financeSubTab === 'dashboard' && (
+                  <div className="space-y-6">
+                    {/* Dashboard Financeiro com Gráficos */}
+                    {group && (
+                      <FinanceiroDashboardWrapper
+                        groupId={id as string}
+                        groupName={group.name}
+                        groupMembers={group.group_members || []}
+                        currentUserId={user?.id}
+                        groupType={group.type}
+                        refreshKey={dashboardRefreshKey}
+                      />
+                    )}
 
                 {/* ── DESPESAS DO GRUPO ── */}
                 <section className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 p-6 space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                       <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                         <DollarSign className="w-5 h-5 text-red-500" />
@@ -2500,9 +2556,9 @@ export default function GroupDetailsPage() {
                       </h3>
                       <p className="text-xs text-slate-400 font-medium mt-0.5">Registre gastos do grupo que serão deduzidos do faturamento</p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
                       {groupDespesas.length > 0 && (
-                        <span className="text-sm font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-xl">
+                        <span className="text-sm font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-xl shrink-0 hidden sm:inline-block">
                           Total: {formatCurrency(groupDespesas.reduce((s, d) => s + (d.valor || 0), 0))}
                         </span>
                       )}
@@ -2516,9 +2572,9 @@ export default function GroupDetailsPage() {
                           }
                           setShowNewDespesaForm(v => !v)
                         }}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold transition-all"
+                        className="flex w-full sm:w-auto justify-center items-center gap-1.5 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold transition-all"
                       >
-                        <Plus className="w-4 h-4" /> Nova Despesa
+                        <Plus className="w-4 h-4 shrink-0" /> Nova Despesa
                       </button>
                     </div>
                   </div>
@@ -2558,6 +2614,16 @@ export default function GroupDetailsPage() {
                           onChange={e => setNewDespesa(prev => ({ ...prev, data_despesa: e.target.value }))}
                           className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-teal-500 outline-none bg-white"
                         />
+                        <select
+                          value={newDespesa.anesthesiologist_id}
+                          onChange={e => setNewDespesa(prev => ({ ...prev, anesthesiologist_id: e.target.value }))}
+                          className="sm:col-span-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-teal-500 outline-none bg-white font-medium"
+                        >
+                          <option value="">👥 Vinculado ao Grupo</option>
+                          {group?.group_members?.map((m: any, idx: number) => (
+                            <option key={m.id || idx} value={m.user_id || m.users?.id || ''}>👤 Vinculado a: {m.users?.name || 'Membro'}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -2576,10 +2642,11 @@ export default function GroupDetailsPage() {
                               categoria: newDespesa.categoria,
                               valor: parseFloat(newDespesa.valor),
                               data_despesa: newDespesa.data_despesa,
+                              anesthesiologist_id: newDespesa.anesthesiologist_id || null
                             })
                             if (created) {
                               setGroupDespesas(prev => [created, ...prev])
-                              setNewDespesa({ descricao: '', categoria: 'outros', valor: '', data_despesa: new Date().toISOString().split('T')[0] })
+                              setNewDespesa({ descricao: '', categoria: 'outros', valor: '', data_despesa: new Date().toISOString().split('T')[0], anesthesiologist_id: '' })
                               setShowNewDespesaForm(false)
                             }
                             setSavingDespesa(false)
@@ -2624,6 +2691,11 @@ export default function GroupDetailsPage() {
                               <span className="text-[10px] font-bold text-red-500 uppercase bg-red-100 px-2 py-0.5 rounded-lg shrink-0">
                                 {CATEGORIAS_DESPESA.find(c => c.value === d.categoria)?.label || d.categoria}
                               </span>
+                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg shrink-0">
+                                {d.anesthesiologist_id 
+                                  ? (group?.group_members?.find((m: any) => m.user_id === d.anesthesiologist_id)?.users?.name || 'Membro')
+                                  : 'Grupo'}
+                              </span>
                               <span className="font-semibold text-slate-800 text-sm truncate">{d.descricao}</span>
                             </div>
                             <p className="text-xs text-slate-400 mt-0.5">
@@ -2632,11 +2704,7 @@ export default function GroupDetailsPage() {
                           </div>
                           <span className="font-bold text-red-600 text-base shrink-0">{formatCurrency(d.valor)}</span>
                           <button
-                            onClick={async () => {
-                              if (!d.id) return
-                              await despesaService.deleteDespesa(d.id)
-                              setGroupDespesas(prev => prev.filter(x => x.id !== d.id))
-                            }}
+                            onClick={() => setDespesaToDelete({ id: d.id!, descricao: d.descricao })}
                             className="p-1.5 text-slate-200 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition-all shrink-0"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -2646,131 +2714,82 @@ export default function GroupDetailsPage() {
                     </div>
                   )}
                 </section>
-
-                <hr className="border-stone-200" />
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Simular e Fechar Mês */}
-                  <div className="lg:col-span-1">
-                    <section className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 p-6 space-y-4">
-                      <h3 className="text-lg font-bold text-slate-900">Iniciar Fechamento</h3>
-                      <p className="text-xs text-slate-500 font-medium">Selecione o mês desejado para calcular os repasses por cota.</p>
-                      
-                      <div className="space-y-3">
-                        <input
-                          type="month"
-                          value={closingMonth}
-                          onChange={(e) => setClosingMonth(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none text-sm"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleSimulateClosing}
-                            disabled={isSimulating}
-                            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 py-3 rounded-xl text-sm font-bold transition-all"
-                          >
-                            {isSimulating ? 'Calculando...' : 'Simular'}
-                          </button>
-                          {isAdmin && simulatedData && (
-                            <button
-                              onClick={handleConfirmClosing}
-                              disabled={isClosingMonth}
-                              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl text-sm font-bold transition-all"
-                            >
-                              {isClosingMonth ? 'Fechando...' : 'Efetuar Fechamento'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </section>
                   </div>
+                )} {/* FIM DA VIEW DASHBOARD */}
 
-                  {/* Painel da Simulação */}
-                  <div className="lg:col-span-2">
-                    {simulatedData ? (
-                      <section className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 p-6 space-y-6 animate-in slide-in-from-top-4 duration-300">
-                        <div className="flex justify-between items-center pb-4 border-b">
-                          <div>
-                            <h3 className="text-lg font-bold text-slate-900">Simulação de Repasses</h3>
-                            <p className="text-xs text-slate-500">Mês de Referência: {closingMonth}</p>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-2xl font-black text-teal-600">{formatCurrency(simulatedData.totalRevenue)}</span>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">Total Faturado</p>
-                          </div>
-                        </div>
+                {/* ==========================================
+                    VIEW: FECHAMENTOS (EXTRATOS)
+                    ========================================== */}
+                {financeSubTab === 'fechamentos' && (
+                  <div className="space-y-8 animate-in fade-in duration-300">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-900">Ciclos de Fechamento</h2>
+                        <p className="text-sm text-slate-500">Gere e visualize os extratos financeiros do grupo.</p>
+                      </div>
+                      <button
+                        onClick={() => setShowFechamentoWizard(true)}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md transition-all text-sm w-full sm:w-auto justify-center"
+                      >
+                        <Plus className="w-4 h-4" /> Realizar Novo Fechamento
+                      </button>
+                    </div>
 
-                        <div className="space-y-3">
-                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Divisão de Repasse por Membro</h4>
-                          <div className="divide-y border rounded-2xl overflow-hidden bg-slate-50/50">
-                            {simulatedData.distributions.map((dist, idx) => (
-                              <div key={idx} className="p-4 flex justify-between items-center">
-                                <div>
-                                  <p className="font-bold text-slate-900">{dist.user?.name || 'Médico'}</p>
-                                  {group.type === 'com_cotas' ? (
-                                    <p className="text-[10px] text-slate-500">Cota de {dist.quota_percent}%</p>
-                                  ) : (
-                                    <p className="text-[10px] text-slate-500">Procedimentos individuais executados</p>
-                                  )}
-                                </div>
-                                <span className="font-extrabold text-slate-900">{formatCurrency(dist.gross_amount)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </section>
+                    {/* Lista de Fechamentos Antigos */}
+                    {fechamentosHistory.length === 0 ? (
+                      <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center text-slate-400">
+                        Nenhum fechamento registrado no grupo ainda.
+                      </div>
                     ) : (
-                      <div className="bg-slate-50 border border-slate-100 rounded-3xl p-12 text-center text-slate-400">
-                        Selecione um mês e clique em Simular para visualizar os cálculos de repasse.
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {fechamentosHistory.map(fechamento => (
+                          <div key={fechamento.id} className="bg-white rounded-3xl border border-slate-100 shadow-md p-6 space-y-4 hover:shadow-lg transition-all relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-5">
+                              <Lock className="w-24 h-24" />
+                            </div>
+                            <div className="flex justify-between items-start relative z-10">
+                              <div>
+                                <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2.5 py-0.5 rounded-lg font-black uppercase">
+                                  Fechado
+                                </span>
+                                <h4 className="font-black text-slate-900 text-lg mt-2">{fechamento.competencia}</h4>
+                                <p className="text-xs text-slate-500 mt-1">Data: {new Date(fechamento.data_fechamento).toLocaleDateString('pt-BR')}</p>
+                              </div>
+                            </div>
+                            <div className="pt-4 border-t border-slate-100 space-y-2 relative z-10">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-slate-500 font-medium">Faturamento</span>
+                                <span className="font-bold text-slate-900">{formatCurrency(fechamento.total_faturamento)}</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-red-400 font-medium">Despesas Grupo</span>
+                                <span className="font-bold text-red-500">-{formatCurrency(fechamento.total_despesas_grupo)}</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                // ABRIR MODAL COM EXTRATO
+                                setFechamentoPreview({
+                                  faturamentoBruto: fechamento.total_faturamento,
+                                  despesasGrupoTotal: fechamento.total_despesas_grupo,
+                                  liquidoDistribuivel: fechamento.total_faturamento - fechamento.total_despesas_grupo,
+                                  extratoMembros: fechamento.extrato_membros,
+                                  isViewOnly: true
+                                })
+                                setShowFechamentoWizard(true)
+                                setFechamentoCompetencia(fechamento.competencia)
+                              }}
+                              className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-sm transition-all relative z-10"
+                            >
+                              Ver Extrato Detalhado
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
-                </div>
+                )}
 
-                {/* Histórico de Fechamentos */}
-                <section className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden">
-                  <div className="p-6 border-b border-slate-50 bg-slate-50/50">
-                    <h3 className="text-lg font-bold text-slate-950">Histórico de Fechamentos</h3>
-                  </div>
-                  {closings.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400">Nenhum fechamento registrado no grupo.</div>
-                  ) : (
-                    <div className="divide-y divide-slate-50">
-                      {closings.map(c => (
-                        <div key={c.id} className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/50 transition-colors">
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-950 text-sm sm:text-base truncate">
-                              Ref: {new Date(c.reference_month + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-                            </p>
-                            <p className="text-xs text-slate-500">Total: {formatCurrency(c.total_revenue)}</p>
-                            <span className="text-[10px] bg-teal-50 text-teal-700 px-2.5 py-0.5 rounded font-black uppercase mt-1 inline-block">
-                              {c.status}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              onClick={() => handleViewClosingDetails(c.id)}
-                              className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl transition-all flex items-center gap-1"
-                            >
-                              <Eye className="w-3.5 h-3.5" /> Detalhes
-                            </button>
-                            {isAdmin && (
-                              <button
-                                onClick={() => {
-                                  setReopenClosingId(c.id)
-                                  setShowReopenModal(true)
-                                }}
-                                className="px-3 py-1.5 text-xs border border-red-100 hover:bg-red-50 text-red-600 font-bold rounded-xl transition-all"
-                              >
-                                Reabrir
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
               </div>
             )}
 
@@ -3097,29 +3116,29 @@ export default function GroupDetailsPage() {
             {activeTab === 'procedures' && (
               <div className="space-y-6">
                 {/* HEADER DA ABA */}
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <h3 className="text-base font-bold text-slate-900">Lançamentos do Grupo</h3>
                     <p className="text-xs text-slate-500 font-medium">Procedimentos e despesas registrados no grupo.</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full sm:w-auto">
                     <button
                       onClick={() => openMapaModal(new Date())}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold transition-all text-xs"
+                      className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold transition-all text-xs"
                     >
-                      <Layers className="w-4 h-4 text-teal-600" /> Mapa do Dia
+                      <Layers className="w-4 h-4 text-teal-600" /> <span className="hidden xs:inline">Mapa do Dia</span>
                     </button>
                     <button
                       onClick={() => { setNewDespesa({ descricao: '', categoria: 'outros', valor: '', data_despesa: new Date().toISOString().split('T')[0] }); setShowDespesaModal(true) }}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-red-50 border border-red-200 text-red-600 rounded-xl font-bold transition-all text-xs"
+                      className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-4 py-2.5 bg-white hover:bg-red-50 border border-red-200 text-red-600 rounded-xl font-bold transition-all text-xs"
                     >
-                      <DollarSign className="w-4 h-4" /> Despesas
+                      <DollarSign className="w-4 h-4" /> <span className="hidden xs:inline">Despesas</span>
                     </button>
                     <Link
                       href={`/procedimentos/novo?groupId=${id}`}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold shadow-md transition-all text-xs"
+                      className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold shadow-md transition-all text-xs"
                     >
-                      <Plus className="w-4 h-4" /> Novo Procedimento
+                      <Plus className="w-4 h-4" /> <span className="hidden xs:inline">Novo</span>
                     </Link>
                   </div>
                 </div>
@@ -3128,7 +3147,7 @@ export default function GroupDetailsPage() {
                 <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 p-4 sm:p-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 sm:gap-4 items-end">
                     {/* Barra de Pesquisa */}
-                    <div className="md:col-span-4 space-y-2">
+                    <div className="md:col-span-3 space-y-2">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Buscar</label>
                       <div className="relative">
                         <input
@@ -3145,6 +3164,20 @@ export default function GroupDetailsPage() {
                       </div>
                     </div>
 
+                    {/* Tipo de Lançamento */}
+                    <div className="md:col-span-2 space-y-2">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Tipo</label>
+                      <select
+                        value={tabProceduresTypeFilter}
+                        onChange={(e) => setTabProceduresTypeFilter(e.target.value)}
+                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:border-teal-500 outline-none transition-all font-medium bg-white text-sm"
+                      >
+                        <option value="all">Todos</option>
+                        <option value="procedures">Procedimentos</option>
+                        <option value="expenses">Despesas</option>
+                      </select>
+                    </div>
+
                     {/* Status de Pagamento */}
                     <div className="md:col-span-2 space-y-2">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Status</label>
@@ -3155,14 +3188,14 @@ export default function GroupDetailsPage() {
                       >
                         <option value="all">Todos</option>
                         <option value="paid">Pago</option>
-                        <option value="pending">Pendente</option>
-                        <option value="cancelled">Aguardando</option>
+                        <option value="pending">Aguardando</option>
+                        <option value="cancelled">Cancelado</option>
                         <option value="sent">Enviado</option>
                       </select>
                     </div>
 
                     {/* Executor / Membro */}
-                    <div className="md:col-span-3 space-y-2">
+                    <div className="md:col-span-2 space-y-2">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Executor</label>
                       <select
                         value={tabProceduresMemberFilter}
@@ -3199,32 +3232,33 @@ export default function GroupDetailsPage() {
                   </div>
 
                   {/* Ações adicionais: Buscar e Limpar */}
-                  <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-slate-50">
+                  <div className="flex flex-col sm:flex-row justify-end gap-3 mt-4 pt-4 border-t border-slate-50">
                     {(tabProceduresSearch || tabProceduresStatusFilter !== 'all' || tabProceduresMemberFilter !== 'all' || tabProceduresStartDate || tabProceduresEndDate) && (
                       <button
                         onClick={() => {
                           setTabProceduresSearch('')
+                          setTabProceduresTypeFilter('all')
                           setTabProceduresStatusFilter('all')
                           setTabProceduresMemberFilter('all')
                           setTabProceduresStartDate('')
                           setTabProceduresEndDate('')
                           setTimeout(() => loadTabProcedures(false), 50)
                         }}
-                        className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-500 hover:bg-slate-50 font-bold text-xs transition-all"
+                        className="w-full sm:w-auto px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-500 hover:bg-slate-50 font-bold text-xs transition-all"
                       >
                         Limpar Filtros
                       </button>
                     )}
                     <button
                       onClick={() => openMapaModal(new Date())}
-                      className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-5 py-2.5 rounded-2xl font-bold text-xs transition-all flex items-center gap-2"
+                      className="w-full sm:w-auto justify-center bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-5 py-2.5 rounded-2xl font-bold text-xs transition-all flex items-center gap-2"
                     >
                       <Layers className="w-3.5 h-3.5 text-teal-600" />
                       Mapa do Dia
                     </button>
                     <button
                       onClick={() => loadTabProcedures(false)}
-                      className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-2.5 rounded-2xl font-bold text-xs transition-all shadow-md shadow-teal-100 flex items-center gap-2"
+                      className="w-full sm:w-auto justify-center bg-teal-600 hover:bg-teal-700 text-white px-6 py-2.5 rounded-2xl font-bold text-xs transition-all shadow-md shadow-teal-100 flex items-center gap-2"
                     >
                       <Search className="w-3.5 h-3.5" />
                       Buscar
@@ -3234,10 +3268,27 @@ export default function GroupDetailsPage() {
 
                 {/* LANÇAMENTOS CONTAINER (procedimentos + despesas) */}
                 {(() => {
-                  // Combina procedimentos e despesas ordenados por data (mais recente primeiro)
+                  const allProcedures = tabProceduresTypeFilter !== 'expenses' ? tabProceduresList.map(p => ({ ...p, _tipo: 'procedimento' as const })) : []
+                  
+                  let filteredDespesas = tabProceduresTypeFilter !== 'procedures' ? groupDespesas.map((d: any) => ({ ...d, _tipo: 'despesa' as const })) : []
+                  
+                  if (tabProceduresSearch.trim() !== '') {
+                    const s = tabProceduresSearch.toLowerCase()
+                    filteredDespesas = filteredDespesas.filter((d: any) => 
+                      d.descricao.toLowerCase().includes(s) || 
+                      d.categoria.toLowerCase().includes(s)
+                    )
+                  }
+                  if (tabProceduresStartDate) {
+                    filteredDespesas = filteredDespesas.filter((d: any) => d.data_despesa >= tabProceduresStartDate)
+                  }
+                  if (tabProceduresEndDate) {
+                    filteredDespesas = filteredDespesas.filter((d: any) => d.data_despesa <= tabProceduresEndDate)
+                  }
+                  
                   const lancamentos = [
-                    ...tabProceduresList.map((p: any) => ({ ...p, _tipo: 'procedimento' as const })),
-                    ...groupDespesas.map((d: any) => ({ ...d, _tipo: 'despesa' as const })),
+                    ...allProcedures,
+                    ...filteredDespesas,
                   ].sort((a, b) => {
                     const dA = a._tipo === 'procedimento' ? a.procedure_date : a.data_despesa
                     const dB = b._tipo === 'procedimento' ? b.procedure_date : b.data_despesa
@@ -3273,44 +3324,45 @@ export default function GroupDetailsPage() {
                           return (
                             <div
                               key={`desp-${d.id}`}
-                              className="col-span-full flex items-center gap-4 px-4 py-3 bg-white border border-red-100 rounded-xl shadow-sm group/desp hover:border-red-200 transition-all"
+                              className="col-span-full flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 py-3 bg-white border border-red-100 rounded-xl shadow-sm group/desp hover:border-red-200 transition-all relative"
                               style={{ borderLeft: '4px solid #ef4444' }}
                             >
-                              {/* Ícone */}
-                              <div className="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center shrink-0">
-                                <DollarSign className="w-4 h-4 text-red-400" />
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {/* Ícone */}
+                                <div className="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center shrink-0">
+                                  <DollarSign className="w-4 h-4 text-red-400" />
+                                </div>
+
+                                {/* Categoria e Descrição num flex column em mobile */}
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 flex-1 min-w-0 overflow-hidden">
+                                  <span className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider self-start sm:self-auto shrink-0">
+                                    {CATEGORIAS_DESPESA.find(c => c.value === d.categoria)?.label || d.categoria}
+                                  </span>
+
+                                  <span className="font-bold text-slate-800 text-sm flex-1 truncate">{d.descricao}</span>
+                                </div>
                               </div>
 
-                              {/* Categoria */}
-                              <span className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider shrink-0">
-                                {CATEGORIAS_DESPESA.find(c => c.value === d.categoria)?.label || d.categoria}
-                              </span>
+                              <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 pl-11 sm:pl-0 w-full sm:w-auto">
+                                {/* Data */}
+                                <span className="text-xs text-slate-400 font-medium shrink-0">
+                                  {new Date(d.data_despesa + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </span>
 
-                              {/* Descrição */}
-                              <span className="font-bold text-slate-800 text-sm flex-1 truncate">{d.descricao}</span>
+                                {/* Valor */}
+                                <span className="font-extrabold text-red-600 text-sm shrink-0 min-w-[90px] text-right">
+                                  − {formatCurrency(d.valor)}
+                                </span>
 
-                              {/* Data */}
-                              <span className="text-xs text-slate-400 font-medium shrink-0 hidden sm:block">
-                                {new Date(d.data_despesa + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                              </span>
-
-                              {/* Valor */}
-                              <span className="font-extrabold text-red-600 text-sm shrink-0 min-w-[90px] text-right">
-                                − {formatCurrency(d.valor)}
-                              </span>
-
-                              {/* Excluir */}
-                              <button
-                                onClick={async () => {
-                                  if (!d.id) return
-                                  await despesaService.deleteDespesa(d.id)
-                                  setGroupDespesas(prev => prev.filter(x => x.id !== d.id))
-                                }}
-                                className="p-1.5 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover/desp:opacity-100 transition-all shrink-0"
-                                title="Excluir despesa"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                                {/* Excluir */}
+                                <button
+                                  onClick={() => setDespesaToDelete({ id: d.id!, descricao: d.descricao })}
+                                  className="p-1.5 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-lg sm:opacity-0 sm:group-hover/desp:opacity-100 transition-all shrink-0 absolute top-2 right-2 sm:static sm:top-auto sm:right-auto"
+                                  title="Excluir despesa"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           )
                         }
@@ -3605,8 +3657,11 @@ export default function GroupDetailsPage() {
                       <p className="text-sm text-slate-500">Gerencie pacientes, cirurgiões parceiros e anestesistas backup do grupo.</p>
                     </div>
                   </div>
-
-                  <div className="flex border-b border-slate-100 gap-1 sm:gap-2">
+                  <div className="sm:hidden flex items-center justify-end gap-1.5 text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">
+                    <span>Arraste para os lados</span>
+                    <svg className="w-3.5 h-3.5 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                  </div>
+                  <div className="flex border-b border-slate-100 gap-1 sm:gap-2 overflow-x-auto scrollbar-hide">
                     {[
                       { id: 'patients', label: 'Pacientes', count: patientsList.length },
                       { id: 'surgeons', label: 'Cirurgiões', count: surgeonsList.length },
@@ -3615,7 +3670,7 @@ export default function GroupDetailsPage() {
                       <button
                         key={sub.id}
                         onClick={() => setCadastroSubTab(sub.id as any)}
-                        className={`px-3 sm:px-5 py-3 font-bold text-xs sm:text-sm transition-all border-b-2 -mb-[2px] flex items-center gap-1.5 sm:gap-2 ${
+                        className={`px-3 sm:px-5 py-3 font-bold text-xs sm:text-sm transition-all border-b-2 -mb-[2px] flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 ${
                           cadastroSubTab === sub.id
                             ? 'border-teal-600 text-teal-600'
                             : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -3663,7 +3718,7 @@ export default function GroupDetailsPage() {
                             })
                             setShowCreatePatientModal(true)
                           }}
-                          className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-3 rounded-2xl font-bold shadow-lg shadow-teal-500/20 text-sm transition-all flex items-center justify-center gap-2 self-start sm:self-center"
+                          className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-3 rounded-2xl font-bold shadow-lg shadow-teal-500/20 text-sm transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
                         >
                           <UserPlus className="w-5 h-5" />
                           <span>Cadastrar Paciente</span>
@@ -3824,7 +3879,7 @@ export default function GroupDetailsPage() {
                             })
                             setShowCreateSurgeonModal(true)
                           }}
-                          className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-3 rounded-2xl font-bold shadow-lg shadow-teal-500/20 text-sm transition-all flex items-center justify-center gap-2 self-start sm:self-center"
+                          className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-3 rounded-2xl font-bold shadow-lg shadow-teal-500/20 text-sm transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
                         >
                           <UserPlus className="w-5 h-5" />
                           <span>Cadastrar Cirurgião</span>
@@ -3974,7 +4029,7 @@ export default function GroupDetailsPage() {
                             })
                             setShowCreateBackupModal(true)
                           }}
-                          className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-3 rounded-2xl font-bold shadow-lg shadow-teal-500/20 text-sm transition-all flex items-center justify-center gap-2 self-start sm:self-center"
+                          className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-3 rounded-2xl font-bold shadow-lg shadow-teal-500/20 text-sm transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
                         >
                           <UserPlus className="w-5 h-5" />
                           <span>Cadastrar Anestesista Backup</span>
@@ -4157,13 +4212,13 @@ export default function GroupDetailsPage() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Cor do Grupo</label>
-                    <div className="flex gap-3 p-1">
+                    <div className="flex gap-3 p-1 overflow-x-auto scrollbar-hide pb-2">
                       {['#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#F59E0B', '#111827'].map((c) => (
                         <button
                           key={c}
                           onClick={() => setEditColor(c)}
                           className={cn(
-                            "w-8 h-8 rounded-full transition-all hover:scale-125",
+                            "w-8 h-8 rounded-full shrink-0 transition-all hover:scale-125",
                             editColor === c ? "ring-4 ring-offset-2 ring-slate-200 scale-110 shadow-lg" : "shadow-sm"
                           )}
                           style={{ backgroundColor: c }}
@@ -4187,7 +4242,8 @@ export default function GroupDetailsPage() {
                     </label>
                   </div>
 
-                  <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-4">
+                  {/* Oculto até segunda ordem */}
+                  <div className="hidden bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-4">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
                         <div className="bg-indigo-600 p-2 rounded-lg text-white">
@@ -6860,14 +6916,29 @@ export default function GroupDetailsPage() {
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Data</label>
-                  <input
-                    type="date"
-                    value={newDespesa.data_despesa}
-                    onChange={e => setNewDespesa(prev => ({ ...prev, data_despesa: e.target.value }))}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:border-teal-500 outline-none"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Data</label>
+                    <input
+                      type="date"
+                      value={newDespesa.data_despesa}
+                      onChange={e => setNewDespesa(prev => ({ ...prev, data_despesa: e.target.value }))}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:border-teal-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Responsável</label>
+                    <select
+                      value={newDespesa.anesthesiologist_id || ''}
+                      onChange={e => setNewDespesa(prev => ({ ...prev, anesthesiologist_id: e.target.value }))}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:border-teal-500 outline-none bg-white font-medium truncate"
+                    >
+                      <option value="">👥 Grupo Inteiro</option>
+                      {group?.group_members?.map((m: any, idx: number) => (
+                        <option key={m.id || idx} value={m.user_id || m.users?.id || ''}>👤 {m.users?.name || 'Membro'}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -6889,12 +6960,13 @@ export default function GroupDetailsPage() {
                       categoria: newDespesa.categoria,
                       valor: parseFloat(newDespesa.valor),
                       data_despesa: newDespesa.data_despesa,
+                      anesthesiologist_id: newDespesa.anesthesiologist_id || null
                     })
                     if (created) {
                       setGroupDespesas(prev => [created, ...prev])
                       addToast({ title: 'Despesa registrada!', description: `${newDespesa.descricao} — ${formatCurrency(parseFloat(newDespesa.valor))}`, variant: 'success' })
                       setShowDespesaModal(false)
-                      setNewDespesa({ descricao: '', categoria: 'outros', valor: '', data_despesa: new Date().toISOString().split('T')[0] })
+                      setNewDespesa({ descricao: '', categoria: 'outros', valor: '', data_despesa: new Date().toISOString().split('T')[0], anesthesiologist_id: '' })
                     }
                     setSavingDespesa(false)
                   }}
@@ -6948,28 +7020,38 @@ export default function GroupDetailsPage() {
               <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
-                <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 shrink-0">
-                  <Layers className="w-4 h-4 text-teal-600 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <h2 className="text-sm font-black text-slate-900 leading-none">Mapa de Sala Cirúrgica</h2>
-                    <p className="text-[11px] text-slate-400 capitalize mt-0.5 truncate">
-                      {format(mapaDate, "EEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
-                    </p>
+                <div className="px-4 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center justify-between w-full sm:w-auto">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Layers className="w-4 h-4 text-teal-600 shrink-0" />
+                      <div className="min-w-0">
+                        <h2 className="text-sm font-black text-slate-900 whitespace-nowrap truncate">Mapa de Sala Cirúrgica</h2>
+                        <p className="text-[11px] text-slate-400 capitalize mt-0.5 truncate">
+                          {format(mapaDate, "EEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Botão fechar visível no mobile ao lado do título */}
+                    <button onClick={() => setShowMapaModal(false)} className="sm:hidden ml-2 p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-all shrink-0">
+                      <X className="w-5 h-5" />
+                    </button>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  
+                  <div className="flex items-center gap-1 shrink-0 justify-center w-full sm:w-auto">
                     <button onClick={() => setMapaDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-all">
-                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <ChevronLeft className="w-4 h-4" />
                     </button>
                     <input
                       type="date"
                       value={format(mapaDate, 'yyyy-MM-dd')}
                       onChange={e => setMapaDate(new Date(e.target.value + 'T12:00:00'))}
-                      className="text-[11px] font-bold text-slate-600 border border-slate-200 rounded-lg px-2 py-1.5 focus:border-teal-500 outline-none"
+                      className="text-xs font-bold text-slate-600 border border-slate-200 rounded-lg px-2 py-1.5 focus:border-teal-500 outline-none w-full sm:w-auto text-center"
                     />
                     <button onClick={() => setMapaDate(d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n })} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-all">
-                      <ChevronRight className="w-3.5 h-3.5" />
+                      <ChevronRight className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setShowMapaModal(false)} className="ml-1 p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-all">
+                    {/* Botão fechar visível no desktop */}
+                    <button onClick={() => setShowMapaModal(false)} className="hidden sm:block ml-2 p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-all shrink-0">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
@@ -7142,18 +7224,269 @@ export default function GroupDetailsPage() {
           )
         })()}
 
+      {/* MODAL CONFIRMAÇÃO DE EXCLUSÃO DE DESPESA */}
+      {despesaToDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setDespesaToDelete(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">Excluir esta despesa?</h3>
+                <p className="text-sm text-slate-500 mt-1 break-words">
+                  <span className="font-semibold text-slate-700">{despesaToDelete.descricao}</span> será removida permanentemente. Esta ação não pode ser desfeita.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                onClick={() => setDespesaToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={isDeletingDespesa}
+                onClick={async () => {
+                  if (!despesaToDelete) return
+                  const despesa = groupDespesas.find(x => x.id === despesaToDelete.id)
+                  if (despesa && (despesa as any).fechamento_id) {
+                    addToast({ title: 'Período fechado', description: 'Não é possível excluir despesas de um período já encerrado.', variant: 'error' })
+                    setDespesaToDelete(null)
+                    return
+                  }
+                  setIsDeletingDespesa(true)
+                  try {
+                    await despesaService.deleteDespesa(despesaToDelete.id)
+                    setGroupDespesas(prev => prev.filter(x => x.id !== despesaToDelete.id))
+                    setDashboardRefreshKey(prev => prev + 1)
+                    setDespesaToDelete(null)
+                  } finally {
+                    setIsDeletingDespesa(false)
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingDespesa ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL FECHAMENTO WIZARD */}
+      {showFechamentoWizard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowFechamentoWizard(false)} />
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col relative animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/50 shrink-0">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">{fechamentoPreview?.isViewOnly ? 'Extrato do Fechamento' : 'Novo Fechamento'}</h3>
+                {fechamentoPreview?.isViewOnly ? (
+                  <p className="text-xs text-slate-500 font-medium">Competência: {fechamentoCompetencia}</p>
+                ) : (
+                  <p className="text-xs text-slate-500 font-medium">Calcule o repasse abatendo as despesas automaticamente.</p>
+                )}
+              </div>
+              <button onClick={() => setShowFechamentoWizard(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-slate-50">
+              {!fechamentoPreview ? (
+                <div className="max-w-md mx-auto bg-white p-8 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 space-y-6">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Competência (Ex: Maio/2026)</label>
+                    <input
+                      type="text"
+                      placeholder="Nome do Ciclo"
+                      value={fechamentoCompetencia}
+                      onChange={e => setFechamentoCompetencia(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none text-slate-800 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Data de Corte (Apenas para base de dados)</label>
+                    <input
+                      type="date"
+                      value={fechamentoEndDate}
+                      onChange={e => setFechamentoEndDate(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none text-slate-800 font-bold"
+                    />
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!fechamentoCompetencia) return
+                      setIsGeneratingFechamento(true)
+                      try {
+                        const preview = await fechamentoService.previewFechamento(id as string, fechamentoEndDate, group?.group_members || [])
+                        setFechamentoPreview(preview)
+                      } catch (e) {
+                        addToast({ title: 'Erro ao gerar prévia', variant: 'error' })
+                      } finally {
+                        setIsGeneratingFechamento(false)
+                      }
+                    }}
+                    disabled={isGeneratingFechamento || !fechamentoCompetencia}
+                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-md transition-all flex justify-center items-center gap-2"
+                  >
+                    {isGeneratingFechamento ? 'Processando dados...' : 'Gerar Prévia de Extratos'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Cards Resumo */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-center">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Faturamento Bruto</span>
+                      <span className="text-2xl font-black text-teal-600 mt-1">{formatCurrency(fechamentoPreview.faturamentoBruto)}</span>
+                    </div>
+                    <div className="bg-white p-5 rounded-2xl border border-red-100 shadow-sm flex flex-col justify-center">
+                      <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">Despesas Comuns do Grupo</span>
+                      <span className="text-2xl font-black text-red-500 mt-1">-{formatCurrency(fechamentoPreview.despesasGrupoTotal)}</span>
+                    </div>
+                    <div className="bg-indigo-600 p-5 rounded-2xl shadow-md flex flex-col justify-center">
+                      <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest">Líquido Distribuível</span>
+                      <span className="text-2xl font-black text-white mt-1">{formatCurrency(fechamentoPreview.liquidoDistribuivel)}</span>
+                    </div>
+                  </div>
+
+                  {/* Detalhamento por Membro */}
+                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                    <div className="p-4 border-b border-slate-50 bg-slate-50/50">
+                      <h4 className="font-bold text-slate-800">Extratos Individuais</h4>
+                    </div>
+                    <div className="divide-y divide-slate-50">
+                      {fechamentoPreview.extratoMembros.map((m: any, idx: number) => (
+                        <div key={idx} className="p-5 flex flex-col sm:flex-row justify-between gap-4">
+                          <div>
+                            <p className="font-bold text-slate-900">{m.nome}</p>
+                            {group?.type === 'com_cotas' ? (
+                              <p className="text-[10px] font-bold text-slate-500 uppercase">Cota de {m.cota}% ({formatCurrency(m.valorCotaGeral)})</p>
+                            ) : (
+                              <p className="text-[10px] font-bold text-slate-500 uppercase">Produção Bruta: {formatCurrency(m.producaoBruta)}</p>
+                            )}
+                          </div>
+                          
+                          <div className="flex gap-4 items-center">
+                            {m.despesasVinculadas > 0 && (
+                              <div className="text-right">
+                                <span className="text-[10px] font-bold text-red-400 block">DEDUÇÃO INDIVIDUAL</span>
+                                <span className="text-sm font-bold text-red-600">-{formatCurrency(m.despesasVinculadas)}</span>
+                              </div>
+                            )}
+                            <div className="text-right pl-4 sm:border-l border-slate-100">
+                              <span className="text-[10px] font-bold text-indigo-400 block">LÍQUIDO A PAGAR</span>
+                              <span className="text-lg font-black text-indigo-700">{formatCurrency(Math.max(0, m.liquidoReceber))}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer do Modal */}
+            <div className="p-6 border-t border-slate-100 bg-white flex justify-between gap-3 shrink-0 flex-wrap">
+              <div>
+                {fechamentoPreview?.isViewOnly && (
+                  <button
+                    onClick={() => {
+                      if (!fechamentoPreview) return
+                      const rows: string[][] = [
+                        ['Competência', fechamentoCompetencia],
+                        ['Faturamento Bruto', String(fechamentoPreview.faturamentoBruto)],
+                        ['Despesas do Grupo', String(fechamentoPreview.despesasGrupoTotal)],
+                        ['Líquido Distribuível', String(fechamentoPreview.liquidoDistribuivel)],
+                        [],
+                        ['Médico', 'Cota (%)', 'Produção Bruta', 'Deduções Individuais', 'Líquido a Receber'],
+                        ...(fechamentoPreview.extratoMembros || []).map((m: any) => [
+                          m.nome,
+                          String(m.cota),
+                          String(m.producaoBruta),
+                          String(m.despesasVinculadas),
+                          String(Math.max(0, m.liquidoReceber))
+                        ])
+                      ]
+                      const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+                      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `extrato-${fechamentoCompetencia.replace(/\//g, '-')}.csv`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                    className="px-5 py-2.5 bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold rounded-xl text-sm transition-all flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" /> Exportar CSV
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (!fechamentoPreview || fechamentoPreview.isViewOnly) {
+                    setShowFechamentoWizard(false)
+                    setFechamentoPreview(null)
+                  } else {
+                    setFechamentoPreview(null) // Voltar
+                  }
+                }}
+                className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition-all"
+              >
+                {fechamentoPreview?.isViewOnly ? 'Fechar' : (fechamentoPreview ? 'Voltar' : 'Cancelar')}
+              </button>
+
+              {fechamentoPreview && !fechamentoPreview.isViewOnly && (
+                <button
+                  onClick={async () => {
+                    setIsGeneratingFechamento(true)
+                    try {
+                      const res = await fechamentoService.executeFechamento(id as string, fechamentoCompetencia, fechamentoPreview)
+                      if (res) {
+                        addToast({ title: 'Fechamento finalizado!', variant: 'success' })
+                        setFechamentosHistory(prev => [res, ...prev])
+                        setShowFechamentoWizard(false)
+                        setFechamentoPreview(null)
+                      }
+                    } catch (e) {
+                      addToast({ title: 'Erro ao fechar mês', variant: 'error' })
+                    } finally {
+                      setIsGeneratingFechamento(false)
+                    }
+                  }}
+                  disabled={isGeneratingFechamento}
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow-md transition-all flex items-center gap-2"
+                >
+                  {isGeneratingFechamento ? 'Salvando...' : <><Lock className="w-4 h-4" /> Efetivar Fechamento</>}
+                </button>
+              )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       </Layout>
     </ProtectedRoute>
   )
 }
 
 // Wrapper para o Dashboard Financeiro (usa o hook separadamente para evitar rerenders desnecessários)
-function FinanceiroDashboardWrapper({ groupId, groupName, groupMembers, currentUserId }: {
-  groupId: string, 
-  groupName: string, 
+function FinanceiroDashboardWrapper({ groupId, groupName, groupMembers, currentUserId, groupType, refreshKey }: {
+  groupId: string,
+  groupName: string,
   groupMembers: any[],
-  currentUserId?: string
+  currentUserId?: string,
+  groupType?: string
+  refreshKey?: number
 }) {
-  const { dados, loading, erro } = useFinanceiroDashboard({ groupId, groupName, groupMembers, currentUserId })
+  const { dados, loading, erro } = useFinanceiroDashboard({ groupId, groupName, groupMembers, currentUserId, groupType, refreshKey })
   return <DashboardFinanceiroGrupo dados={dados} loading={loading} erro={erro} />
 }

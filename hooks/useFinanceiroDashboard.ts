@@ -19,12 +19,16 @@ interface UseFinanceiroDashboardProps {
     quota_percent?: number
   }>
   currentUserId?: string
+  groupType?: string
+  refreshKey?: number
 }
 
-export function useFinanceiroDashboard({ groupId, groupName, groupMembers, currentUserId }: UseFinanceiroDashboardProps) {
+export function useFinanceiroDashboard({ groupId, groupName, groupMembers, currentUserId, groupType, refreshKey }: UseFinanceiroDashboardProps) {
   const [dados, setDados] = useState<DadosFinanceirosGrupo | null>(null)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
+
+  const isQuotaGroup = groupType === 'com_cotas'
 
   const carregarDados = useCallback(async () => {
     try {
@@ -79,6 +83,15 @@ export function useFinanceiroDashboard({ groupId, groupName, groupMembers, curre
 
       // Buscar despesas do grupo no ano
       const despesas = await despesaService.getTotalByGroup(groupId, anoAtual)
+
+      // Buscar todas as despesas detalhadas para calcular as mensais
+      const { data: todasDespesasGroup } = await supabase
+        .from('despesas')
+        .select('*')
+        .eq('group_id', groupId)
+        .gte('data_despesa', `${anoAtual}-01-01`)
+        .lte('data_despesa', `${anoAtual}-12-31`)
+      const todasDespesas = todasDespesasGroup || []
 
       // Cotistas
       const totalCotistas = groupMembers.length
@@ -142,8 +155,52 @@ export function useFinanceiroDashboard({ groupId, groupName, groupMembers, curre
         ? ((faturamentoMes - faturamentoMesAnterior) / faturamentoMesAnterior) * 100
         : 0
 
-      const cotaDoMes = totalCotistas > 0 ? Math.round(faturamentoMes / totalCotistas) : 0
-      const minhaCotaMensal = (faturamentoMes * minhaCotaPercentual) / 100
+      // Despesas do mês
+      const despesasDoMes = todasDespesas.filter(d => {
+        const date = new Date(d.data_despesa + 'T00:00:00')
+        return date.getMonth() === mesAtual && date.getFullYear() === anoAtual
+      })
+      // Despesas vinculadas ao grupo (sem anesthesiologist_id) vs receita via CNPJ do grupo
+      const despesasGrupoMes = despesasDoMes
+        .filter(d => !d.anesthesiologist_id)
+        .reduce((s, d) => s + (d.valor || 0), 0)
+      const receitaCnpjGrupoMes = procsDoMesAtual
+        .filter(p => p.billing_entity_type === 'cnpj_grupo')
+        .reduce((s, p) => s + (p.procedure_value || 0), 0)
+
+      const liquidoDistribuivelMes = faturamentoMes - despesasGrupoMes
+
+      const cotaDoMes = totalCotistas > 0 ? Math.round(liquidoDistribuivelMes / totalCotistas) : 0
+      const minhaCotaMensal = isQuotaGroup ? (liquidoDistribuivelMes * minhaCotaPercentual) / 100 : 0
+
+      // Calcular detalhamento de membros no mês atual
+      const detalhamentoMembros = groupMembers.map(m => {
+        const userId = m.users?.id || ''
+        const procsDoMembroMes = procsDoMesAtual.filter(p =>
+          p.anesthesiologist_user_id === userId || p.user_id === userId
+        )
+        const producaoOriginal = procsDoMembroMes.reduce((s, p) => s + (p.procedure_value || 0), 0)
+        
+        const cotaPercentual = m.quota_percent || (totalCotistas > 0 ? (100 / totalCotistas) : 0)
+        const producaoOuCota = isQuotaGroup 
+          ? (liquidoDistribuivelMes * cotaPercentual) / 100 
+          : producaoOriginal
+
+        const despesasMembroMes = despesasDoMes.filter(d => d.anesthesiologist_id === userId)
+        const despesas = despesasMembroMes.reduce((s, d) => s + (d.valor || 0), 0)
+
+        const aReceber = producaoOuCota - despesas
+
+        return {
+          nome: m.users?.name || 'Membro',
+          crm: m.users?.crm || '',
+          producaoOriginal,
+          cotaPercentual,
+          producaoOuCota,
+          despesas,
+          aReceber
+        }
+      })
 
       // Últimos 6 meses
       const ultimos6Meses: { mes: string; valor: number }[] = []
@@ -177,7 +234,8 @@ export function useFinanceiroDashboard({ groupId, groupName, groupMembers, curre
         grupo: {
           id: groupId,
           nome: groupName,
-          totalCotistas
+          totalCotistas,
+          isQuotaGroup
         },
         anual: {
           ano: anoAtual,
@@ -211,7 +269,10 @@ export function useFinanceiroDashboard({ groupId, groupName, groupMembers, curre
           recebimentosPorMeio,
           glosado: 0,
           glosaEmAberto: 0,
-          aReceber: aReceberMes
+          aReceber: aReceberMes,
+          despesasGrupoMes,
+          receitaCnpjGrupoMes,
+          detalhamentoMembros
         }
       }
 
@@ -228,7 +289,7 @@ export function useFinanceiroDashboard({ groupId, groupName, groupMembers, curre
     if (groupId) {
       carregarDados()
     }
-  }, [groupId, carregarDados])
+  }, [groupId, carregarDados, refreshKey])
 
   return { dados, loading, erro, recarregar: carregarDados }
 }

@@ -9,7 +9,7 @@ export interface QuotaHistoryItem {
 }
 
 export interface SecretaryPermission {
-  module: 'procedures' | 'agenda' | 'financials'
+  module: 'procedures' | 'agenda' | 'financials' | 'secretaries'
 }
 
 export interface GroupSecretary {
@@ -18,6 +18,7 @@ export interface GroupSecretary {
   email: string
   telefone: string
   status: string
+  role: 'coord' | 'ajudante'
   created_at: string
 }
 
@@ -31,15 +32,21 @@ export async function updateMemberQuota(
   userId: string,   // users.id of the member
   quotaPercent: number,
   quotaSince: string,
-  changedByUserId: string
+  changedByUserId: string,
+  color?: string | null
 ) {
   // 1. Atualizar o registro do membro na tabela group_members
+  const updates: any = {
+    quota_percent: quotaPercent,
+    quota_since: quotaSince
+  }
+  if (color !== undefined) {
+    updates.color = color
+  }
+
   const { error: memberError } = await supabase
     .from('group_members')
-    .update({
-      quota_percent: quotaPercent,
-      quota_since: quotaSince
-    })
+    .update(updates)
     .eq('id', memberId)
 
   if (memberError) throw memberError
@@ -117,7 +124,7 @@ export async function inviteGroupSecretary(groupId: string, email: string) {
 export async function getGroupSecretaries(groupId: string): Promise<GroupSecretary[]> {
   const { data, error } = await supabase
     .from('secretarias')
-    .select('id, nome, email, telefone, status, created_at')
+    .select('id, nome, email, telefone, status, role, created_at')
     .eq('group_id', groupId)
     .eq('type', 'grupo')
 

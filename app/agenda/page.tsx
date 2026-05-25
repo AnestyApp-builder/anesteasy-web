@@ -265,7 +265,7 @@ function AgendaContent() {
                         <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-sm text-slate-500">
                           <div className="flex items-center gap-1.5">
                             <MapPin className="w-4 h-4 text-slate-300" />
-                            {proc.hospital || 'Hospital não informado'}
+                            {proc.hospital_clinic || 'Hospital não informado'}
                           </div>
                           <div className="flex items-center gap-1.5 font-semibold text-slate-700">
                             <Clock className="w-4 h-4 text-teal-500" />

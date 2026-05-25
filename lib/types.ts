@@ -21,6 +21,11 @@ export interface ProcedureInsert {
   patient_name: string
   patient_age?: number
   data_nascimento?: string | null
+  patient_phone?: string
+  patient_email?: string
+  patient_notes?: string
+  patient_companion?: string | null
+  patient_companion_phone?: string | null
   patient_gender?: 'M' | 'F' | 'Other' | ''
   convenio?: string
   carteirinha?: string

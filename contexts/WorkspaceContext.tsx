@@ -43,19 +43,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         .from('group_members')
         .select(`
           group_id,
-          groups (
+          groups!inner (
             id,
             name,
             color
           )
         `)
         .eq('user_id', user.id)
+        .is('groups.deleted_at', null)
 
       if (error) throw error
 
       const groups = data
         .map(item => item.groups)
-        .filter(g => g !== null) as GroupWorkspace[]
+        .filter(g => g !== null) as unknown as GroupWorkspace[]
       
       setUserGroups(groups)
     } catch (e) {

@@ -3,6 +3,62 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { stripe } from '@/lib/stripe'
 
+const PLAN_LABELS: Record<string, string> = {
+  monthly: 'Mensal',
+  quarterly: 'Trimestral',
+  annual: 'Anual',
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function sendConfirmationEmail(
+  db: any,
+  userId: string,
+  planType: string,
+  amount: number,
+  periodEndTimestamp: number
+) {
+  try {
+    const { data: user } = await db.from('users').select('email, name').eq('id', userId).single()
+    if (!user?.email) return
+
+    const planLabel = PLAN_LABELS[planType] || planType
+    const formattedAmount = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
+    const formattedDate = new Date(periodEndTimestamp * 1000).toLocaleDateString('pt-BR')
+    const firstName = (user.name || 'Doutor(a)').split(' ')[0]
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;max-width:600px;margin:0 auto;padding:20px;">
+  <div style="background:#14b8a6;color:white;padding:24px;text-align:center;border-radius:10px 10px 0 0;">
+    <h1 style="margin:0;font-size:28px;">AnestEasy</h1>
+    <p style="margin:8px 0 0;opacity:.85;">Confirmação de Pagamento</p>
+  </div>
+  <div style="background:#f9fafb;padding:32px;border-radius:0 0 10px 10px;">
+    <h2 style="color:#14b8a6;margin-top:0;">Olá, ${firstName}!</h2>
+    <p>Seu pagamento foi confirmado com sucesso. Seu plano já está ativo.</p>
+    <div style="background:#fff;padding:20px;border-radius:8px;margin:20px 0;border-left:4px solid #14b8a6;">
+      <p style="margin:4px 0;"><strong>Plano:</strong> ${planLabel}</p>
+      <p style="margin:4px 0;"><strong>Valor pago:</strong> ${formattedAmount}</p>
+      <p style="margin:4px 0;"><strong>Próxima renovação:</strong> ${formattedDate}</p>
+    </div>
+    <div style="text-align:center;margin:28px 0;">
+      <a href="https://app.anesteasy.com.br" style="background:#14b8a6;color:white;padding:12px 32px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">Acessar o AnestEasy</a>
+    </div>
+    <p style="color:#6b7280;font-size:13px;margin-top:24px;">
+      Se você não realizou esta assinatura, entre em contato com nosso suporte.<br>
+      <strong>Equipe AnestEasy</strong>
+    </p>
+  </div>
+</body></html>`
+
+    await db.functions.invoke('send-support-email', {
+      body: { to: user.email, subject: `✅ Assinatura ${planLabel} confirmada — AnestEasy`, html },
+    })
+  } catch (e) {
+    console.warn('Erro ao enviar email de confirmação:', e)
+  }
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
@@ -147,6 +203,7 @@ export async function POST(request: NextRequest) {
     }
 
     const amount = session.amount_total ? session.amount_total / 100 : 0
+    const standardSeats = parseInt(session.metadata?.standard_seats || '0', 10)
 
     // Verificar se já existe
     const { data: existingSubscription } = await supabaseAdmin
@@ -179,14 +236,19 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      const resolvedPlan = planType || existingSubscription.plan_type
+
       // Atualizar usuário
       await supabaseAdmin
         .from('users')
         .update({
-          subscription_plan: planType || existingSubscription.plan_type,
-          subscription_status: 'active'
+          subscription_plan: resolvedPlan,
+          subscription_status: 'active',
+          available_standard_seats: standardSeats
         })
         .eq('id', userId)
+
+      await sendConfirmationEmail(supabaseAdmin, userId, resolvedPlan, amount, stripeSubscription.current_period_end)
 
       return NextResponse.json({
         success: true,
@@ -195,11 +257,12 @@ export async function POST(request: NextRequest) {
       })
     } else {
       // Criar nova
+      const resolvedPlan = planType || 'monthly'
       const { data: newSubscription, error: insertError } = await supabaseAdmin
         .from('subscriptions')
         .insert({
           user_id: userId,
-          plan_type: planType || 'monthly',
+          plan_type: resolvedPlan,
           amount: amount,
           status: 'active',
           stripe_subscription_id: subscriptionId,
@@ -221,10 +284,13 @@ export async function POST(request: NextRequest) {
       await supabaseAdmin
         .from('users')
         .update({
-          subscription_plan: planType || 'monthly',
-          subscription_status: 'active'
+          subscription_plan: resolvedPlan,
+          subscription_status: 'active',
+          available_standard_seats: standardSeats
         })
         .eq('id', userId)
+
+      await sendConfirmationEmail(supabaseAdmin, userId, resolvedPlan, amount, stripeSubscription.current_period_end)
 
       return NextResponse.json({
         success: true,

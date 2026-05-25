@@ -129,7 +129,7 @@ export default function SecretaryDashboard() {
         // Chamado após setSession para ter os dados, mas a API lê do cookie
         loadDashboardData()
       } catch (err) {
-        router.replace('/secretaria/login')
+        router.replace('/login')
       }
     };
     checkSession()
@@ -204,7 +204,7 @@ export default function SecretaryDashboard() {
       description: 'Você saiu do portal da secretária.',
       variant: 'info'
     })
-    router.replace('/secretaria/login')
+    router.replace('/login')
   }
 
   // Handle Create Procedure

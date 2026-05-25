@@ -71,26 +71,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Cancelar no Stripe se tiver stripe_subscription_id
+    // Agendar cancelamento no Stripe para o fim do período (não cancela imediatamente)
     if (subscription.stripe_subscription_id && stripe) {
       try {
-        // Remover prefixo "daily_" se existir
         const subscriptionId = subscription.stripe_subscription_id.replace(/^daily_/, '')
-        
-        await stripe.subscriptions.cancel(subscriptionId)
-        console.log('✅ Assinatura cancelada no Stripe:', subscriptionId)
+        await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true })
+        console.log('✅ Cancelamento agendado no Stripe para fim do período:', subscriptionId)
       } catch (stripeError: any) {
-        console.error('⚠️ Erro ao cancelar no Stripe (continuando com cancelamento local):', stripeError.message)
-        // Continuar mesmo se falhar no Stripe (pode já estar cancelada)
+        console.error('⚠️ Erro ao agendar cancelamento no Stripe:', stripeError.message)
       }
     }
 
-    // Atualizar status no banco
+    // Marcar no banco que o cancelamento está agendado — mantém status active e acesso do usuário
     const { error: updateError } = await supabaseAdmin
       .from('subscriptions')
       .update({
-        status: 'cancelled',
-        cancelled_at: new Date().toISOString(),
+        cancel_at_period_end: true,
         updated_at: new Date().toISOString()
       })
       .eq('id', subscription.id)
@@ -103,17 +99,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Atualizar status do usuário
-    await supabaseAdmin
-      .from('users')
-      .update({
-        subscription_status: 'inactive'
-      })
-      .eq('id', user.id)
+    // NÃO inativa o usuário agora — ele mantém acesso até current_period_end
+    // O webhook customer.subscription.deleted fará a inativação quando o período expirar
 
     return NextResponse.json({
       success: true,
-      message: 'Assinatura cancelada com sucesso'
+      message: 'Renovação automática cancelada. Seu acesso continua até o fim do período atual.'
     })
 
   } catch (error: any) {

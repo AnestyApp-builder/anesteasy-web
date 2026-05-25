@@ -805,8 +805,8 @@ const [visibleProceduresCount, setVisibleProceduresCount] = useState(10)
       // Encontrar o índice do procedimento antes de remover
       const procedureIndex = procedures.findIndex(p => p.id === procedureToDelete.id)
       
-      const success = await procedureService.deleteProcedure(procedureToDelete.id)
-      if (success) {
+      const result = await procedureService.deleteProcedure(procedureToDelete.id)
+      if (result.success) {
         // Remover da lista
         const updatedProcedures = procedures.filter(p => p.id !== procedureToDelete.id)
         const updatedFiltered = filteredProcedures.filter(p => p.id !== procedureToDelete.id)
@@ -842,13 +842,12 @@ const [visibleProceduresCount, setVisibleProceduresCount] = useState(10)
         })
       } else {
         addToast({
-          title: 'Erro ao excluir',
-          description: 'Não foi possível excluir o procedimento. Tente novamente.',
+          title: 'Aviso',
+          description: result.message || 'Não foi possível excluir o procedimento.',
           variant: 'error'
         })
       }
     } catch (error) {
-      
       addToast({
         title: 'Erro de conexão',
         description: 'Não foi possível excluir o procedimento. Verifique sua conexão com a internet.',

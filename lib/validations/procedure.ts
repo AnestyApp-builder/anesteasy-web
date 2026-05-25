@@ -14,9 +14,17 @@ export const procedureSchema = z.object({
   patient_gender: z.enum(['M', 'F', 'Other', '']).optional().nullable().default(''),
   convenio: z.string().optional().nullable().default('Particular'),
   carteirinha: z.string().optional().nullable(),
+  patient_phone: z.string().optional().nullable(),
+  patient_email: z.string().optional().nullable(),
+  patient_notes: z.string().optional().nullable(),
+  patient_companion: z.string().optional().nullable(),
+  patient_companion_phone: z.string().optional().nullable(),
 
   // Equipe e Hospital
   anesthesiologist_name: z.string().optional().nullable(),
+  anesthesiologist_phone: z.string().optional().nullable(),
+  anesthesiologist_email: z.string().optional().nullable(),
+  anesthesiologist_notes: z.string().optional().nullable(),
   nome_cirurgiao: z.string().optional().nullable(),
   surgeon_name: z.string().optional().nullable(),
   especialidade_cirurgiao: z.string().optional().nullable(),

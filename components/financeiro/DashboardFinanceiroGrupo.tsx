@@ -128,7 +128,7 @@ export default function DashboardFinanceiroGrupo({ dados, loading, erro }: Dashb
       {modo === 'anual' ? (
         <ModuloAnual dados={dados.anual} />
       ) : (
-        <ModuloMensal dados={dados.mensal} />
+        <ModuloMensal dados={dados.mensal} isQuotaGroup={dados.grupo.isQuotaGroup} />
       )}
     </div>
   )

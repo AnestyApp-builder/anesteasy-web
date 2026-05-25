@@ -9,6 +9,81 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
 
+const PLAN_LABELS: Record<string, string> = {
+  monthly: 'Mensal',
+  quarterly: 'Trimestral',
+  annual: 'Anual',
+};
+
+async function sendPaymentConfirmationEmail(
+  userId: string,
+  planType: string,
+  amount: number,
+  periodEnd: string
+) {
+  try {
+    const { data: user } = await supabaseAdmin
+      .from('users')
+      .select('email, name')
+      .eq('id', userId)
+      .single();
+
+    if (!user?.email) return;
+
+    const planLabel = PLAN_LABELS[planType] || planType;
+    const formattedAmount = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
+    const formattedDate = new Date(periodEnd).toLocaleDateString('pt-BR');
+    const firstName = (user.name || 'Doutor(a)').split(' ')[0];
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;max-width:600px;margin:0 auto;padding:20px;">
+  <div style="background-color:#14b8a6;color:white;padding:24px;text-align:center;border-radius:10px 10px 0 0;">
+    <h1 style="margin:0;font-size:28px;">AnestEasy</h1>
+    <p style="margin:8px 0 0;opacity:.85;">Confirmação de Pagamento</p>
+  </div>
+  <div style="background-color:#f9fafb;padding:32px;border-radius:0 0 10px 10px;">
+    <h2 style="color:#14b8a6;margin-top:0;">Olá, ${firstName}!</h2>
+    <p>Seu pagamento foi confirmado com sucesso. Seu plano já está ativo.</p>
+    <div style="background:#fff;padding:20px;border-radius:8px;margin:20px 0;border-left:4px solid #14b8a6;">
+      <p style="margin:4px 0;"><strong>Plano:</strong> ${planLabel}</p>
+      <p style="margin:4px 0;"><strong>Valor pago:</strong> ${formattedAmount}</p>
+      <p style="margin:4px 0;"><strong>Próxima renovação:</strong> ${formattedDate}</p>
+    </div>
+    <div style="text-align:center;margin:28px 0;">
+      <a href="https://app.anesteasy.com.br" style="background:#14b8a6;color:white;padding:12px 32px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">Acessar o AnestEasy</a>
+    </div>
+    <p style="color:#6b7280;font-size:13px;margin-top:24px;">
+      Se você não realizou esta assinatura, entre em contato com nosso suporte.<br>
+      <strong>Equipe AnestEasy</strong>
+    </p>
+  </div>
+</body>
+</html>`;
+
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (resendApiKey) {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'AnestEasy <noreply@anesteasy.com.br>',
+          to: [user.email],
+          subject: `✅ Assinatura ${planLabel} confirmada — AnestEasy`,
+          html,
+        }),
+      });
+    }
+  } catch (e) {
+    console.warn('Erro ao enviar email de confirmação de pagamento:', e);
+  }
+}
+
 /**
  * Utilitário para converter timestamp do Stripe para Date
  */
@@ -44,6 +119,10 @@ export const billingService = {
     const isDaily = session.metadata?.is_daily === 'true';
 
     if (!userId) throw new Error('user_id não encontrado nos metadata');
+
+    if (session.metadata?.type === 'group_seats') {
+      return this.handleGroupSeatsCheckout(session);
+    }
 
     if (isDaily) {
       return this.handleDailyPayment(userId, session.id, session.customer as string, session.amount_total || 0);
@@ -99,10 +178,51 @@ export const billingService = {
         });
     }
 
+    const standardSeats = parseInt(session.metadata?.standard_seats || '0', 10);
+    const coordSeats = parseInt(session.metadata?.coord_seats || '0', 10);
+
     await supabaseAdmin
       .from('users')
-      .update({ subscription_plan: planType, subscription_status: 'active' })
+      .update({
+        subscription_plan: planType,
+        subscription_status: 'active',
+        available_standard_seats: standardSeats,
+        available_coord_seats: coordSeats
+      })
       .eq('id', userId);
+
+    await sendPaymentConfirmationEmail(
+      userId,
+      planType,
+      (session.amount_total || 0) / 100,
+      periodEnd
+    );
+  },
+
+  async handleGroupSeatsCheckout(session: Stripe.Checkout.Session) {
+    const groupId = session.metadata?.group_id;
+    if (!groupId) throw new Error('group_id não encontrado nos metadata de group_seats');
+
+    const standardSeats = parseInt(session.metadata?.standard_seats || '0', 10);
+    const coordSeats = parseInt(session.metadata?.coord_seats || '0', 10);
+
+    if (standardSeats > 0 || coordSeats > 0) {
+      const { data: group } = await supabaseAdmin
+        .from('groups')
+        .select('standard_seats_paid, coord_seats_paid')
+        .eq('id', groupId)
+        .single();
+
+      if (group) {
+        await supabaseAdmin
+          .from('groups')
+          .update({
+            standard_seats_paid: (group.standard_seats_paid || 0) + standardSeats,
+            coord_seats_paid: (group.coord_seats_paid || 0) + coordSeats
+          })
+          .eq('id', groupId);
+      }
+    }
   },
 
   /**

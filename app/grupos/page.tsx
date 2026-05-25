@@ -5,6 +5,7 @@ import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/contexts/AuthContext'
 import { getUserGroups, createGroup, getPendingInvites, acceptInvite } from '@/lib/groups'
+import { supabase } from '@/lib/supabase'
 import { Plus, Users, Settings, Bell, Check, X, Shield, Info } from 'lucide-react'
 import Link from 'next/link'
 import { useToast } from '@/contexts/ToastContext'
@@ -19,7 +20,9 @@ export default function GruposPage() {
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupColor, setNewGroupColor] = useState('#3B82F6')
   const [newGroupType, setNewGroupType] = useState<'com_cotas' | 'sem_cotas'>('sem_cotas')
+  const [newGroupBillingType, setNewGroupBillingType] = useState<'individual' | 'centralized'>('individual')
   const [newGroupCnpj, setNewGroupCnpj] = useState('')
+  const [isPremium, setIsPremium] = useState(false)
 
   const handleCnpjChange = (val: string) => {
     const clean = val.replace(/\D/g, '').slice(0, 14)
@@ -45,12 +48,14 @@ export default function GruposPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [userGroups, invites] = await Promise.all([
+      const [userGroups, invites, { data: userData }] = await Promise.all([
         getUserGroups(),
-        getPendingInvites(user!.id)
+        getPendingInvites(user!.id),
+        supabase.from('subscriptions').select('id').eq('user_id', user!.id).eq('status', 'active').maybeSingle()
       ])
       setGroups(userGroups || [])
       setPendingInvites(invites || [])
+      setIsPremium(!!userData)
     } catch (error) {
       console.error('Erro ao carregar grupos:', error)
       addToast({ title: 'Não foi possível carregar os grupos.', variant: 'error' })
@@ -69,6 +74,7 @@ export default function GruposPage() {
         color: newGroupColor,
         share_financials: false,
         type: newGroupType,
+        billing_type: newGroupBillingType,
         cnpj: newGroupCnpj ? newGroupCnpj.replace(/\D/g, '') : null
       }, user!.id)
       
@@ -76,6 +82,7 @@ export default function GruposPage() {
       setIsCreating(false)
       setNewGroupName('')
       setNewGroupType('sem_cotas')
+      setNewGroupBillingType('individual')
       setNewGroupCnpj('')
       loadData()
     } catch (error) {
@@ -103,14 +110,35 @@ export default function GruposPage() {
               <h1 className="text-3xl font-bold text-slate-900">Meus Grupos</h1>
               <p className="text-slate-500 mt-1">Gerencie suas equipes e agendas compartilhadas.</p>
             </div>
-            <button
-              onClick={() => setIsCreating(true)}
-              className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl font-medium transition-all shadow-lg shadow-teal-200"
-            >
-              <Plus className="w-5 h-5" />
-              Criar Novo Grupo
-            </button>
+            {(() => {
+              const isAlreadyAdmin = groups.some(group => 
+                group.group_members.some((m: any) => m.user_id === user?.id && m.role === 'admin')
+              );
+              
+              if (isAlreadyAdmin) {
+                return null; // Não mostra botão se já for admin de um grupo
+              }
+
+              return isPremium ? (
+                <button
+                  onClick={() => setIsCreating(true)}
+                  className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl font-medium transition-all shadow-lg shadow-teal-200"
+                >
+                  <Plus className="w-5 h-5" />
+                  Criar Novo Grupo
+                </button>
+              ) : (
+                <Link
+                  href="/planos"
+                  className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-amber-200"
+                >
+                  <Shield className="w-5 h-5" />
+                  Assinar Premium para Criar Grupo
+                </Link>
+              );
+            })()}
           </div>
+
 
           {/* Convites Pendentes */}
           {pendingInvites.length > 0 && (
@@ -206,12 +234,21 @@ export default function GruposPage() {
                 <p className="text-slate-500 mb-8 max-w-md mx-auto">
                   Crie um grupo para colaborar com outros anestesistas e gerenciar uma agenda unificada.
                 </p>
-                <button
-                  onClick={() => setIsCreating(true)}
-                  className="bg-teal-600 text-white px-8 py-3 rounded-xl font-medium hover:bg-teal-700 transition-all shadow-lg shadow-teal-100"
-                >
-                  Começar Agora
-                </button>
+                {isPremium ? (
+                  <button
+                    onClick={() => setIsCreating(true)}
+                    className="bg-teal-600 text-white px-8 py-3 rounded-xl font-medium hover:bg-teal-700 transition-all shadow-lg shadow-teal-100"
+                  >
+                    Começar Agora
+                  </button>
+                ) : (
+                  <Link
+                    href="/planos"
+                    className="inline-flex bg-amber-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-200"
+                  >
+                    Assinar Plano Premium
+                  </Link>
+                )}
               </div>
             )}
           </div>
@@ -261,6 +298,18 @@ export default function GruposPage() {
                       <span className="text-[10px] text-slate-500 leading-snug mt-1">Divisão de faturamento do grupo com base em cotas (%)</span>
                     </button>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Quem paga pelas assinaturas?</label>
+                  <select
+                    value={newGroupBillingType}
+                    onChange={(e: any) => setNewGroupBillingType(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 outline-none transition-all font-medium bg-white"
+                  >
+                    <option value="individual">Individual (Cada um paga o seu)</option>
+                    <option value="centralized">Centralizado (Grupo paga tudo)</option>
+                  </select>
                 </div>
 
                 <div>

@@ -433,6 +433,9 @@ export type Database = {
           google_sheets_id: string | null
           google_sheets_sync_enabled: boolean | null
           google_sheets_last_sync: string | null
+          billing_type: string
+          standard_seats_paid: number
+          coord_seats_paid: number
         }
         Insert: {
           color: string
@@ -448,6 +451,9 @@ export type Database = {
           google_sheets_id?: string | null
           google_sheets_sync_enabled?: boolean | null
           google_sheets_last_sync?: string | null
+          billing_type?: string
+          standard_seats_paid?: number
+          coord_seats_paid?: number
         }
         Update: {
           color?: string
@@ -463,6 +469,9 @@ export type Database = {
           google_sheets_id?: string | null
           google_sheets_sync_enabled?: boolean | null
           google_sheets_last_sync?: string | null
+          billing_type?: string
+          standard_seats_paid?: number
+          coord_seats_paid?: number
         }
         Relationships: [
           {
@@ -1434,6 +1443,7 @@ export type Database = {
           invite_token: string | null
           invite_expires_at: string | null
           created_by: string | null
+          role: string
         }
         Insert: {
           cpf?: string | null
@@ -1451,6 +1461,7 @@ export type Database = {
           invite_token?: string | null
           invite_expires_at?: string | null
           created_by?: string | null
+          role?: string
         }
         Update: {
           cpf?: string | null
@@ -1468,6 +1479,7 @@ export type Database = {
           invite_token?: string | null
           invite_expires_at?: string | null
           created_by?: string | null
+          role?: string
         }
         Relationships: [
           {
@@ -1844,6 +1856,8 @@ export type Database = {
           subscription_status: string | null
           trial_ends_at: string | null
           updated_at: string | null
+          available_standard_seats: number | null
+          available_coord_seats: number | null
         }
         Insert: {
           avatar_url?: string | null
@@ -1866,6 +1880,8 @@ export type Database = {
           subscription_status?: string | null
           trial_ends_at?: string | null
           updated_at?: string | null
+          available_standard_seats?: number | null
+          available_coord_seats?: number | null
         }
         Update: {
           avatar_url?: string | null

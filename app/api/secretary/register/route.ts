@@ -86,7 +86,8 @@ export async function POST(request: Request) {
         password_hash: passwordHash,
         type: 'grupo',
         group_id: invite.group_id,
-        status: 'active'
+        role: invite.role,
+        status: 'ativo'
       })
       .select()
       .single()

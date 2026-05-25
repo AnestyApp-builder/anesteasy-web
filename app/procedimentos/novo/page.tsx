@@ -25,7 +25,8 @@ import {
   Users,
   Info,
   Eye,
-  Check
+  Check,
+  Plus
 } from 'lucide-react'
 import Link from 'next/link'
 import { Layout } from '@/components/layout/Layout'
@@ -117,6 +118,7 @@ interface FormData {
     valor: number
     recebida: boolean
     data_recebimento: string
+    billing_entity_type?: 'cnpj_anestesista' | 'cnpj_grupo' | ''
   }>
   statusPagamento: string
   dataPagamento: string
@@ -133,6 +135,8 @@ interface FormData {
   anesthesiologist_user_id?: string
   billing_entity_type?: 'cnpj_anestesista' | 'cnpj_grupo' | ''
   anesthesiologist_role?: 'principal' | 'auxiliar' | ''
+  is_backup?: boolean
+  backup_anesthesiologist_name?: string
 }
 
 
@@ -266,6 +270,8 @@ function NovoProcedimentoContent() {
     anesthesiologist_user_id: '',
     billing_entity_type: '',
     anesthesiologist_role: '',
+    is_backup: false,
+    backup_anesthesiologist_name: '',
   })
   
   const [loading, setLoading] = useState(false)
@@ -287,6 +293,8 @@ function NovoProcedimentoContent() {
     feedbackUrl?: string
     emailCirurgiao?: string
     telefoneCirurgiao?: string
+    cirurgiao?: string
+    hospital?: string
   } | null>(null)
   const [anestesiasFiltradas, setAnestesiasFiltradas] = useState(TIPOS_ANESTESIA)
   const [buscaAnestesia, setBuscaAnestesia] = useState('')
@@ -294,6 +302,88 @@ function NovoProcedimentoContent() {
   const [groups, setGroups] = useState<any[]>([])
   const [groupMembers, setGroupMembers] = useState<any[]>([])
   const [loadingGroupMembers, setLoadingGroupMembers] = useState(false)
+  const [backups, setBackups] = useState<any[]>([])
+  const [loadingBackups, setLoadingBackups] = useState(false)
+  const [surgeons, setSurgeons] = useState<any[]>([])
+  const [loadingSurgeons, setLoadingSurgeons] = useState(false)
+  const [showCreateSurgeonModal, setShowCreateSurgeonModal] = useState(false)
+  const [isCreatingSurgeon, setIsCreatingSurgeon] = useState(false)
+  const [createSurgeonFormData, setCreateSurgeonFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    specialty: ''
+  })
+
+  const handleCreateSurgeon = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!createSurgeonFormData.name) {
+      addToast({ title: 'Preencha o nome do cirurgião', variant: 'warning' })
+      return
+    }
+
+    setIsCreatingSurgeon(true)
+    try {
+      const payload = {
+        procedureData: {
+          procedure_name: 'Cadastro de Cirurgião',
+          procedure_type: 'Outro',
+          procedure_value: 0,
+          procedure_date: new Date().toISOString().split('T')[0],
+          patient_name: 'Cadastro de Cirurgião',
+          nome_cirurgiao: createSurgeonFormData.name,
+          surgeon_name: createSurgeonFormData.name,
+          telefone_cirurgiao: createSurgeonFormData.phone || '',
+          email_cirurgiao: createSurgeonFormData.email || '',
+          especialidade_cirurgiao: createSurgeonFormData.specialty || '',
+          group_id: formData.group_id,
+          anesthesiologist_user_id: user?.id || groupMembers?.[0]?.id || null,
+          billing_entity_type: 'cnpj_anestesista',
+          show_to_secretary: true
+        },
+        userId: user?.id || groupMembers?.[0]?.id || ''
+      }
+
+      const res = await fetch('/api/create-procedure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || 'Erro ao cadastrar cirurgião')
+      }
+
+      addToast({ title: 'Cirurgião cadastrado com sucesso!', variant: 'success' })
+      
+      const newSurgeon = {
+        name: createSurgeonFormData.name,
+        phone: createSurgeonFormData.phone || '',
+        email: createSurgeonFormData.email || '',
+        specialty: createSurgeonFormData.specialty || ''
+      }
+      setSurgeons(prev => [...prev, newSurgeon])
+      
+      updateFormData('nomeCirurgiao', createSurgeonFormData.name)
+      if (createSurgeonFormData.specialty) updateFormData('especialidadeCirurgiao', createSurgeonFormData.specialty)
+      if (createSurgeonFormData.email) updateFormData('emailCirurgiao', createSurgeonFormData.email)
+      if (createSurgeonFormData.phone) updateFormData('telefoneCirurgiao', createSurgeonFormData.phone)
+
+      setCreateSurgeonFormData({
+        name: '',
+        phone: '',
+        email: '',
+        specialty: ''
+      })
+      setShowCreateSurgeonModal(false)
+    } catch (err: any) {
+      console.error(err)
+      addToast({ title: 'Erro ao cadastrar cirurgião', description: err.message, variant: 'error' })
+    } finally {
+      setIsCreatingSurgeon(false)
+    }
+  }
 
   const searchParams = useSearchParams()
   const urlGroupId = searchParams.get('groupId')
@@ -313,6 +403,10 @@ function NovoProcedimentoContent() {
   useEffect(() => {
     if (formData.group_id) {
       setLoadingGroupMembers(true)
+      setLoadingBackups(true)
+      setLoadingSurgeons(true)
+      
+      // Load group members
       import('@/lib/groups').then(m => {
         m.getGroupDetails(formData.group_id)
           .then(details => {
@@ -325,18 +419,19 @@ function NovoProcedimentoContent() {
               }))
             
             setGroupMembers(activeMembers)
-            
+
             // Define o anestesista executor padrão se não houver um selecionado
             setFormData(prev => {
               const currentInMembers = activeMembers.find((mem: any) => mem.id === prev.anesthesiologist_user_id)
-              const defaultExecutor = currentInMembers 
-                ? prev.anesthesiologist_user_id 
+              const defaultExecutor = currentInMembers
+                ? prev.anesthesiologist_user_id
                 : (activeMembers.find((mem: any) => mem.id === user?.id)?.id || (activeMembers[0]?.id || ''))
-              
+
               return {
                 ...prev,
                 anesthesiologist_user_id: defaultExecutor,
-                billing_entity_type: prev.billing_entity_type || 'cnpj_anestesista'
+                billing_entity_type: prev.billing_entity_type || 'cnpj_anestesista',
+                grupoAnestesico: prev.grupoAnestesico || details.name || ''
               }
             })
           })
@@ -347,12 +442,78 @@ function NovoProcedimentoContent() {
             setLoadingGroupMembers(false)
           })
       })
+
+      // Load backups
+      supabase
+        .from('procedures')
+        .select('anesthesiologist_name, anesthesiologist_phone, anesthesiologist_email, anesthesiologist_notes')
+        .eq('group_id', formData.group_id)
+        .eq('procedure_name', 'Cadastro de Anestesista Backup')
+        .not('anesthesiologist_name', 'is', null)
+        .then(({ data, error }) => {
+          if (!error && data) {
+            const uniqueBackups = Array.from(new Set(
+              data
+                .map(d => (d.anesthesiologist_name || '').trim())
+                .filter(name => name && name !== 'Cadastro de Anestesista Backup' && name !== 'Cadastro de Cirurgião' && name !== 'Não informado' && name !== 'Não informada')
+            )).map(name => {
+              const matched = data.find(d => (d.anesthesiologist_name || '').trim() === name)
+              return {
+                name,
+                phone: matched?.anesthesiologist_phone || '',
+                email: matched?.anesthesiologist_email || '',
+                notes: matched?.anesthesiologist_notes || ''
+              }
+            })
+            setBackups(uniqueBackups)
+          } else {
+            console.error('Erro ao carregar backups:', error)
+          }
+        })
+        .finally(() => {
+          setLoadingBackups(false)
+        })
+
+      // Load surgeons
+      supabase
+        .from('procedures')
+        .select('surgeon_name, nome_cirurgiao, telefone_cirurgiao, email_cirurgiao, especialidade_cirurgiao')
+        .eq('group_id', formData.group_id)
+        .eq('procedure_name', 'Cadastro de Cirurgião')
+        .not('surgeon_name', 'is', null)
+        .then(({ data, error }) => {
+          if (!error && data) {
+            const uniqueSurgeons = Array.from(new Set(
+              data
+                .map(d => (d.surgeon_name || d.nome_cirurgiao || '').trim())
+                .filter(name => name && name !== 'Cadastro de Paciente' && name !== 'Cadastro de Cirurgião' && name !== 'Cadastro de Anestesista Backup' && name !== 'Não informado' && name !== 'Não informada')
+            )).map(name => {
+              const matched = data.find(d => (d.surgeon_name || d.nome_cirurgiao || '').trim() === name)
+              return {
+                name,
+                phone: matched?.telefone_cirurgiao || matched?.nome_cirurgiao || '',
+                email: matched?.email_cirurgiao || '',
+                specialty: matched?.especialidade_cirurgiao || ''
+              }
+            })
+            setSurgeons(uniqueSurgeons)
+          } else {
+            console.error('Erro ao carregar cirurgiões:', error)
+          }
+        })
+        .finally(() => {
+          setLoadingSurgeons(false)
+        })
     } else {
       setGroupMembers([])
+      setBackups([])
+      setSurgeons([])
       setFormData(prev => ({
         ...prev,
         anesthesiologist_user_id: '',
-        billing_entity_type: ''
+        billing_entity_type: '',
+        is_backup: false,
+        backup_anesthesiologist_name: ''
       }))
     }
   }, [formData.group_id, user])
@@ -378,6 +539,128 @@ function NovoProcedimentoContent() {
     }
   }, [showSuccessModal])
 
+  const [patientSuggestions, setPatientSuggestions] = useState<string[]>([])
+  const [patientHistory, setPatientHistory] = useState<any[]>([])
+  const [showPatientSuggestions, setShowPatientSuggestions] = useState(false)
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+
+  // Ocultar dropdown de sugestões se clicar fora
+  useEffect(() => {
+    const handleClickOutside = () => setShowPatientSuggestions(false)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
+
+  // Buscar sugestões de pacientes ao digitar
+  useEffect(() => {
+    let isMounted = true
+    const fetchSuggestions = async () => {
+      if (formData.nomePaciente.length < 3) {
+        if (isMounted) {
+          setPatientSuggestions([])
+          setShowPatientSuggestions(false)
+        }
+        return
+      }
+      
+      setLoadingSuggestions(true)
+      try {
+        const query = supabase
+          .from('procedures')
+          .select('patient_name, procedure_name')
+          .ilike('patient_name', `%${formData.nomePaciente}%`)
+          
+        if (urlGroupId) {
+          query.eq('group_id', urlGroupId)
+        } else {
+          query.eq('anesthesiologist_user_id', user?.id)
+        }
+        
+        const { data, error } = await query
+        if (!error && data && isMounted) {
+          // Filtrar procedures que são de cadastro
+          const validData = data.filter(d => 
+            d.procedure_name !== 'Cadastro de Cirurgião' && 
+            d.procedure_name !== 'Cadastro de Anestesista Backup' &&
+            d.procedure_name !== 'Cadastro de Paciente'
+          )
+          
+          const surgeonNames = surgeons.map(s => s.name.toLowerCase())
+          const backupNames = backups.map(b => b.name.toLowerCase())
+          
+          const names = Array.from(new Set(validData.map(d => d.patient_name)))
+            .filter(name => {
+              if (!name) return false
+              if (name === 'Cadastro de Cirurgião' || name === 'Cadastro de Anestesista Backup' || name === 'Cadastro de Paciente' || name === 'Não informado' || name === 'Não informada') return false
+              
+              // Remove if the name is strictly in the surgeons or backups list
+              const lowerName = name.toLowerCase()
+              if (surgeonNames.includes(lowerName)) return false
+              if (backupNames.includes(lowerName)) return false
+              
+              return true
+            })
+            
+          setPatientSuggestions(names)
+          if (names.length > 0 && !names.includes(formData.nomePaciente)) {
+            setShowPatientSuggestions(true)
+          } else {
+            setShowPatientSuggestions(false)
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao buscar pacientes', err)
+      } finally {
+        if (isMounted) setLoadingSuggestions(false)
+      }
+    }
+    
+    const timeoutId = setTimeout(fetchSuggestions, 500)
+    return () => {
+      isMounted = false
+      clearTimeout(timeoutId)
+    }
+  }, [formData.nomePaciente, urlGroupId, user?.id, surgeons, backups])
+
+  const handleSelectPatient = async (name: string) => {
+    updateFormData('nomePaciente', name)
+    setShowPatientSuggestions(false)
+    
+    try {
+      const query = supabase
+        .from('procedures')
+        .select('*')
+        .eq('patient_name', name)
+        .order('procedure_date', { ascending: false })
+        
+      if (urlGroupId) {
+        query.eq('group_id', urlGroupId)
+      } else {
+        query.eq('anesthesiologist_user_id', user?.id)
+      }
+      
+      const { data, error } = await query
+      if (!error && data && data.length > 0) {
+        setPatientHistory(data)
+        const lastProc = data[0]
+        
+        const updates: Partial<FormData> = {}
+        if (lastProc.data_nascimento && !formData.dataNascimento) updates.dataNascimento = lastProc.data_nascimento
+        if (lastProc.patient_gender && !formData.patientGender) updates.patientGender = lastProc.patient_gender
+        if (lastProc.convenio && !formData.convenio) updates.convenio = lastProc.convenio
+        if (lastProc.carteirinha && !formData.carteirinha) updates.carteirinha = lastProc.carteirinha
+        
+        if (Object.keys(updates).length > 0) {
+          setFormData(prev => ({ ...prev, ...updates }))
+          addToast('success', 'Dados do paciente preenchidos automaticamente!')
+        }
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  // Effect para buscar as configurações do usuário logado
   // Fechar tooltip de OCR ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -414,7 +697,8 @@ function NovoProcedimentoContent() {
             numero: index + 1,
             valor: valorParcela,
             recebida: false,
-            data_recebimento: ''
+            data_recebimento: '',
+            billing_entity_type: prev.billing_entity_type || ''
           }))
         } else {
           newData.parcelas = []
@@ -426,7 +710,7 @@ function NovoProcedimentoContent() {
   }, [])
 
   // Função para atualizar parcelas individuais
-  const updateParcela = (index: number, field: 'recebida' | 'data_recebimento', value: any) => {
+  const updateParcela = (index: number, field: 'recebida' | 'data_recebimento' | 'billing_entity_type', value: any) => {
     setFormData(prev => ({
       ...prev,
       parcelas: prev.parcelas.map((parcela, i) => 
@@ -1760,11 +2044,13 @@ function NovoProcedimentoContent() {
     setUploadedAttachments([])
 
     // Validações básicas
-    const camposObrigatorios = {
+    const camposObrigatorios: Record<string, string | undefined> = {
       'Nome': formData.nomePaciente,
       'Data': formData.dataProcedimento,
       'Procedimento': formData.tipoProcedimento,
-      'Anestesia': formData.tecnicaAnestesica
+    }
+    if (!formData.group_id) {
+      camposObrigatorios['Anestesia'] = formData.tecnicaAnestesica
     }
     
     const faltando = Object.entries(camposObrigatorios)
@@ -1829,8 +2115,17 @@ function NovoProcedimentoContent() {
       if (formData.hospital) procedureData.hospital_clinic = formData.hospital
       if (formData.group_id) {
         procedureData.group_id = formData.group_id
-        if (formData.anesthesiologist_user_id) {
-          procedureData.anesthesiologist_user_id = formData.anesthesiologist_user_id
+        if (formData.is_backup) {
+          procedureData.anesthesiologist_user_id = null
+          procedureData.anesthesiologist_name = formData.backup_anesthesiologist_name
+        } else {
+          if (formData.anesthesiologist_user_id) {
+            procedureData.anesthesiologist_user_id = formData.anesthesiologist_user_id
+            const member = groupMembers.find(m => m.id === formData.anesthesiologist_user_id)
+            if (member) {
+              procedureData.anesthesiologist_name = member.name
+            }
+          }
         }
         if (formData.billing_entity_type) {
           procedureData.billing_entity_type = formData.billing_entity_type
@@ -2222,7 +2517,8 @@ function NovoProcedimentoContent() {
             numero_parcela: p.numero,
             valor_parcela: p.valor,
             recebida: p.recebida,
-            data_recebimento: p.data_recebimento || null
+            data_recebimento: p.data_recebimento || null,
+            billing_entity_type: p.billing_entity_type || null
           }))
           
           await procedureService.createParcelas(parcelasData)
@@ -2241,7 +2537,9 @@ function NovoProcedimentoContent() {
           : 'Não parcelado',
         feedbackUrl: feedbackUrl || undefined,
         emailCirurgiao: formData.emailCirurgiao || undefined,
-        telefoneCirurgiao: formData.telefoneCirurgiao || undefined
+        telefoneCirurgiao: formData.telefoneCirurgiao || undefined,
+        cirurgiao: formData.nomeCirurgiao || undefined,
+        hospital: formData.hospital || undefined
       })
       
       // Finalizar
@@ -2504,14 +2802,39 @@ function NovoProcedimentoContent() {
               <div className="p-6 space-y-6">
             {/* Dados da Paciente */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Input
-                label="Nome da Paciente *"
-                placeholder="Ex: Maria da Silva Santos"
-                icon={<User className="w-5 h-5" />}
-                    value={formData.nomePaciente}
-                    onChange={(e) => updateFormData('nomePaciente', e.target.value)}
-                required
-              />
+              <div className="relative">
+                <Input
+                  label="Nome da Paciente *"
+                  placeholder="Ex: Maria da Silva Santos"
+                  icon={<User className="w-5 h-5" />}
+                  value={formData.nomePaciente}
+                  onChange={(e) => {
+                    updateFormData('nomePaciente', e.target.value)
+                    if (patientHistory.length > 0) setPatientHistory([])
+                  }}
+                  required
+                />
+                
+                {showPatientSuggestions && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                    {loadingSuggestions ? (
+                      <div className="p-3 text-sm text-slate-500 text-center animate-pulse">Buscando...</div>
+                    ) : patientSuggestions.length > 0 ? (
+                      <ul className="py-1">
+                        {patientSuggestions.map((name, idx) => (
+                          <li 
+                            key={idx}
+                            onClick={(e) => { e.stopPropagation(); handleSelectPatient(name); }}
+                            className="px-4 py-2 text-sm text-slate-700 hover:bg-teal-50 hover:text-teal-700 cursor-pointer transition-colors"
+                          >
+                            {name}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                )}
+              </div>
               <Input
                     label="Data de Nascimento"
                     type="date"
@@ -2565,6 +2888,50 @@ function NovoProcedimentoContent() {
                 </select>
               </div>
             </div>
+            
+            {/* Histórico do Paciente (Visível apenas se houver histórico) */}
+            {patientHistory.length > 0 && (
+              <div className="mt-6 bg-slate-50 rounded-2xl border border-slate-200 p-5 space-y-4">
+                <div className="flex items-center gap-2 text-slate-800">
+                  <Clock className="w-5 h-5 text-teal-600" />
+                  <h4 className="font-bold text-sm">Histórico do Paciente</h4>
+                </div>
+                <div className="space-y-3">
+                  {patientHistory.map((histProc, idx) => (
+                    <div key={idx} className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm text-sm">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="font-bold text-teal-700">{histProc.procedure_name || histProc.procedure_type}</span>
+                        <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">
+                          {histProc.procedure_date ? new Date(histProc.procedure_date).toLocaleDateString() : 'Data não informada'}
+                        </span>
+                      </div>
+                      {histProc.observacoes_procedimento ? (
+                        <div className="mt-2 bg-yellow-50/50 p-3 rounded-lg border border-yellow-100">
+                          <p className="text-xs font-bold text-yellow-800 mb-1">Observações da cirurgia:</p>
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{histProc.observacoes_procedimento}</p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic mt-2">Sem observações registradas nesta cirurgia.</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Observações do Procedimento (Gerais) */}
+            <div className="mt-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Observações do Procedimento Atual
+              </label>
+              <textarea
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                rows={4}
+                placeholder="Intercorrências, comorbidades do paciente, medicações relevantes, notas cirúrgicas..."
+                value={formData.observacoesProcedimento}
+                onChange={(e) => updateFormData('observacoesProcedimento', e.target.value)}
+              />
+            </div>
 
 
             {/* Procedimento e Equipe */}
@@ -2581,7 +2948,7 @@ function NovoProcedimentoContent() {
               {/* Campo de Técnica Anestésica com busca */}
               <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Técnica Anestésica *
+                  Técnica Anestésica {formData.group_id ? '' : '*'}
                 </label>
                 <div className="relative">
                   <input
@@ -2592,7 +2959,7 @@ function NovoProcedimentoContent() {
                     onChange={(e) => filtrarAnestesias(e.target.value)}
                     onFocus={() => setBuscaAnestesia(formData.tecnicaAnestesica || '')}
                     onBlur={handleAnestesiaBlur}
-                    required
+                    required={!formData.group_id}
                   />
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Search className="h-5 w-5 text-gray-400" />
@@ -2663,61 +3030,142 @@ function NovoProcedimentoContent() {
               </div>
 
               {formData.group_id && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-5 bg-teal-50/40 border border-teal-100 rounded-xl">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center">
-                      <User className="w-4 h-4 mr-1.5 text-teal-600" />
-                      Anestesista (Grupo)
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 bg-teal-50/40 border border-teal-100 rounded-xl">
+                  {/* Tipo de Anestesista (Membro vs Backup) */}
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-sm font-medium text-gray-700 block">
+                      Tipo de Anestesista
                     </label>
-                    <select
-                      className="w-full px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
-                      value={formData.anesthesiologist_user_id}
-                      onChange={(e) => updateFormData('anesthesiologist_user_id', e.target.value)}
-                      disabled={loadingGroupMembers}
-                    >
-                      {loadingGroupMembers ? (
-                        <option value="">Carregando médicos do grupo...</option>
-                      ) : (
-                        <>
-                          <option value="">Selecione o anestesista...</option>
-                          {groupMembers.map(m => (
-                            <option key={m.id} value={m.id}>
-                              {m.name} {m.crm ? `(CRM: ${m.crm})` : ''}
-                            </option>
-                          ))}
-                        </>
-                      )}
-                    </select>
+                    <div className="flex bg-gray-200/60 p-1 rounded-xl max-w-xs">
+                      <button
+                        type="button"
+                        onClick={() => updateFormData('is_backup', false)}
+                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${!formData.is_backup ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        Membro do Grupo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateFormData('is_backup', true)}
+                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${formData.is_backup ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        Anestesista Backup
+                      </button>
+                    </div>
                   </div>
 
-
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center">
-                      <Building className="w-4 h-4 mr-1.5 text-teal-600" />
-                      Entidade de Faturamento
-                    </label>
-                    <select
-                      className="w-full px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
-                      value={formData.billing_entity_type}
-                      onChange={(e) => updateFormData('billing_entity_type', e.target.value)}
-                    >
-                      <option value="">Em aberto</option>
-                      <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
-                      <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
-                    </select>
-                  </div>
+                  {/* Dropdown de Anestesista correspondente */}
+                  {!formData.is_backup ? (
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-medium text-gray-700 flex items-center">
+                        <User className="w-4 h-4 mr-1.5 text-teal-600" />
+                        Anestesista (Grupo)
+                      </label>
+                      <select
+                        className="w-full px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
+                        value={formData.anesthesiologist_user_id}
+                        onChange={(e) => updateFormData('anesthesiologist_user_id', e.target.value)}
+                        disabled={loadingGroupMembers}
+                      >
+                        {loadingGroupMembers ? (
+                          <option value="">Carregando médicos do grupo...</option>
+                        ) : (
+                          <>
+                            <option value="">Selecione o anestesista...</option>
+                            {groupMembers.map(m => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} {m.crm ? `(CRM: ${m.crm})` : ''}
+                              </option>
+                            ))}
+                          </>
+                        )}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-medium text-gray-700 flex items-center">
+                        <UserCheck className="w-4 h-4 mr-1.5 text-teal-600" />
+                        Anestesista Backup
+                      </label>
+                      <select
+                        className="w-full px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
+                        value={formData.backup_anesthesiologist_name}
+                        onChange={(e) => updateFormData('backup_anesthesiologist_name', e.target.value)}
+                        disabled={loadingBackups}
+                      >
+                        {loadingBackups ? (
+                          <option value="">Carregando backups...</option>
+                        ) : (
+                          <>
+                            <option value="">Selecione o anestesista backup...</option>
+                            {backups.map(b => (
+                              <option key={b.name} value={b.name}>
+                                {b.name}
+                              </option>
+                            ))}
+                          </>
+                        )}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
 
-
-                  <Input
-                    label="Nome do Cirurgião"
-                    placeholder="Nome do cirurgião responsável"
-                    icon={<UserCheck className="w-5 h-5" />}
+              {formData.group_id ? (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm font-medium text-gray-700 flex items-center">
+                      <UserCheck className="w-4 h-4 mr-1 text-teal-600" />
+                      Nome do Cirurgião
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateSurgeonModal(true)}
+                      className="text-xs font-bold text-teal-600 hover:text-teal-700 underline focus:outline-none"
+                    >
+                      + Cadastrar Novo Cirurgião
+                    </button>
+                  </div>
+                  <select
+                    className="w-full px-3 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
                     value={formData.nomeCirurgiao}
-                    onChange={(e) => updateFormData('nomeCirurgiao', e.target.value)}
-                  />
+                    onChange={(e) => {
+                      const selectedName = e.target.value
+                      updateFormData('nomeCirurgiao', selectedName)
+                      
+                      // Preenchimento automático se o cirurgião tiver dados
+                      const surg = surgeons.find(s => s.name === selectedName)
+                      if (surg) {
+                        if (surg.specialty) updateFormData('especialidadeCirurgiao', surg.specialty)
+                        if (surg.email) updateFormData('emailCirurgiao', surg.email)
+                        if (surg.phone) updateFormData('telefoneCirurgiao', surg.phone)
+                      }
+                    }}
+                    disabled={loadingSurgeons}
+                  >
+                    {loadingSurgeons ? (
+                      <option value="">Carregando cirurgiões...</option>
+                    ) : (
+                      <>
+                        <option value="">Selecione o cirurgião...</option>
+                        {surgeons.map(s => (
+                          <option key={s.name} value={s.name}>
+                            {s.name} {s.specialty ? `(${s.specialty})` : ''}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                </div>
+              ) : (
+                <Input
+                  label="Nome do Cirurgião"
+                  placeholder="Nome do cirurgião responsável"
+                  icon={<UserCheck className="w-5 h-5" />}
+                  value={formData.nomeCirurgiao}
+                  onChange={(e) => updateFormData('nomeCirurgiao', e.target.value)}
+                />
+              )}
                   <Input
                     label="Hospital / Clínica"
                     placeholder="Nome do hospital ou clínica"
@@ -2868,20 +3316,6 @@ function NovoProcedimentoContent() {
                         </label>
                                     </div>
                                     </div>
-
-                    {/* Observações */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Observações
-                      </label>
-                      <textarea
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                        rows={4}
-                        placeholder="Observações adicionais sobre o procedimento..."
-                        value={formData.observacoesProcedimento}
-                        onChange={(e) => updateFormData('observacoesProcedimento', e.target.value)}
-                      />
-                                  </div>
 
                     {/* Relatório para Cirurgião */}
                     <div className="space-y-4 border-t border-teal-500 pt-6">
@@ -3567,6 +4001,24 @@ function NovoProcedimentoContent() {
                                       />
                                     </div>
                                   )}
+
+                                  {formData.group_id && (
+                                    <div className="pt-1">
+                                      <label className="block text-xs text-gray-500 mb-1 flex items-center">
+                                        <Building className="w-3.5 h-3.5 mr-1 text-teal-600" />
+                                        Entidade de Faturamento
+                                      </label>
+                                      <select
+                                        value={parcela.billing_entity_type || ''}
+                                        onChange={(e) => updateParcela(index, 'billing_entity_type', e.target.value)}
+                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+                                      >
+                                        <option value="">Em aberto</option>
+                                        <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
+                                        <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
+                                      </select>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -3586,6 +4038,24 @@ function NovoProcedimentoContent() {
                 )}
 
 
+
+                {formData.group_id && formData.formaPagamento !== 'Parcelado' && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 flex items-center">
+                      <Building className="w-4 h-4 mr-1.5 text-teal-600" />
+                      Entidade de Faturamento
+                    </label>
+                    <select
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+                      value={formData.billing_entity_type}
+                      onChange={(e) => updateFormData('billing_entity_type', e.target.value)}
+                    >
+                      <option value="">Em aberto</option>
+                      <option value="cnpj_anestesista">Faturar por CPF/CNPJ do Anestesista</option>
+                      <option value="cnpj_grupo">Faturar por CNPJ do Grupo</option>
+                    </select>
+                  </div>
+                )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -3958,6 +4428,18 @@ function NovoProcedimentoContent() {
                     <span className="text-sm font-medium text-gray-500">Parcelas:</span>
                     <p className="text-gray-900 font-medium">{successData.parcelas}</p>
                   </div>
+                  {successData.cirurgiao && (
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Cirurgião:</span>
+                      <p className="text-gray-900 font-medium">{successData.cirurgiao}</p>
+                    </div>
+                  )}
+                  {successData.hospital && (
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Hospital:</span>
+                      <p className="text-gray-900 font-medium">{successData.hospital}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -4037,6 +4519,94 @@ function NovoProcedimentoContent() {
                   Ir para Lista de Procedimentos
                 </Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Cadastro de Cirurgião */}
+      {showCreateSurgeonModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center sm:p-4 z-[9999] backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowCreateSurgeonModal(false)
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl max-w-md w-full max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto flex flex-col animate-in slide-in-from-bottom duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-gray-900">Cadastrar Novo Cirurgião</h3>
+                <button 
+                  onClick={() => setShowCreateSurgeonModal(false)}
+                  className="text-gray-400 hover:text-gray-600 focus:outline-none"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateSurgeon} className="space-y-4">
+                <Input
+                  label="Nome do Cirurgião *"
+                  placeholder="Ex: Dr. João Silva"
+                  value={createSurgeonFormData.name}
+                  onChange={(e) => setCreateSurgeonFormData({ ...createSurgeonFormData, name: e.target.value })}
+                  required
+                />
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Especialidade
+                  </label>
+                  <select
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white h-[52px]"
+                    value={createSurgeonFormData.specialty}
+                    onChange={(e) => setCreateSurgeonFormData({ ...createSurgeonFormData, specialty: e.target.value })}
+                  >
+                    <option value="">Selecione a especialidade...</option>
+                    {ESPECIALIDADES.map(esp => (
+                      <option key={esp} value={esp}>{esp}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <Input
+                  label="Telefone"
+                  placeholder="Ex: (11) 99999-9999"
+                  value={createSurgeonFormData.phone}
+                  onChange={(e) => setCreateSurgeonFormData({ ...createSurgeonFormData, phone: e.target.value })}
+                />
+
+                <Input
+                  label="E-mail"
+                  type="email"
+                  placeholder="Ex: joao@email.com"
+                  value={createSurgeonFormData.email}
+                  onChange={(e) => setCreateSurgeonFormData({ ...createSurgeonFormData, email: e.target.value })}
+                />
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateSurgeonModal(false)}
+                    className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl font-bold transition-all text-sm"
+                    disabled={isCreatingSurgeon}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold transition-all text-sm disabled:opacity-50"
+                    disabled={isCreatingSurgeon}
+                  >
+                    {isCreatingSurgeon ? 'Cadastrando...' : 'Cadastrar'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

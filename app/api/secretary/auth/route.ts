@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin'
 import { verifyPassword } from '@/lib/security'
 import { cookies } from 'next/headers'
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   try {
     const { email, password } = await request.json()
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 401 })
     }
 
-    if (secretary.status !== 'active') {
+    if (secretary.status !== 'ativo') {
       return NextResponse.json({ error: 'Conta de secretária inativa ou pendente' }, { status: 403 })
     }
 

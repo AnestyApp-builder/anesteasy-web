@@ -74,6 +74,22 @@ function LoginContent() {
       if (error) {
         const msg = error.message || 'Erro ao fazer login'
         if (msg.includes('Invalid login credentials')) {
+          // Tentar login como secretária antes de exibir erro
+          const secRes = await fetch('/api/secretary/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: formData.email, password: formData.password })
+          })
+          if (secRes.ok) {
+            const data = await secRes.json()
+            const groupId = data.session?.groupId
+            if (groupId) {
+              router.replace(`/grupos/${groupId}`)
+            } else {
+              router.replace('/secretaria/dashboard')
+            }
+            return
+          }
           setError('Email ou senha incorretos')
         } else if (msg.includes('Email not confirmed')) {
           setError('Email não confirmado. Verifique sua caixa de entrada')
@@ -83,7 +99,6 @@ function LoginContent() {
         setIsSubmitting(false)
         return
       }
-
 
       // Limpar cache de auth para forçar nova verificação após login
       if (typeof localStorage !== 'undefined') {
@@ -133,7 +148,7 @@ function LoginContent() {
               Entrar
             </CardTitle>
             <p className="text-center text-sm text-slate-500 mt-1">
-              Portal do Anestesiologista
+              Anestesiologistas e secretárias
             </p>
           </CardHeader>
           

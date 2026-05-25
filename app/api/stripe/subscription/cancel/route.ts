@@ -1,7 +1,7 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { cancelSubscription, stripe } from '@/lib/stripe'
+import { cancelSubscription, reactivateSubscription, stripe } from '@/lib/stripe'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -71,22 +71,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Cancelar na Stripe
+    // Agendar cancelamento no Stripe para fim do período (não cancela imediatamente)
     if (stripe && subscription.stripe_subscription_id) {
       try {
         await cancelSubscription(subscription.stripe_subscription_id)
       } catch (stripeError: any) {
-        console.error('❌ Erro ao cancelar na Stripe:', stripeError)
-        // Continuar mesmo se der erro na Stripe
+        console.error('❌ Erro ao agendar cancelamento na Stripe:', stripeError)
       }
     }
 
-    // Atualizar no banco
+    // Marcar cancelamento agendado — mantém status active e acesso do usuário
     const { error: updateError } = await supabaseAdmin
       .from('subscriptions')
       .update({
-        status: 'cancelled',
-        cancelled_at: new Date().toISOString(),
+        cancel_at_period_end: true,
         updated_at: new Date().toISOString()
       })
       .eq('id', subscription.id)
@@ -99,17 +97,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Atualizar status do usuário
-    await supabaseAdmin
-      .from('users')
-      .update({
-        subscription_status: 'inactive'
-      })
-      .eq('id', user.id)
+    // NÃO inativa o usuário agora — o webhook customer.subscription.deleted fará isso no vencimento
 
     return NextResponse.json({
       success: true,
-      message: 'Assinatura cancelada com sucesso'
+      message: 'Renovação automática cancelada. Seu acesso continua até o fim do período atual.'
     })
 
   } catch (error: any) {

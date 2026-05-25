@@ -2,7 +2,6 @@ import { supabase } from './supabase'
 import { Database } from './supabase'
 
 type Group = Database['public']['Tables']['groups']['Row']
-type GroupMember = Database['public']['Tables']['group_members']['Row']
 
 export async function createGroup(data: {
   name: string
@@ -10,19 +9,63 @@ export async function createGroup(data: {
   color: string
   share_financials?: boolean
   type?: 'com_cotas' | 'sem_cotas'
+  billing_type?: 'individual' | 'centralized'
   cnpj?: string | null
 }, userId: string) {
+  // Verificar se o usuário já é coordenador (admin) de algum grupo
+  const { data: existingAdminRole } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('role', 'admin')
+    .limit(1);
+
+  if (existingAdminRole && existingAdminRole.length > 0) {
+    throw new Error('Você já é coordenador de um grupo. Só é permitido criar 1 grupo por conta.');
+  }
+
+  // Verificar assinatura paga ativa diretamente na tabela subscriptions
+  const { data: userSeats } = await supabase
+    .from('users')
+    .select('available_standard_seats, available_coord_seats')
+    .eq('id', userId)
+    .single();
+
+  const { data: activeSub } = await supabase
+    .from('subscriptions')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (!activeSub) {
+    throw new Error('Você precisa de uma assinatura paga ativa para criar um grupo.')
+  }
+
+  const standardSeats = userSeats?.available_standard_seats || 0;
+  const coordSeats = userSeats?.available_coord_seats || 0;
+
   // O Supabase tem política RLS para criador
   const { data: groups, error } = await supabase
     .from('groups')
     .insert({
       ...data,
-      created_by: userId
+      created_by: userId,
+      standard_seats_paid: standardSeats,
+      coord_seats_paid: coordSeats
     })
     .select()
 
   if (error) throw error
   const group = groups ? groups[0] : null
+
+  // Reset user available seats if they were transferred
+  if (group && (standardSeats > 0 || coordSeats > 0)) {
+    await supabase
+      .from('users')
+      .update({ available_standard_seats: 0, available_coord_seats: 0 })
+      .eq('id', userId);
+  }
 
   // Adicionar o criador como admin automaticamente
   if (group) {
@@ -49,6 +92,7 @@ export async function getUserGroups() {
       *,
       group_members!inner (role, user_id)
     `)
+    .is('deleted_at', null)
   
   if (error) throw error
   return data
@@ -66,6 +110,7 @@ export async function getGroupDetails(groupId: string) {
         status,
         quota_percent,
         quota_since,
+        color,
         users:user_id (
           id,
           name,
@@ -75,6 +120,7 @@ export async function getGroupDetails(groupId: string) {
       )
     `)
     .eq('id', groupId)
+    .is('deleted_at', null)
     .single()
   
   if (error) throw error
@@ -189,7 +235,7 @@ export async function acceptInvite(memberId: string) {
 export async function deleteGroup(groupId: string) {
   const { error } = await supabase
     .from('groups')
-    .delete()
+    .update({ deleted_at: new Date().toISOString() })
     .eq('id', groupId)
   
   if (error) throw error

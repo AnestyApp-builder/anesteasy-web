@@ -46,7 +46,11 @@ export async function GET(req: NextRequest) {
     const decryptedData = (data || []).map(proc => ({
       ...proc,
       patient_name: decrypt(proc.patient_name || ''),
-      // Adicione outros campos que queira descriptografar aqui
+      patient_phone: decrypt(proc.patient_phone || ''),
+      patient_email: decrypt(proc.patient_email || ''),
+      patient_notes: decrypt(proc.patient_notes || ''),
+      patient_companion: decrypt(proc.patient_companion || ''),
+      patient_companion_phone: decrypt(proc.patient_companion_phone || '')
     }));
 
     return NextResponse.json(decryptedData);

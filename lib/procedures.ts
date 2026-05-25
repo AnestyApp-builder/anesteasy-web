@@ -17,6 +17,7 @@ export interface Parcela {
   data_recebimento: string | null
   created_at?: string
   updated_at?: string
+  billing_entity_type?: 'cnpj_anestesista' | 'cnpj_grupo' | '' | null
 }
 
 export interface ProcedureAttachment {
@@ -150,22 +151,41 @@ export const procedureService = {
   },
 
   // Deletar procedimento
-  async deleteProcedure(id: string): Promise<boolean> {
+  async deleteProcedure(id: string): Promise<{ success: boolean; message?: string }> {
     try {
+      // 1. Verificar se o procedimento está pago
+      const { data: proc } = await supabase
+        .from('procedures')
+        .select('payment_status')
+        .eq('id', id)
+        .single()
+        
+      if (proc?.payment_status === 'paid') {
+        return { success: false, message: 'Procedimento pago não pode ser excluído.' }
+      }
+      
+      // 2. Verificar se tem alguma parcela recebida
+      const { data: parcelas } = await supabase
+        .from('parcelas')
+        .select('recebida')
+        .eq('procedure_id', id)
+        
+      if (parcelas?.some(p => p.recebida)) {
+        return { success: false, message: 'Procedimento com parcela recebida não pode ser excluído.' }
+      }
+
       const { error } = await supabase
         .from('procedures')
         .delete()
         .eq('id', id)
 
       if (error) {
-        
-        return false
+        return { success: false, message: 'Erro ao excluir no banco de dados.' }
       }
 
-      return true
+      return { success: true }
     } catch (error) {
-      
-      return false
+      return { success: false, message: 'Erro interno ao excluir o procedimento.' }
     }
   },
 

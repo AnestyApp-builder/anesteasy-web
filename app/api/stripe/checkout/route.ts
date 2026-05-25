@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { plan_id } = await request.json()
+    const { plan_id, standard_seats = 0 } = await request.json()
 
     // Validar plano (incluindo 'test' que usa daily)
     if (!plan_id || !['monthly', 'quarterly', 'annual', 'test'].includes(plan_id)) {
@@ -116,16 +116,16 @@ export async function POST(request: NextRequest) {
         planType: actualPlanType as 'monthly' | 'quarterly' | 'annual' | 'daily',
         successUrl,
         cancelUrl,
-        isDaily: isDaily // Flag para indicar que é compra de 1 dia
+        isDaily: isDaily, // Flag para indicar que é compra de 1 dia
+        standardSeats: standard_seats
       })
 
       console.log('✅ Checkout Session criada:', session.id)
       console.log('🔗 Checkout URL:', session.url)
 
-    // Criar registro de assinatura pendente no banco
-    // Nota: Não criar aqui, deixar o webhook criar quando o pagamento for confirmado
-    // Isso evita problemas se o usuário cancelar o checkout
-    console.log('ℹ️ Assinatura será criada pelo webhook quando o pagamento for confirmado')
+      // Nota: Não criar aqui, deixar o webhook criar quando o pagamento for confirmado
+      // Isso evita problemas se o usuário cancelar o checkout
+      console.log('ℹ️ Assinatura será criada pelo webhook quando o pagamento for confirmado')
 
       return NextResponse.json({
         checkout_url: session.url,
@@ -149,4 +149,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-

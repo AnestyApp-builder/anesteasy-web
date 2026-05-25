@@ -90,6 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = React.useCallback(async () => {
+    try {
+      await fetch('/api/secretary/logout', { method: 'POST' })
+    } catch (error) {
+      console.warn('Erro ao efetuar logout da secretária:', error)
+    }
     await supabase.auth.signOut()
     router.push('/login')
   }, [supabase, router])

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin'
 import { cookies } from 'next/headers'
 
 export async function GET(request: Request) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const cookieStore = await cookies()
   const id = cookieStore.get('secretary_session_id')?.value
 
@@ -12,7 +12,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Buscar a secretária
     const { data: secretary, error: secError } = await supabase
       .from('secretarias')
       .select('id, nome, email, type, group_id, status, groups(name)')
@@ -24,11 +23,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Sessão inválida ou expirada' }, { status: 401 })
     }
 
-    if (secretary.status !== 'active') {
+    if (secretary.status !== 'ativo') {
       return NextResponse.json({ error: 'Conta de secretária inativa' }, { status: 403 })
     }
 
-    // Buscar permissões
     const { data: perms, error: permError } = await supabase
       .from('group_secretary_permissions')
       .select('module')
@@ -38,7 +36,7 @@ export async function GET(request: Request) {
 
     const modules = (perms || []).map(p => p.module)
 
-    return NextResponse.json({
+    const session = {
       id: secretary.id,
       nome: secretary.nome,
       email: secretary.email,
@@ -46,7 +44,9 @@ export async function GET(request: Request) {
       groupName: (secretary.groups as any)?.name || 'Grupo',
       type: secretary.type,
       permissions: modules
-    })
+    }
+
+    return NextResponse.json({ session })
   } catch (error: any) {
     console.error('Erro na validação de sessão da secretária:', error)
     return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 })
